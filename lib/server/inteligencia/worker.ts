@@ -40,25 +40,35 @@ async function reclamarJob(
   return resultado.count === 1;
 }
 
-async function buscarCandidatos(): Promise<TrabajoProcesamientoDocumento[]> {
+// Alcance opcional de una corrida (Fase 0 WhatsApp + ARQENTO IA, octubre
+// 2026): una petición de un usuario solo procesa trabajos de SU Empresa —
+// y, si se indica, solo de ciertas referencias (p. ej. los documentos del
+// lote que está consultando). Sin alcance = todas las Empresas (cron).
+export type AlcanceCorrida = { empresaId?: string; referencias?: string[] };
+
+async function buscarCandidatos(alcance: AlcanceCorrida, limite: number): Promise<TrabajoProcesamientoDocumento[]> {
   const ahora = new Date();
   const corteAbandono = new Date(ahora.getTime() - TIMEOUT_ABANDONO_MINUTOS * 60_000);
+  const filtro = {
+    ...(alcance.empresaId ? { empresaId: alcance.empresaId } : {}),
+    ...(alcance.referencias ? { referenciaModulo: { in: alcance.referencias } } : {}),
+  };
 
   const [pendientes, abandonados, conError] = await Promise.all([
     db.trabajoProcesamientoDocumento.findMany({
-      where: { estatus: "PENDIENTE" },
+      where: { ...filtro, estatus: "PENDIENTE" },
       orderBy: { createdAt: "asc" },
-      take: LIMITE_JOBS_POR_CORRIDA,
+      take: limite,
     }),
     db.trabajoProcesamientoDocumento.findMany({
-      where: { estatus: "PROCESANDO", procesandoDesde: { lt: corteAbandono } },
+      where: { ...filtro, estatus: "PROCESANDO", procesandoDesde: { lt: corteAbandono } },
       orderBy: { procesandoDesde: "asc" },
-      take: LIMITE_JOBS_POR_CORRIDA,
+      take: limite,
     }),
     db.trabajoProcesamientoDocumento.findMany({
-      where: { estatus: "ERROR" },
+      where: { ...filtro, estatus: "ERROR" },
       orderBy: { ultimoIntentoEn: "asc" },
-      take: LIMITE_JOBS_POR_CORRIDA * 3, // se filtra fino en JS (backoff depende de `intentos`, por fila)
+      take: limite * 3, // se filtra fino en JS (backoff depende de `intentos`, por fila)
     }),
   ]);
 
@@ -69,7 +79,7 @@ async function buscarCandidatos(): Promise<TrabajoProcesamientoDocumento[]> {
     return minutosDesdeUltimoIntento >= backoffMinutos(j.intentos);
   });
 
-  return [...pendientes, ...abandonados, ...erroresListosParaReintentar].slice(0, LIMITE_JOBS_POR_CORRIDA);
+  return [...pendientes, ...abandonados, ...erroresListosParaReintentar].slice(0, limite);
 }
 
 async function procesarJob(job: TrabajoProcesamientoDocumento): Promise<void> {
@@ -132,7 +142,23 @@ export type ResultadoCorridaWorker = { tomados: number; completados: number; con
 // sin esperar a la siguiente corrida de cron (el cron queda como red de
 // seguridad para jobs abandonados/reintentos, no como el único disparador).
 export async function procesarTrabajosPendientes(): Promise<ResultadoCorridaWorker> {
-  const candidatos = await buscarCandidatos();
+  return procesarCandidatos(await buscarCandidatos({}, LIMITE_JOBS_POR_CORRIDA));
+}
+
+// Corrida acotada a una Empresa (y opcionalmente a ciertas referencias) —
+// la usa una petición de usuario (después de subir, o al consultar el
+// avance de un lote) para procesar SOLO lo suyo, nunca trabajos de otras
+// Empresas. Mismo reclamo optimista que la corrida general: dos peticiones
+// simultáneas nunca procesan el mismo trabajo dos veces.
+export async function procesarTrabajos(
+  alcance: { empresaId: string; referencias?: string[] },
+  limite = 1
+): Promise<ResultadoCorridaWorker> {
+  if (!alcance.empresaId) throw new Error("procesarTrabajos requiere una Empresa.");
+  return procesarCandidatos(await buscarCandidatos(alcance, limite));
+}
+
+async function procesarCandidatos(candidatos: TrabajoProcesamientoDocumento[]): Promise<ResultadoCorridaWorker> {
   let tomados = 0;
   let completados = 0;
   let conError = 0;

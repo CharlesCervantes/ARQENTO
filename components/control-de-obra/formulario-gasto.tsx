@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { modoPagadorInicial, pagadorElegido, type QuienPagoModo } from "@/lib/control-de-obra/pagador-gasto";
 import { useActionState } from "react";
 import { createPortal } from "react-dom";
 import { Card } from "@/components/ui/card";
@@ -48,7 +49,6 @@ const TRATAMIENTOS_CLIENTE = [
 // corto ya existente en vez de duplicarlo: mismos campos, mismo <form>, un
 // solo submit al final; los pasos ocultos con `hidden` para que el HTML
 // nativo no los valide hasta que sean visibles).
-type QuienPagoModo = "YO" | "OTRO" | "EMPRESA";
 type Paso = "destino" | "gasto" | "quien" | "evidencia";
 
 export function FormularioGasto({
@@ -105,20 +105,18 @@ export function FormularioGasto({
 
   function puedeAvanzar(): boolean {
     if (pasoActual === "destino") return destino === "empresa" || Boolean(proyectoElegidoId);
+    if (pasoActual === "quien") return pagadorElegido(quienPagoModo);
     return true;
   }
 
-  // El modo inicial se infiere del gasto existente para no perder la
-  // selección al editar — pero la resolución real de "YO" siempre vuelve a
-  // ocurrir server-side al enviar (nunca se confía en el id de este campo
-  // para ese caso).
-  const [quienPagoModo, setQuienPagoModo] = useState<QuienPagoModo>(() => {
-    if (!gasto || !gasto.pagadorBeneficiarioId) return "EMPRESA";
-    if (beneficiarioVinculado && gasto.pagadorBeneficiarioId === beneficiarioVinculado.id) {
-      return "YO";
-    }
-    return "OTRO";
-  });
+  // Gasto nuevo: sin pagador preseleccionado — se elige explícitamente
+  // (nunca se asume Empresa). Al editar se infiere del gasto existente para
+  // no perder la selección — pero la resolución real de "YO" siempre vuelve
+  // a ocurrir server-side al enviar (nunca se confía en el id de este campo
+  // para ese caso). Ver lib/control-de-obra/pagador-gasto.ts.
+  const [quienPagoModo, setQuienPagoModo] = useState<QuienPagoModo | "">(() =>
+    modoPagadorInicial(gasto, beneficiarioVinculado?.id)
+  );
 
   // Siempre por líneas — cada gasto se captura como una o más líneas con su
   // propia descripción (nunca una "Descripción" genérica aparte); mínimo una
@@ -352,6 +350,9 @@ export function FormularioGasto({
                   Otro beneficiario
                 </BotonModo>
               </div>
+              {!pagadorElegido(quienPagoModo) && (
+                <p className="mt-1.5 text-xs text-amber-700">Elige quién pagó para continuar.</p>
+              )}
 
               {quienPagoModo === "YO" && beneficiarioVinculado && (
                 <p className="mt-1.5 text-xs text-[var(--muted)]">

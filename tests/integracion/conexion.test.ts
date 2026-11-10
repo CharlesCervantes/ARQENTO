@@ -17,9 +17,12 @@ describe("Integración — base aislada", () => {
     assert.equal(identidad.esNeon, false);
   });
 
-  test("Los servicios externos están simulados y sin credenciales", async () => {
+  test("Los servicios externos están simulados y sin credenciales reales", async () => {
     assert.equal(process.env.OPENAI_API_KEY, undefined);
-    assert.equal(Object.keys(process.env).some((k) => k.startsWith("R2_")), false);
+    // R2: solo los valores ficticios del almacenamiento simulado en memoria.
+    assert.equal(process.env.R2_ENDPOINT, "http://r2-simulado.invalid");
+    assert.equal(process.env.R2_BUCKET_NAME, "arqento-pruebas-simulado");
+    assert.equal(process.env.R2_SECRET_ACCESS_KEY, "simulado");
     const { default: OpenAI } = await import("openai");
     assert.throws(() => new OpenAI({ apiKey: "x" }).responses.parse({} as never), /deshabilitado/);
   });

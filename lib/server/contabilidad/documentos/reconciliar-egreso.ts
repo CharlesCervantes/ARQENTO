@@ -59,6 +59,16 @@ const ESTATUS_POR_MOTIVO: Record<MotivoDenegacionInteligencia, EstatusDocumentoE
 
 const ESTATUS_TERMINAL_SIN_PROPUESTA: EstatusDocumentoEgreso[] = ["SIN_TEXTO", "CAPACIDAD_NO_HABILITADA", "LIMITE_ALCANZADO"];
 
+// Ya resuelto por una persona (confirmado, vinculado o descartado) mientras
+// el trabajo esperaba o se procesaba (Fase 0 WhatsApp + ARQENTO IA, octubre
+// 2026): el worker nunca vuelve a llamar a la IA para él ni le cambia el
+// estatus — antes podía devolver a PROCESADO un documento ya confirmado.
+const ESTATUS_YA_RESUELTO: EstatusDocumentoEgreso[] = ["VINCULADO", "CONVERTIDO", "DESCARTADO"];
+
+// Toda transición de estatus del worker solo aplica a un documento que
+// sigue PENDIENTE — nunca pisa una decisión humana tomada en paralelo.
+const SOLO_SI_PENDIENTE = { estatus: "PENDIENTE" as const };
+
 // Forma "vacía" de CamposFinancierosDetectados — para documentos VISION no
 // existe ningún parser determinístico (no hay texto del que partir), así
 // que la reconciliación sigue exactamente el mismo camino que ya existe
@@ -115,6 +125,7 @@ function emparejarProyecto(
 const manejador: ManejadorOperacion = {
   async ejecutarExtraccionDeterministica(job, bytes) {
     const documento = await documentoDelJob(job);
+    if (ESTATUS_YA_RESUELTO.includes(documento.estatus)) return { continuarProcesamiento: false };
 
     // Chequeo RÁPIDO (no autoritativo) — evita gastar el parser determinístico
     // y decidir una estrategia para una capacidad que ya sabemos deshabilitada.
@@ -123,8 +134,8 @@ const manejador: ManejadorOperacion = {
     async function denegarSiNoAutorizado(capacidad: CapacidadInteligencia): Promise<boolean> {
       const autorizacion = await autorizarConsumo(job.empresaId, capacidad);
       if (autorizacion.autorizado) return false;
-      await db.documentoEgreso.update({
-        where: { id: documento.id },
+      await db.documentoEgreso.updateMany({
+        where: { id: documento.id, ...SOLO_SI_PENDIENTE },
         data: { estatus: ESTATUS_POR_MOTIVO[autorizacion.motivo] },
       });
       return true;
@@ -159,6 +170,7 @@ const manejador: ManejadorOperacion = {
 
   async ejecutarExtraccionIA(job, bytes) {
     const documento = await documentoDelJob(job);
+    if (ESTATUS_YA_RESUELTO.includes(documento.estatus)) return;
     const esVision = documento.estrategiaExtraccion === "VISION";
     const capacidad: CapacidadInteligencia = esVision ? "ANALISIS_VISUAL" : "ANALISIS_DOCUMENTAL_TEXTO";
 
@@ -169,8 +181,8 @@ const manejador: ManejadorOperacion = {
     // nunca se crea un RegistroConsumoInteligencia (no hubo consumo real).
     const autorizacion = await autorizarConsumo(job.empresaId, capacidad);
     if (!autorizacion.autorizado) {
-      await db.documentoEgreso.update({
-        where: { id: documento.id },
+      await db.documentoEgreso.updateMany({
+        where: { id: documento.id, ...SOLO_SI_PENDIENTE },
         data: { estatus: ESTATUS_POR_MOTIVO[autorizacion.motivo] },
       });
       return;
@@ -279,7 +291,7 @@ const manejador: ManejadorOperacion = {
     // Un paso anterior ya dejó esto terminal (sin autorización, límite
     // alcanzado, o — legado — sin texto extraíble) — nunca hubo IA, nada
     // que reconciliar.
-    if (ESTATUS_TERMINAL_SIN_PROPUESTA.includes(documento.estatus)) return;
+    if (ESTATUS_TERMINAL_SIN_PROPUESTA.includes(documento.estatus) || ESTATUS_YA_RESUELTO.includes(documento.estatus)) return;
 
     // En VISION no existe parser determinístico (no hay texto del que
     // partir) — det queda "vacío" a propósito, nunca inventado; el
@@ -366,8 +378,8 @@ const manejador: ManejadorOperacion = {
       estrategiaExtraccion: documento.estrategiaExtraccion,
     };
 
-    await db.documentoEgreso.update({
-      where: { id: documento.id },
+    await db.documentoEgreso.updateMany({
+      where: { id: documento.id, ...SOLO_SI_PENDIENTE },
       data: {
         propuestaReconciliada: propuesta as unknown as object,
         tipoDocumento: ia.tipoDocumento,

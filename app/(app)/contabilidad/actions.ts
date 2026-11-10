@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import * as z from "zod";
 import { requireSession } from "@/lib/server/auth/dal";
 import { subirArchivo } from "@/lib/server/archivos";
@@ -37,7 +38,10 @@ import { decoracionIngresoDesdeFormulario, ingresoManualDesdeFormulario } from "
 import {
   subirDocumentosEgreso,
   obtenerDocumentosDelLote,
+  avanzarProcesamientoDeLote,
+  procesarDocumentosSubidos,
 } from "@/lib/server/contabilidad/documentos/documento-egreso";
+import { PosiblesDuplicadosError, type PosibleDuplicado } from "@/lib/server/contabilidad/documentos/duplicados";
 import {
   confirmarComoGastoNuevo,
   confirmarVinculadoAExistente,
@@ -465,6 +469,14 @@ export async function subirDocumentosEgresoAction(formData: FormData): Promise<S
       archivosForm.map(async (f) => ({ nombre: f.name, tipoMime: f.type, bytes: Buffer.from(await f.arrayBuffer()) }))
     );
     const resultado = await subirDocumentosEgreso(usuario, archivos, typeof contexto === "string" ? contexto : undefined);
+    // Vía rápida: procesar después de responder (solo esta Empresa y estos
+    // documentos). No es la única: si se corta, la consulta del lote avanza
+    // el procesamiento (avanzarProcesamientoDeLote).
+    const nuevos = resultado.documentos.filter((d) => !d.duplicado).map((d) => d.documentoEgresoId);
+    const empresaId = usuario.empresa?.id;
+    if (empresaId && nuevos.length > 0) {
+      after(() => procesarDocumentosSubidos(empresaId, nuevos).catch(() => {}));
+    }
     revalidarContabilidad();
     return resultado;
   } catch (error) {
@@ -474,10 +486,26 @@ export async function subirDocumentosEgresoAction(formData: FormData): Promise<S
 
 export async function obtenerDocumentosDelLoteAction(loteId: string) {
   const usuario = await requireSession();
+  // Avance garantizado: cada consulta procesa a lo más un trabajo pendiente
+  // de este lote antes de leer. Un fallo aquí nunca impide leer el estado.
+  try {
+    await avanzarProcesamientoDeLote(usuario, loteId);
+  } catch {
+    // El estado del documento/trabajo refleja cualquier error de proceso.
+  }
   return obtenerDocumentosDelLote(usuario, loteId);
 }
 
-export type ConfirmarPropuestaFormState = { error?: string; guardado?: boolean } | undefined;
+export type ConfirmarPropuestaFormState =
+  | { error?: string; guardado?: boolean; posiblesDuplicados?: PosibleDuplicado[] }
+  | undefined;
+
+// Errores de confirmación para el formulario: los posibles duplicados viajan
+// con su lista para que quien confirma los revise y acepte explícitamente.
+function estadoDeErrorConfirmacion(error: unknown): ConfirmarPropuestaFormState {
+  if (error instanceof PosiblesDuplicadosError) return { error: error.message, posiblesDuplicados: error.candidatos };
+  return { error: mensajeError(error) };
+}
 
 export async function confirmarComoGastoNuevoAction(
   documentoEgresoId: string,
@@ -488,7 +516,7 @@ export async function confirmarComoGastoNuevoAction(
   try {
     await confirmarComoGastoNuevo(usuario, documentoEgresoId, Object.fromEntries(formData));
   } catch (error) {
-    return { error: mensajeError(error) };
+    return estadoDeErrorConfirmacion(error);
   }
   revalidarContabilidad();
   return { guardado: true };
@@ -518,7 +546,7 @@ export async function confirmarComoEgresoManualDesdeDocumentoAction(
   try {
     await confirmarComoEgresoManual(usuario, documentoEgresoId, Object.fromEntries(formData));
   } catch (error) {
-    return { error: mensajeError(error) };
+    return estadoDeErrorConfirmacion(error);
   }
   revalidarContabilidad();
   return { guardado: true };

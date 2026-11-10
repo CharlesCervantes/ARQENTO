@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "crypto";
 import { db } from "@/lib/server/db";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 // Infraestructura genérica de cola — nunca referencia Egreso/GastoObra ni
 // ningún modelo de dominio; "referenciaModulo" es un id opaco que el módulo
@@ -18,9 +19,10 @@ export function calcularHashArchivo(bytes: Buffer): string {
 // documentos, ni siquiera saber que el otro existe.
 export async function buscarDocumentoPorHash(
   empresaId: string,
-  hashArchivo: string
+  hashArchivo: string,
+  cliente: Prisma.TransactionClient = db
 ): Promise<{ id: string; createdAt: Date; loteId: string; contextoUsuario: string | null; contextosAdicionales: unknown } | null> {
-  return db.documentoEgreso.findFirst({
+  return cliente.documentoEgreso.findFirst({
     where: { empresaId, hashArchivo },
     select: { id: true, createdAt: true, loteId: true, contextoUsuario: true, contextosAdicionales: true },
     orderBy: { createdAt: "desc" },
@@ -38,8 +40,8 @@ export async function encolarTrabajo(args: {
   extractorVersion?: string;
   modeloIA?: string;
   promptVersion?: string;
-}) {
-  return db.trabajoProcesamientoDocumento.create({
+}, cliente: Prisma.TransactionClient = db) {
+  return cliente.trabajoProcesamientoDocumento.create({
     data: {
       empresaId: args.empresaId,
       modulo: args.modulo,

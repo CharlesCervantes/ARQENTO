@@ -84,7 +84,11 @@ const DatosGastoSchema = z.object({
   // server-side contra el Usuario de la sesión (ver resolverPagadorBeneficiarioId).
   // "OTRO" sí usa pagadorBeneficiarioId (quien captura no necesariamente
   // pagó). "EMPRESA" = sin reposición para nadie.
-  quienPagoModo: z.enum(["YO", "OTRO", "EMPRESA"]).default("OTRO"),
+  // Obligatorio y sin valor por omisión (octubre 2026): antes, un valor
+  // ausente se interpretaba como "OTRO" sin beneficiario — es decir, "pagó la
+  // Empresa" — y una reposición podía perderse en silencio. El formulario de
+  // Gastos siempre lo envía, así que su comportamiento no cambia.
+  quienPagoModo: z.enum(["YO", "OTRO", "EMPRESA"], { error: "Indica quién pagó el gasto." }),
   pagadorBeneficiarioId: z.string().trim().optional().nullable(),
   proveedorBeneficiarioId: z.string().trim().optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
@@ -133,78 +137,144 @@ async function resolverPagadorBeneficiarioId(
   return beneficiario.id;
 }
 
-export async function crearGasto(
+// Validaciones y datos derivados de TODA creación de un gasto (permisos,
+// obra, categoría, semana, monto y descripción) — una sola fuente para
+// crearGasto y para la confirmación de documentos de Captura Inteligente
+// (Fase 0 WhatsApp + ARQENTO IA, octubre 2026). No resuelve el pagador: cada
+// llamador lo resuelve server-side con su propia regla.
+async function prepararGasto(
   usuario: UsuarioSesion,
   proyectoId: string,
   semanaId: string,
-  datosCrudos: unknown
+  datosCrudos: unknown,
+  cliente: Prisma.TransactionClient = db
 ) {
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
   await obtenerProyecto(usuario, proyectoId);
   const datos = DatosGastoSchema.parse(datosCrudos);
   requerirPermisoCategoria(usuario, datos.categoria);
-
-  const semana = await db.semana.findFirst({ where: { id: semanaId, empresaId } });
+  const semana = await cliente.semana.findFirst({ where: { id: semanaId, empresaId } });
   if (!semana) throw new RegistroNoEncontradoError("La semana");
-
-  const pagadorBeneficiarioId = await resolverPagadorBeneficiarioId(usuario, empresaId, datos);
   const tieneDetalle = (datos.detalle?.length ?? 0) > 0;
   const monto = tieneDetalle ? totalDetalleGasto(datos.detalle!) : datos.monto;
   const descripcion = datos.descripcion || (tieneDetalle ? descripcionDesdeDetalle(datos.detalle!) : "");
   if (!descripcion) throw new ValidacionError("La descripción es obligatoria.");
+  return { empresaId, datos, tieneDetalle, monto, descripcion };
+}
 
-  // Nace siempre PENDIENTE_REVISION, sin importar el rol que captura — misma
-  // consistencia que AvanceConcepto: aprobar es siempre una acción explícita
-  // separada de capturar (decisión de sesión, agosto 2026).
-  const gasto = await db.$transaction(async (tx) => {
-    const creado = await tx.gastoObra.create({
-      data: {
-        empresaId,
-        proyectoId,
-        semanaId,
-        fecha: datos.fecha,
-        descripcion,
-        categoria: datos.categoria,
-        monto,
-        metodoPago: datos.metodoPago,
-        pagadorBeneficiarioId,
-        proveedorBeneficiarioId: datos.proveedorBeneficiarioId || null,
-        comentario: datos.comentario || null,
-        requiereFactura: datos.requiereFactura,
-        tratamientoCliente: datos.tratamientoCliente,
-        ticketRef: datos.ticketRef || null,
-        ticketNombre: datos.ticketNombre || null,
-        capturadoPorId: usuario.id,
-      },
+// Nace siempre PENDIENTE_REVISION, sin importar el rol que captura — misma
+// consistencia que AvanceConcepto: aprobar es siempre una acción explícita
+// separada de capturar (decisión de sesión, agosto 2026). La auditoría va en
+// la MISMA transacción que el gasto.
+async function insertarGastoTx(
+  tx: Prisma.TransactionClient,
+  preparado: Awaited<ReturnType<typeof prepararGasto>>,
+  ctx: {
+    proyectoId: string;
+    semanaId: string;
+    pagadorBeneficiarioId: string | null;
+    capturadoPorId: string;
+    usuarioAuditoriaId: string;
+    auditoriaAdicional?: Record<string, unknown>;
+  }
+) {
+  const { empresaId, datos, tieneDetalle, monto, descripcion } = preparado;
+  const creado = await tx.gastoObra.create({
+    data: {
+      empresaId,
+      proyectoId: ctx.proyectoId,
+      semanaId: ctx.semanaId,
+      fecha: datos.fecha,
+      descripcion,
+      categoria: datos.categoria,
+      monto,
+      metodoPago: datos.metodoPago,
+      pagadorBeneficiarioId: ctx.pagadorBeneficiarioId,
+      proveedorBeneficiarioId: datos.proveedorBeneficiarioId || null,
+      comentario: datos.comentario || null,
+      requiereFactura: datos.requiereFactura,
+      tratamientoCliente: datos.tratamientoCliente,
+      ticketRef: datos.ticketRef || null,
+      ticketNombre: datos.ticketNombre || null,
+      capturadoPorId: ctx.capturadoPorId,
+    },
+  });
+  if (tieneDetalle) {
+    await tx.gastoObraDetalle.createMany({
+      data: datos.detalle!.map((l, i) => ({
+        gastoObraId: creado.id,
+        descripcion: l.descripcion,
+        unidad: l.unidad,
+        cantidad: l.cantidad,
+        precioUnitario: l.precioUnitario,
+        orden: i,
+      })),
     });
-
-    if (tieneDetalle) {
-      await tx.gastoObraDetalle.createMany({
-        data: datos.detalle!.map((l, i) => ({
-          gastoObraId: creado.id,
-          descripcion: l.descripcion,
-          unidad: l.unidad,
-          cantidad: l.cantidad,
-          precioUnitario: l.precioUnitario,
-          orden: i,
-        })),
-      });
-    }
-
-    return creado;
-  });
-
-  await registrarAuditoria({
+  }
+  await registrarAuditoriaTx(tx, {
     empresaId,
-    usuarioId: usuario.id,
+    usuarioId: ctx.usuarioAuditoriaId,
     entidad: "GastoObra",
-    entidadId: gasto.id,
+    entidadId: creado.id,
     accion: "CREAR",
-    valorNuevo: { descripcion: gasto.descripcion, monto, categoria: gasto.categoria },
+    valorNuevo: { descripcion: creado.descripcion, monto, categoria: creado.categoria, ...ctx.auditoriaAdicional },
   });
+  return creado;
+}
 
-  return gasto;
+export async function crearGasto(
+  usuario: UsuarioSesion,
+  proyectoId: string,
+  semanaId: string,
+  datosCrudos: unknown
+) {
+  const preparado = await prepararGasto(usuario, proyectoId, semanaId, datosCrudos);
+  const pagadorBeneficiarioId = await resolverPagadorBeneficiarioId(usuario, preparado.empresaId, preparado.datos);
+  return db.$transaction((tx) =>
+    insertarGastoTx(tx, preparado, {
+      proyectoId,
+      semanaId,
+      pagadorBeneficiarioId,
+      capturadoPorId: usuario.id,
+      usuarioAuditoriaId: usuario.id,
+    })
+  );
+}
+
+// Creación de un gasto a partir de un documento de Captura Inteligente
+// (Fase 0 WhatsApp + ARQENTO IA, octubre 2026) — dentro de la transacción
+// del llamador, con las MISMAS validaciones que crearGasto sobre el usuario
+// que confirma. Dos diferencias, ambas resueltas server-side por el
+// llamador: el pagador ya viene resuelto (nunca del cliente) y el capturista
+// es el REMITENTE original del documento; quien confirma queda en la
+// auditoría y en el documento, y quien aprueba, al aprobar (aprobarGasto).
+export async function crearGastoDesdeDocumentoTx(
+  tx: Prisma.TransactionClient,
+  usuario: UsuarioSesion,
+  args: {
+    proyectoId: string;
+    semanaId: string;
+    datosCrudos: unknown;
+    pagadorBeneficiarioId: string | null;
+    capturadoPorId: string;
+    documentoEgresoId: string;
+  }
+) {
+  const preparado = await prepararGasto(usuario, args.proyectoId, args.semanaId, args.datosCrudos, tx);
+  return insertarGastoTx(tx, preparado, {
+    proyectoId: args.proyectoId,
+    semanaId: args.semanaId,
+    pagadorBeneficiarioId: args.pagadorBeneficiarioId,
+    capturadoPorId: args.capturadoPorId,
+    usuarioAuditoriaId: usuario.id,
+    auditoriaAdicional: {
+      origen: "DOCUMENTO",
+      documentoEgresoId: args.documentoEgresoId,
+      capturadoPorId: args.capturadoPorId,
+      pagadorBeneficiarioId: args.pagadorBeneficiarioId,
+    },
+  });
 }
 
 export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datosCrudos: unknown) {
@@ -555,7 +625,9 @@ function aFilaGasto(g: GastoObraConRelaciones): FilaGasto {
 // categorias-gasto.ts) se excluyen enteras de la lectura si el usuario no
 // tiene puedeVerGastosEmpresaSensibles — nunca se manda el dato al cliente
 // para que la UI decida ocultarlo (Gastos transversal, septiembre 2026).
-function categoriasOcultasPara(usuario: UsuarioSesion): string[] {
+// Exportada para que otros módulos (p. ej. avisos de posibles duplicados de
+// Captura Inteligente) apliquen el MISMO filtro de categorías sensibles.
+export function categoriasOcultasPara(usuario: UsuarioSesion): string[] {
   if (puedeVerGastosEmpresaSensibles(usuario)) return [];
   return (Object.keys(CATEGORIA_GASTO_SENSIBLE) as (keyof typeof CATEGORIA_GASTO_SENSIBLE)[]).filter(
     (c) => CATEGORIA_GASTO_SENSIBLE[c]

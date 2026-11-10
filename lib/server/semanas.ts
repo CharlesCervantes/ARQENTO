@@ -58,6 +58,28 @@ export async function obtenerOCrearSemanaActual(empresaId: string) {
   return obtenerOCrearSemana(empresaId, new Date());
 }
 
+// Semanas válidas para registrar un gasto desde otra pantalla (p. ej. un
+// documento de Captura Inteligente): la semana actual — creada si aún no
+// existe, igual que hace Gastos al abrirse — y las semanas ya existentes de
+// la Empresa, de la más reciente a la más antigua. Mismo criterio que el
+// módulo de Gastos: cualquier Semana de la Empresa es válida para un gasto
+// (el cierre semanal solo bloquea el Avance). La fecha de un comprobante
+// nunca decide la semana por sí sola.
+export async function listarSemanasParaRegistro(empresaId: string, cantidad = 12) {
+  const actual = await obtenerOCrearSemanaActual(empresaId);
+  const semanas = await db.semana.findMany({
+    where: { empresaId },
+    orderBy: { fechaInicio: "desc" },
+    take: cantidad,
+    select: { id: true, numero: true, anio: true, fechaInicio: true, fechaFin: true },
+  });
+  if (!semanas.some((s) => s.id === actual.id)) semanas.unshift(actual);
+  return {
+    semanaActualId: actual.id,
+    semanas: semanas.map((s) => ({ ...s, fechaInicio: s.fechaInicio.toISOString(), fechaFin: s.fechaFin.toISOString() })),
+  };
+}
+
 // Para llevar la fecha de referencia en la URL (?fecha=YYYY-MM-DD) sin sufrir
 // el corrimiento de un día que da `new Date("YYYY-MM-DD")` en zonas UTC-.
 export function fechaAParametro(fecha: Date): string {

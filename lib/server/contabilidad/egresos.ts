@@ -349,12 +349,26 @@ const DatosEgresoManualSchema = z.object({
 });
 
 export async function crearEgresoManual(usuario: UsuarioSesion, datosCrudos: unknown) {
+  return db.$transaction((tx) => crearEgresoManualTx(tx, usuario, datosCrudos));
+}
+
+// Núcleo de crearEgresoManual dentro de la transacción del llamador — mismas
+// validaciones y mismo registro; la auditoría va en la MISMA transacción.
+// Lo reutiliza la confirmación de un documento como egreso de empresa
+// (Fase 0 WhatsApp + ARQENTO IA, octubre 2026), que necesita crear el egreso
+// y marcar el documento de forma atómica.
+export async function crearEgresoManualTx(
+  tx: Prisma.TransactionClient,
+  usuario: UsuarioSesion,
+  datosCrudos: unknown,
+  auditoriaAdicional: Record<string, unknown> = {}
+) {
   const empresaId = requerirContabilidad(usuario);
   if (!puedeRegistrarMovimientoContable(usuario)) throw new SinPermisoError();
   const datos = DatosEgresoManualSchema.parse(datosCrudos);
-  await validarReferenciasEgreso(empresaId, datos);
+  await validarReferenciasEgreso(empresaId, datos, tx);
 
-  const egreso = await db.egreso.create({
+  const egreso = await tx.egreso.create({
     data: {
       empresaId,
       fecha: datos.fecha,
@@ -371,13 +385,13 @@ export async function crearEgresoManual(usuario: UsuarioSesion, datosCrudos: unk
     },
   });
 
-  await registrarAuditoria({
+  await registrarAuditoriaTx(tx, {
     empresaId,
     usuarioId: usuario.id,
     entidad: "Egreso",
     entidadId: egreso.id,
     accion: "CREAR",
-    valorNuevo: { concepto: egreso.concepto, monto: datos.monto },
+    valorNuevo: { concepto: egreso.concepto, monto: datos.monto, ...auditoriaAdicional },
   });
 
   return egreso;

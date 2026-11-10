@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileInput } from "@/components/ui/file-input";
@@ -52,7 +52,16 @@ type DocumentoLote = {
     | "DESCARTADO";
   propuestaReconciliada: PropuestaReconciliada | null;
   trabajoProcesamiento: { estatus: string; error: string | null; intentos: number; maxIntentos: number } | null;
+  // Remitente (origen) del documento — necesario para ofrecer "pagó quien
+  // lo envió" al registrarlo como gasto.
+  subidoPor: { id: string; nombre: string; beneficiario: { activo: boolean } | null };
 };
+
+export type RemitenteDeDocumento = { nombre: string; tieneBeneficiario: boolean };
+const remitenteDe = (doc: DocumentoLote): RemitenteDeDocumento => ({
+  nombre: doc.subidoPor.nombre,
+  tieneBeneficiario: doc.subidoPor.beneficiario?.activo === true,
+});
 
 const ETIQUETA_CAMPO: Record<string, string> = {
   rfc: "RFC",
@@ -102,38 +111,42 @@ export function NuevoEgresoDocumentos({
   onRegistrarManual,
   onCancelar,
 }: {
-  onUsarPropuesta: (args: { documentoEgresoId: string; propuesta: PropuestaReconciliada }) => void;
-  onRegistrarManual: (documentoEgresoId: string) => void;
+  onUsarPropuesta: (args: { documentoEgresoId: string; propuesta: PropuestaReconciliada; remitente: RemitenteDeDocumento }) => void;
+  onRegistrarManual: (documentoEgresoId: string, remitente: RemitenteDeDocumento) => void;
   onCancelar: () => void;
 }) {
   const [loteId, setLoteId] = useState<string | null>(null);
   const [documentos, setDocumentos] = useState<DocumentoLote[]>([]);
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const consultarLote = useCallback(async (lote: string) => {
-    const docs = (await obtenerDocumentosDelLoteAction(lote)) as unknown as DocumentoLote[];
-    setDocumentos(docs);
-    const todosResueltos = docs.every((d) => !sigueEnProceso(d));
-    if (todosResueltos && intervaloRef.current) {
-      clearInterval(intervaloRef.current);
-      intervaloRef.current = null;
-    }
-  }, []);
-
+  // Consultas ENCADENADAS (Fase 0 WhatsApp + ARQENTO IA, octubre 2026): la
+  // siguiente solo se programa cuando la anterior respondió — cada consulta
+  // puede avanzar el procesamiento de un documento en el servidor, así que
+  // nunca se empalman. Se detiene cuando todos los documentos terminaron.
   useEffect(() => {
     if (!loteId) return;
-    // setTimeout(…, 0) en vez de llamar consultarLote directo — evita
-    // "setState síncrono dentro de un efecto" (la primera consulta real
-    // sigue disparándose casi de inmediato).
-    const primeraConsulta = setTimeout(() => consultarLote(loteId), 0);
-    intervaloRef.current = setInterval(() => consultarLote(loteId), 3000);
-    return () => {
-      clearTimeout(primeraConsulta);
-      if (intervaloRef.current) clearInterval(intervaloRef.current);
+    let activo = true;
+    let temporizador: ReturnType<typeof setTimeout> | null = null;
+    const consultar = async () => {
+      try {
+        const docs = (await obtenerDocumentosDelLoteAction(loteId)) as unknown as DocumentoLote[];
+        if (!activo) return;
+        setDocumentos(docs);
+        if (docs.every((d) => !sigueEnProceso(d))) return;
+      } catch {
+        if (!activo) return;
+      }
+      temporizador = setTimeout(consultar, 3000);
     };
-  }, [loteId, consultarLote]);
+    // setTimeout(…, 0) en vez de llamar consultar directo — evita "setState
+    // síncrono dentro de un efecto".
+    temporizador = setTimeout(consultar, 0);
+    return () => {
+      activo = false;
+      if (temporizador) clearTimeout(temporizador);
+    };
+  }, [loteId]);
 
   async function alSubir(formData: FormData) {
     setSubiendo(true);
@@ -206,7 +219,7 @@ export function NuevoEgresoDocumentos({
                 dentro de un PDF. La lectura de imágenes todavía no está disponible. Puedes registrar el gasto
                 manualmente.
               </p>
-              <Button onClick={() => onRegistrarManual(doc.id)}>Registrar manualmente</Button>
+              <Button onClick={() => onRegistrarManual(doc.id, remitenteDe(doc))}>Registrar manualmente</Button>
             </div>
           )}
 
@@ -216,7 +229,7 @@ export function NuevoEgresoDocumentos({
                 El análisis automático de este tipo de documento no está habilitado para esta empresa. Puedes
                 registrarlo manualmente.
               </p>
-              <Button onClick={() => onRegistrarManual(doc.id)}>Registrar manualmente</Button>
+              <Button onClick={() => onRegistrarManual(doc.id, remitenteDe(doc))}>Registrar manualmente</Button>
             </div>
           )}
 
@@ -226,7 +239,7 @@ export function NuevoEgresoDocumentos({
                 Se alcanzó el límite mensual de análisis automático de documentos para esta empresa. Puedes
                 registrarlo manualmente.
               </p>
-              <Button onClick={() => onRegistrarManual(doc.id)}>Registrar manualmente</Button>
+              <Button onClick={() => onRegistrarManual(doc.id, remitenteDe(doc))}>Registrar manualmente</Button>
             </div>
           )}
 
@@ -235,7 +248,7 @@ export function NuevoEgresoDocumentos({
               <p className="text-sm text-amber-700">
                 No se pudo analizar automáticamente este documento. Puedes completar los datos a mano.
               </p>
-              <Button onClick={() => onRegistrarManual(doc.id)}>Registrar manualmente</Button>
+              <Button onClick={() => onRegistrarManual(doc.id, remitenteDe(doc))}>Registrar manualmente</Button>
             </div>
           )}
 
@@ -254,7 +267,7 @@ export function NuevoEgresoDocumentos({
               <p className="text-sm text-[var(--muted)]">Este documento fue descartado anteriormente.</p>
               <button
                 type="button"
-                onClick={() => onRegistrarManual(doc.id)}
+                onClick={() => onRegistrarManual(doc.id, remitenteDe(doc))}
                 className="text-sm font-medium text-[var(--brand)] hover:underline"
               >
                 Registrar manualmente de todas formas
@@ -331,7 +344,7 @@ export function NuevoEgresoDocumentos({
 
               <div className="flex items-center gap-3 border-t border-[var(--border)] pt-3">
                 <Button
-                  onClick={() => onUsarPropuesta({ documentoEgresoId: doc.id, propuesta: doc.propuestaReconciliada! })}
+                  onClick={() => onUsarPropuesta({ documentoEgresoId: doc.id, propuesta: doc.propuestaReconciliada!, remitente: remitenteDe(doc) })}
                 >
                   Continuar con esta propuesta
                 </Button>

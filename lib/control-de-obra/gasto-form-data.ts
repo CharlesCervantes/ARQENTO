@@ -29,7 +29,9 @@ export function datosGastoDesdeFormData(formData: FormData) {
     categoria: formData.get("categoria"),
     monto: formData.get("monto"),
     metodoPago: formData.get("metodoPago"),
-    quienPagoModo: formData.get("quienPagoModo") || "EMPRESA",
+    // Nunca se asume "Empresa": si el formulario no lo envía, el servidor
+    // rechaza el gasto pidiendo indicar quién pagó (ver DatosGastoSchema).
+    quienPagoModo: opcional(formData.get("quienPagoModo")),
     pagadorBeneficiarioId: opcional(formData.get("pagadorBeneficiarioId")),
     proveedorBeneficiarioId: opcional(formData.get("proveedorBeneficiarioId")),
     comentario: opcional(formData.get("comentario")),

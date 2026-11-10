@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useRef, useState } from "react";
 import { useActionState } from "react";
 import { createPortal } from "react-dom";
 import { Card } from "@/components/ui/card";
@@ -13,9 +13,10 @@ import {
   guardarDecoracionEgresoAction,
   confirmarComoEgresoManualDesdeDocumentoAction,
   cancelarEgresoAction,
-  type ContabilidadFormState,
+  type ConfirmarPropuestaFormState,
 } from "@/app/(app)/contabilidad/actions";
-import { NuevoEgresoDocumentos } from "./nuevo-egreso-documentos";
+import { NuevoEgresoDocumentos, type RemitenteDeDocumento } from "./nuevo-egreso-documentos";
+import { AvisoPosiblesDuplicados, ModalGastoDesdeDocumento, type SemanasRegistro } from "./gasto-desde-documento";
 import type { FilaEgreso } from "@/lib/server/contabilidad/egresos";
 import { CAMPOS_FORMULARIO_DECORACION, prefijoOriginal } from "@/lib/contabilidad/formulario-egreso";
 import type { FilaMedioFinanciero } from "@/lib/server/contabilidad/medios-financieros";
@@ -29,6 +30,7 @@ type PrellenadoDesdeDocumento = {
   fechaPago: string | null;
   referenciaPago: string | null;
   proyectoId: string | null;
+  remitente: RemitenteDeDocumento;
 };
 
 export function EgresosView({
@@ -36,6 +38,8 @@ export function EgresosView({
   mediosFinancieros,
   facturasRecibidas,
   proyectosDisponibles,
+  beneficiarios,
+  semanasRegistro,
   capturaInteligenteHabilitada,
 }: {
   egresos: FilaEgreso[];
@@ -46,12 +50,25 @@ export function EgresosView({
   // subir documentos y "Registrar egreso" va directo a la captura manual —
   // el servidor también rechaza cualquier operación del módulo.
   capturaInteligenteHabilitada: boolean;
+  // Beneficiarios activos (pagador "otra persona" y proveedor) — los mismos
+  // que ofrece el formulario de Gastos.
+  beneficiarios: { id: string; nombre: string; tipo: string }[];
+  // Semana actual (propuesta) y semanas válidas para registrar un gasto.
+  semanasRegistro: SemanasRegistro;
 }) {
   const [eligiendo, setEligiendo] = useState(false);
   const [subiendoDocumentos, setSubiendoDocumentos] = useState(false);
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editando, setEditando] = useState<FilaEgreso | null>(null);
   const [prellenado, setPrellenado] = useState<PrellenadoDesdeDocumento | null>(null);
+  // D2 (Fase 0 WhatsApp + ARQENTO IA): un documento se registra como GASTO
+  // (de obra, con quién pagó) o como EGRESO de la empresa (pagado por la
+  // Empresa) — siempre por elección explícita, nunca por suposición.
+  const [tipoRegistro, setTipoRegistro] = useState<null | "ELIGIENDO" | "GASTO">(null);
+  const cerrarDocumento = () => {
+    setTipoRegistro(null);
+    setPrellenado(null);
+  };
 
   return (
     <div className="space-y-4">
@@ -99,7 +116,7 @@ export function EgresosView({
         <Card className="enter p-6">
           <NuevoEgresoDocumentos
             onCancelar={() => setSubiendoDocumentos(false)}
-            onUsarPropuesta={({ documentoEgresoId, propuesta }) => {
+            onUsarPropuesta={({ documentoEgresoId, propuesta, remitente }) => {
               const campo = (clave: string) => propuesta.campos.find((c) => c.campo === clave)?.valor ?? null;
               const partes = propuesta.partes.map((p) => p.nombre).filter(Boolean).join(" / ");
               setPrellenado({
@@ -114,11 +131,12 @@ export function EgresosView({
                 // pudiera inventar; si no hubo coincidencia clara, queda
                 // null y el usuario elige a mano.
                 proyectoId: propuesta.proyectoSugerido?.proyectoId ?? null,
+                remitente,
               });
               setSubiendoDocumentos(false);
-              setModalNuevo(true);
+              setTipoRegistro("ELIGIENDO");
             }}
-            onRegistrarManual={(documentoEgresoId) => {
+            onRegistrarManual={(documentoEgresoId, remitente) => {
               setPrellenado({
                 documentoEgresoId,
                 fecha: null,
@@ -127,12 +145,66 @@ export function EgresosView({
                 fechaPago: null,
                 referenciaPago: null,
                 proyectoId: null,
+                remitente,
               });
               setSubiendoDocumentos(false);
-              setModalNuevo(true);
+              setTipoRegistro("ELIGIENDO");
             }}
           />
         </Card>
+      )}
+
+      {prellenado && tipoRegistro === "ELIGIENDO" && (
+        <Card className="enter p-6">
+          <h2 className="text-lg font-semibold text-[var(--foreground)]">¿Cómo registrar este documento?</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setTipoRegistro("GASTO")}
+              className="rounded-lg border border-[var(--border)] p-4 text-left hover:bg-black/[0.03]"
+            >
+              <p className="font-medium text-[var(--foreground)]">Gasto (obra o Empresa)</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Compras y gastos de una obra o de la Empresa (oficina). Pasa por la aprobación de Gastos; si lo pagó una
+                persona, se le repone al aprobarlo.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTipoRegistro(null);
+                setModalNuevo(true);
+              }}
+              className="rounded-lg border border-[var(--border)] p-4 text-left hover:bg-black/[0.03]"
+            >
+              <p className="font-medium text-[var(--foreground)]">Egreso contable de la empresa</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Registro directo en Contabilidad de un pago hecho por la Empresa, con su línea del Estado de
+                Resultados. No pasa por Gastos ni genera reposición. No lo uses para algo ya registrado como gasto.
+              </p>
+            </button>
+          </div>
+          <button type="button" onClick={cerrarDocumento} className="mt-4 text-sm text-[var(--muted)] hover:text-[var(--foreground)]">
+            Cancelar
+          </button>
+        </Card>
+      )}
+
+      {prellenado && tipoRegistro === "GASTO" && (
+        <ModalGastoDesdeDocumento
+          prellenado={{
+            documentoEgresoId: prellenado.documentoEgresoId,
+            fecha: prellenado.fecha,
+            monto: prellenado.monto,
+            descripcion: prellenado.concepto,
+            proyectoId: prellenado.proyectoId,
+            remitente: prellenado.remitente,
+          }}
+          proyectosDisponibles={proyectosDisponibles}
+          beneficiarios={beneficiarios}
+          semanasRegistro={semanasRegistro}
+          onClose={cerrarDocumento}
+        />
       )}
 
       {egresos.length === 0 ? (
@@ -252,7 +324,30 @@ function ModalEgreso({
       : egreso?.egresoId
         ? editarEgresoManualAction.bind(null, egreso.egresoId)
         : crearEgresoManualAction;
-  const [state, formAction, pending] = useActionState<ContabilidadFormState, FormData>(action, undefined);
+  // El último envío se conserva para reenviarlo tal cual con la aceptación
+  // explícita de posibles duplicados (solo al confirmar desde un documento).
+  const ultimoEnvio = useRef<FormData | null>(null);
+  const ejecutar = action as (estado: ConfirmarPropuestaFormState, formData: FormData) => Promise<ConfirmarPropuestaFormState>;
+  const [state, formAction, pending] = useActionState<ConfirmarPropuestaFormState, FormData>(async (previo, formData) => {
+    ultimoEnvio.current = formData;
+    return ejecutar(previo, formData);
+  }, undefined);
+  // Envío explícito, sin el reinicio automático que React aplica a
+  // <form action={…}>: si el servidor responde con un error de validación,
+  // lo capturado (incluidas casillas y opciones) se conserva para corregirlo.
+  function enviar(evento: React.FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => formAction(datos));
+  }
+
+  function confirmarConDuplicados() {
+    if (!ultimoEnvio.current) return;
+    const copia = new FormData();
+    for (const [k, v] of ultimoEnvio.current.entries()) copia.append(k, v);
+    copia.set("aceptaPosiblesDuplicados", "on");
+    startTransition(() => formAction(copia));
+  }
 
   // Valores actuales del registro — se precargan siempre, para que guardar
   // un campo nunca borre los demás. En "Datos fiscales del gasto" además se
@@ -305,7 +400,7 @@ function ModalEgreso({
           </p>
         )}
 
-        <form action={formAction} className="mt-4 space-y-3">
+        <form onSubmit={enviar} className="mt-4 space-y-3">
           {esDecoracionDeGasto &&
             CAMPOS_FORMULARIO_DECORACION.map((campo) => (
               <input key={campo} type="hidden" name={prefijoOriginal(campo)} value={actuales[campo]} />
@@ -439,6 +534,24 @@ function ModalEgreso({
             className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)]"
           />
 
+          {/* D2: un egreso de empresa es un pago de la Empresa — si lo pagó
+              una persona, el documento se registra como gasto de obra. */}
+          {esDesdeDocumento && (
+            <label className="flex items-start gap-2 rounded-lg bg-black/[0.03] px-3 py-2 text-sm text-[var(--foreground)]">
+              <input type="checkbox" name="pagadoPorEmpresa" required className="mt-0.5" />
+              <span>
+                Confirmo que este egreso lo pagó la Empresa.
+                <span className="block text-xs text-[var(--muted)]">
+                  Si lo pagó una persona y hay que reponérselo, cancela y regístralo como gasto de obra.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {state?.posiblesDuplicados && state.posiblesDuplicados.length > 0 && (
+            <AvisoPosiblesDuplicados candidatos={state.posiblesDuplicados} pendiente={pending} onConfirmar={confirmarConDuplicados} />
+          )}
+
           <div className="flex items-center gap-3 pt-1">
             <Button type="submit" disabled={pending}>
               {pending ? "Guardando…" : "Guardar"}
@@ -462,7 +575,7 @@ function ModalEgreso({
                 Cancelar egreso
               </button>
             )}
-            {state?.error && <p className="text-sm text-red-700">{state.error}</p>}
+            {state?.error && !state.posiblesDuplicados?.length && <p className="text-sm text-red-700">{state.error}</p>}
           </div>
         </form>
       </Card>

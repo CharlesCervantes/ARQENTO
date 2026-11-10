@@ -5,6 +5,8 @@ import { listarMediosFinancieros } from "@/lib/server/contabilidad/medios-financ
 import { listarFacturas } from "@/lib/server/contabilidad/facturas";
 import { listarProyectos } from "@/lib/server/control-de-obra/proyectos";
 import { inteligenciaHabilitadaParaEmpresa } from "@/lib/server/inteligencia/capacidades";
+import { listarBeneficiariosParaGasto } from "@/lib/server/control-de-obra/gastos";
+import { listarSemanasParaRegistro } from "@/lib/server/semanas";
 import { parametroAPeriodo } from "@/lib/contabilidad/periodo";
 import { NavContabilidad } from "@/components/contabilidad/nav-contabilidad";
 import { NavegacionMes } from "@/components/contabilidad/navegacion-mes";
@@ -34,6 +36,10 @@ export default async function EgresosContabilidadPage(props: PageProps<"/contabi
     listarProyectos(usuario),
     inteligenciaHabilitadaParaEmpresa(usuario.empresa.id),
   ]);
+  // Solo hacen falta para registrar un documento como gasto de obra.
+  const [beneficiarios, semanasRegistro] = capturaInteligenteHabilitada
+    ? await Promise.all([listarBeneficiariosParaGasto(usuario), listarSemanasParaRegistro(usuario.empresa.id)])
+    : [[], { semanaActualId: "", semanas: [] }];
 
   return (
     <div className="space-y-6">
@@ -51,6 +57,8 @@ export default async function EgresosContabilidadPage(props: PageProps<"/contabi
         facturasRecibidas={facturas.filter((f) => f.direccion === "RECIBIDA")}
         proyectosDisponibles={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
         capturaInteligenteHabilitada={capturaInteligenteHabilitada}
+        beneficiarios={beneficiarios}
+        semanasRegistro={semanasRegistro}
       />
     </div>
   );
