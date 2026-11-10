@@ -29,9 +29,11 @@ import type {
 import type { ResumenConsumoInteligencia, DesgloseCapacidad, ConsumoDiario } from "@/lib/server/inteligencia/consumo";
 import { PasswordTemporalPanel } from "@/components/master/password-temporal-panel";
 import { TabArqentoIA } from "@/components/master/tab-arqento-ia";
+import { TabWhatsapp } from "@/components/master/tab-whatsapp";
+import type { WhatsappEmpresaMaster } from "@/lib/server/master/whatsapp";
 import { NOMBRE_ROL } from "@/lib/roles";
 
-const TABS = ["general", "modulos", "branding", "documentos", "usuarios", "arqento-ia"] as const;
+const TABS = ["general", "modulos", "branding", "documentos", "usuarios", "arqento-ia", "whatsapp"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   general: "General",
@@ -40,6 +42,7 @@ const TAB_LABEL: Record<Tab, string> = {
   documentos: "Documentos",
   usuarios: "Usuarios",
   "arqento-ia": "ARQENTO IA",
+  whatsapp: "WhatsApp",
 };
 
 function iniciales(nombre: string): string {
@@ -50,6 +53,7 @@ export function EmpresaDetalleView({
   empresa,
   planes,
   inteligencia,
+  whatsapp,
 }: {
   empresa: DetalleEmpresaMaster;
   planes: { id: string; nombre: string }[];
@@ -59,6 +63,7 @@ export function EmpresaDetalleView({
     rango: RangoInteligencia;
     tipoRango: TipoRangoInteligencia;
   };
+  whatsapp: WhatsappEmpresaMaster;
 }) {
   const [tab, setTab] = useState<Tab>("general");
 
@@ -102,6 +107,7 @@ export function EmpresaDetalleView({
       {tab === "branding" && <TabBranding empresa={empresa} />}
       {tab === "documentos" && <TabDocumentos empresa={empresa} />}
       {tab === "usuarios" && <TabUsuarios empresa={empresa} />}
+      {tab === "whatsapp" && <TabWhatsapp empresaId={empresa.id} whatsapp={whatsapp} />}
       {tab === "arqento-ia" && (
         <TabArqentoIA
           empresaId={empresa.id}

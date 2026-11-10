@@ -41,6 +41,14 @@ try {
   process.env.R2_ENDPOINT = "http://r2-simulado.invalid";
   process.env.R2_ACCESS_KEY_ID = "simulado";
   process.env.R2_SECRET_ACCESS_KEY = "simulado";
+  // WhatsApp SIMULADO: secretos ficticios para firmar webhooks de prueba y
+  // calcular HMAC; SIN token de acceso, así que ningún mensaje sale a Meta
+  // (lib/server/whatsapp/cliente.ts los registra en memoria).
+  process.env.WHATSAPP_APP_SECRET = "secreto-webhook-de-prueba";
+  process.env.WHATSAPP_VERIFY_TOKEN = "token-verificacion-de-prueba";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "phone-number-id-simulado";
+  process.env.WHATSAPP_CODIGO_PEPPER = "pimienta-de-prueba-0123456789";
+  process.env.WHATSAPP_NUMERO_OFICIAL = "+15550001111";
   const cliente = new pg.Client({ connectionString: url, connectionTimeoutMillis: 5000 });
   await cliente.connect();
   try {

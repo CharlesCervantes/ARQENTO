@@ -13,7 +13,9 @@ function aJson(valor: Record<string, unknown> | null | undefined) {
 
 type ParametrosAuditoria = {
   empresaId?: string | null;
-  usuarioId: string;
+  // null = acción del sistema (p. ej. depuración programada o revocación
+  // automática sin un usuario que la origine) — la columna ya lo admite.
+  usuarioId: string | null;
   entidad: string;
   entidadId: string;
   accion: AccionAuditoria;

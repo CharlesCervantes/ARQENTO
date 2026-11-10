@@ -468,3 +468,29 @@ export function puedeEliminarCatalogo(usuario: UsuarioSesion): boolean {
 export function puedeLiquidarPagos(usuario: UsuarioSesion): boolean {
   return puedeCerrarSemana(usuario);
 }
+
+// ---------------------------------------------------------------------------
+// WhatsApp + ARQENTO IA — Fase 1 (octubre 2026). La autorización real de un
+// usuario (Usuario.whatsappAutorizado) y el interruptor de su Empresa
+// (Empresa.whatsappHabilitado) se leen SIEMPRE frescos de la base en los
+// servicios — estas funciones solo deciden por rol y alcance.
+// ---------------------------------------------------------------------------
+
+/** Habilitar/deshabilitar WhatsApp para una Empresa — solo Master. */
+export function puedeConfigurarWhatsappEmpresa(usuario: UsuarioSesion): boolean {
+  return esMaster(usuario);
+}
+
+/**
+ * Autorizar o retirar el acceso a WhatsApp de usuarios de SU PROPIA Empresa
+ * (D1) — Administrador y Director. Nunca Master (rol de plataforma; solo
+ * configura la Empresa) ni Supervisor.
+ */
+export function puedeAdministrarWhatsappEmpresa(usuario: UsuarioSesion): boolean {
+  return (usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR") && Boolean(usuario.empresa);
+}
+
+/** Roles que pueden tener un WhatsApp vinculado (si están autorizados). */
+export function rolPuedeVincularWhatsapp(rol: UsuarioSesion["rol"]): boolean {
+  return rol === "DIRECTOR" || rol === "ADMINISTRADOR" || rol === "SUPERVISOR";
+}

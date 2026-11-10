@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import * as z from "zod";
 import { requireSession } from "@/lib/server/auth/dal";
+import { cambiarWhatsappEmpresa, reprocesarMensajesPendientesMaster, revocarVinculoWhatsappMaster } from "@/lib/server/master/whatsapp";
 import { subirArchivo } from "@/lib/server/archivos";
 import {
   crearEmpresa,
@@ -271,4 +272,44 @@ export async function regenerarPasswordUsuarioEmpresaAction(
   } catch (error) {
     return { error: mensajeError(error) };
   }
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp (Fase 1 WhatsApp + ARQENTO IA) — solo Master; los servicios
+// validan el permiso y el alcance.
+// ---------------------------------------------------------------------------
+
+export async function cambiarWhatsappEmpresaAction(empresaId: string, habilitado: boolean): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await cambiarWhatsappEmpresa(usuario, empresaId, habilitado);
+  } catch {
+    return { error: "No se pudo cambiar la configuración de WhatsApp." };
+  }
+  revalidatePath(`/master/empresas/${empresaId}`);
+  return {};
+}
+
+export async function reprocesarMensajesWhatsappAction(
+  empresaId: string
+): Promise<{ error?: string; resumen?: { revisados: number; procesados: number; reintentables: number; definitivos: number } }> {
+  const usuario = await requireSession();
+  try {
+    const { revisados, procesados, reintentables, definitivos } = await reprocesarMensajesPendientesMaster(usuario);
+    revalidatePath(`/master/empresas/${empresaId}`);
+    return { resumen: { revisados, procesados, reintentables, definitivos } };
+  } catch {
+    return { error: "No se pudieron reprocesar los mensajes." };
+  }
+}
+
+export async function revocarVinculoWhatsappMasterAction(empresaId: string, vinculoId: string): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await revocarVinculoWhatsappMaster(usuario, empresaId, vinculoId);
+  } catch {
+    return { error: "No se pudo revocar el vínculo." };
+  }
+  revalidatePath(`/master/empresas/${empresaId}`);
+  return {};
 }

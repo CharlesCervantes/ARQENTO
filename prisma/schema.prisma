@@ -101,31 +101,32 @@ model Empresa {
   ultimoFolioReposicion  Int @default(0)
   ultimoFolioOrdenCompra Int @default(0)
 
-  dominiosCorreo         DominioCorreo[]
-  usuarios               Usuario[]
-  registros              RegistroAuditoria[]
-  proyectos              Proyecto[]
-  beneficiarios          Beneficiario[]
-  semanas                Semana[]
-  avancesConcepto        AvanceConcepto[]
-  cierresSemana          CierreSemanaProyecto[]
-  cortesSemana           CorteSemanal[]
-  recibosPago            ReciboPago[]
-  estimacionesCliente    EstimacionCliente[]
-  movimientosFinancieros MovimientoFinancieroCliente[]
-  gastosObra             GastoObra[]
-  reposicionesGastos     ReposicionGastos[]
-  ordenesCompra          OrdenCompra[]
-  requisiciones          Requisicion[]
-  gastosRecurrentes      GastoRecurrente[]
-  mediosFinancieros      MedioFinanciero[]
-  egresos                Egreso[]
-  ingresos               Ingreso[]
-  facturas               Factura[]
-  trabajosProcesamiento  TrabajoProcesamientoDocumento[]
-  consumoInteligencia    RegistroConsumoInteligencia[]
-  documentosEgreso       DocumentoEgreso[]
+  dominiosCorreo          DominioCorreo[]
+  usuarios                Usuario[]
+  registros               RegistroAuditoria[]
+  proyectos               Proyecto[]
+  beneficiarios           Beneficiario[]
+  semanas                 Semana[]
+  avancesConcepto         AvanceConcepto[]
+  cierresSemana           CierreSemanaProyecto[]
+  cortesSemana            CorteSemanal[]
+  recibosPago             ReciboPago[]
+  estimacionesCliente     EstimacionCliente[]
+  movimientosFinancieros  MovimientoFinancieroCliente[]
+  gastosObra              GastoObra[]
+  reposicionesGastos      ReposicionGastos[]
+  ordenesCompra           OrdenCompra[]
+  requisiciones           Requisicion[]
+  gastosRecurrentes       GastoRecurrente[]
+  mediosFinancieros       MedioFinanciero[]
+  egresos                 Egreso[]
+  ingresos                Ingreso[]
+  facturas                Factura[]
+  trabajosProcesamiento   TrabajoProcesamientoDocumento[]
+  consumoInteligencia     RegistroConsumoInteligencia[]
+  documentosEgreso        DocumentoEgreso[]
   capacidadesInteligencia EmpresaCapacidadInteligencia[]
+  vinculosWhatsapp        VinculoWhatsapp[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -133,6 +134,14 @@ model Empresa {
   // Empresa nueva nunca la recibe automáticamente, igual criterio que
   // privadoHabilitado.
   inteligenciaHabilitada Boolean @default(false)
+
+  // WhatsApp + ARQENTO IA, Fase 1 (octubre 2026) — canal WhatsApp habilitado
+  // para la Empresa. Solo Master lo cambia. INDEPENDIENTE de
+  // inteligenciaHabilitada: habilitar uno nunca habilita el otro, y
+  // habilitar WhatsApp no habilita recepción ni procesamiento de documentos.
+  // Seguro por defecto: una Empresa nueva nunca lo recibe automáticamente.
+  // Apagarlo conserva los vínculos de sus usuarios, pero impide usarlos.
+  whatsappHabilitado Boolean @default(false)
 
   // Límite OPERATIVO/DE SEGURIDAD (número de operaciones de IA por mes),
   // NUNCA la unidad comercial de ARQENTO IA — una operación de texto, una
@@ -306,6 +315,8 @@ model Usuario {
   trabajosProcesamientoCreados TrabajoProcesamientoDocumento[]
   documentosEgresoSubidos      DocumentoEgreso[]               @relation("DocumentoEgresoSubido")
   documentosEgresoConfirmados  DocumentoEgreso[]               @relation("DocumentoEgresoConfirmado")
+  vinculosWhatsapp             VinculoWhatsapp[]               @relation("VinculoWhatsappUsuario")
+  vinculosWhatsappRevocados    VinculoWhatsapp[]               @relation("VinculoWhatsappRevocadoPor")
 
   // Vínculo opcional con la identidad de pago (Beneficiario) de esta misma
   // persona — ver Beneficiario.usuarioId para la relación completa. Un
@@ -330,6 +341,11 @@ model Usuario {
   // el cambio de contraseña. Default `false` — ningún usuario existente
   // queda bloqueado al migrar.
   debeCambiarPassword Boolean @default(false)
+
+  // WhatsApp + ARQENTO IA, Fase 1 — el usuario está autorizado por un
+  // Administrador/Director de SU Empresa para vincular su WhatsApp. Default
+  // false: nadie queda autorizado al migrar. Retirarlo revoca su vínculo.
+  whatsappAutorizado Boolean @default(false)
 
   @@index([empresaId])
   @@map("usuarios")
@@ -2738,4 +2754,121 @@ model DocumentoEgreso {
   @@index([egresoId])
   @@index([trabajoProcesamientoId])
   @@map("documentos_egreso")
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp + ARQENTO IA — Fase 1: vinculación de usuarios (octubre 2026).
+// ---------------------------------------------------------------------------
+
+enum EstadoVinculoWhatsapp {
+  PENDIENTE
+  VERIFICADO
+  REVOCADO
+}
+
+enum EstadoProcesoMensajeWhatsapp {
+  PENDIENTE
+  PROCESADO
+  ERROR
+}
+
+// Vínculo entre un Usuario de ARQENTO (de UNA Empresa) y un número de
+// WhatsApp. Nunca se borra: revocar lo deja en REVOCADO (con quién, cuándo y
+// por qué) y volver a vincular crea una fila nueva — así queda el historial.
+// Índices únicos PARCIALES (solo en la migración, WHERE estado <> 'REVOCADO'):
+// a lo más un vínculo vigente por usuario, y un mismo número a lo más en un
+// usuario vigente por Empresa (sí puede repetirse en otras Empresas).
+model VinculoWhatsapp {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+  usuario   Usuario @relation("VinculoWhatsappUsuario", fields: [usuarioId], references: [id])
+  usuarioId String
+
+  // E.164 normalizado (ver lib/whatsapp/telefono.ts).
+  telefonoE164 String
+  // Identificador del número que reporta Meta (wa_id) — se guarda al
+  // verificar, tal como llega.
+  waId         String?
+  estado       EstadoVinculoWhatsapp @default(PENDIENTE)
+  verificadoEn DateTime?
+
+  revocadoEn       DateTime?
+  revocadoPor      Usuario?  @relation("VinculoWhatsappRevocadoPor", fields: [revocadoPorId], references: [id])
+  revocadoPorId    String?
+  motivoRevocacion String?
+
+  codigos   CodigoVinculacionWhatsapp[]
+  sesiones  SesionWhatsapp[]
+  createdAt DateTime                    @default(now())
+  updatedAt DateTime                    @updatedAt
+
+  @@index([empresaId])
+  @@index([usuarioId])
+  @@index([telefonoE164])
+  @@map("vinculos_whatsapp")
+}
+
+// Código temporal de un solo uso (ARQ-XXXXXX). Solo se guarda su HMAC —
+// nunca el código en claro. Generar uno nuevo invalida los anteriores.
+model CodigoVinculacionWhatsapp {
+  id               String          @id @default(cuid())
+  vinculo          VinculoWhatsapp @relation(fields: [vinculoId], references: [id])
+  vinculoId        String
+  codigoHash       String          @unique
+  expiraEn         DateTime
+  usadoEn          DateTime?
+  invalidadoEn     DateTime?
+  intentosFallidos Int             @default(0)
+  createdAt        DateTime        @default(now())
+
+  @@index([vinculoId])
+  @@map("codigos_vinculacion_whatsapp")
+}
+
+// Registro OPERATIVO mínimo de cada mensaje recibido (diagnóstico,
+// idempotencia y procesamiento recuperable) — retención de 90 días (ver
+// lib/server/whatsapp/retencion.ts). Del remitente solo se guarda un HMAC
+// (remitenteHash), nunca el número; el texto solo mientras el mensaje está
+// pendiente de procesar (textoPendiente, truncado) y se borra al procesarlo.
+model MensajeWhatsapp {
+  id                 String                       @id @default(cuid())
+  // Identificador del mensaje de Meta — idempotencia (un reintento del
+  // webhook nunca se procesa dos veces).
+  wamid              String                       @unique
+  remitenteHash      String
+  // wa_id del remitente SOLO mientras el mensaje está pendiente (para poder
+  // reprocesarlo y responderle) — se borra al procesarlo, igual que el texto.
+  remitentePendiente String?
+  tipo               String
+  textoPendiente     String?
+  estadoProceso      EstadoProcesoMensajeWhatsapp @default(PENDIENTE)
+  resultado          String?
+  intentos           Int                          @default(0)
+  error              String?
+  respondido         Boolean                      @default(false)
+  vinculoId          String?
+  empresaId          String?
+  usuarioId          String?
+  recibidoEn         DateTime
+  procesadoEn        DateTime?
+  createdAt          DateTime                     @default(now())
+
+  @@index([remitenteHash, createdAt])
+  @@index([estadoProceso, createdAt])
+  @@map("mensajes_whatsapp")
+}
+
+// Empresa seleccionada por un número vinculado a varias Empresas — caduca a
+// los 30 minutos y se revalida en cada mensaje (ver seleccion-empresa.ts).
+model SesionWhatsapp {
+  id            String          @id @default(cuid())
+  remitenteHash String          @unique
+  vinculo       VinculoWhatsapp @relation(fields: [vinculoId], references: [id])
+  vinculoId     String
+  expiraEn      DateTime
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("sesiones_whatsapp")
 }

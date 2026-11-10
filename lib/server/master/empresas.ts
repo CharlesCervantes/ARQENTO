@@ -4,6 +4,7 @@ import { db } from "@/lib/server/db";
 import { esMaster } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { registrarAuditoria, registrarAuditoriaTx } from "@/lib/server/auditoria";
+import { MOTIVOS_REVOCACION, revocarVinculosDeUsuarioTx } from "@/lib/server/whatsapp/vinculos";
 import { hashPassword } from "@/lib/server/password";
 import {
   crearUsuario,
@@ -564,16 +565,23 @@ export async function cambiarEstatusUsuarioEmpresa(
   const objetivo = await db.usuario.findFirst({ where: { id: usuarioObjetivoId, empresaId }, select: { activo: true } });
   if (!objetivo) throw new UsuarioNoEncontradoError();
 
-  await db.usuario.update({ where: { id: usuarioObjetivoId }, data: { activo } });
-
-  await registrarAuditoria({
-    empresaId,
-    usuarioId: usuario.id,
-    entidad: "Usuario",
-    entidadId: usuarioObjetivoId,
-    accion: activo ? "ACTIVAR" : "DESACTIVAR",
-    valorAnterior: { activo: objetivo.activo },
-    valorNuevo: { activo },
+  // D2 (WhatsApp + ARQENTO IA, Fase 1): desactivar al usuario revoca en la
+  // MISMA transacción sus vínculos de WhatsApp (queda el historial); si se
+  // reactiva, tendrá que vincularse de nuevo.
+  await db.$transaction(async (tx) => {
+    await tx.usuario.update({ where: { id: usuarioObjetivoId }, data: { activo } });
+    if (!activo) {
+      await revocarVinculosDeUsuarioTx(tx, { usuarioId: usuarioObjetivoId, revocadoPorId: usuario.id, motivo: MOTIVOS_REVOCACION.DESACTIVACION });
+    }
+    await registrarAuditoriaTx(tx, {
+      empresaId,
+      usuarioId: usuario.id,
+      entidad: "Usuario",
+      entidadId: usuarioObjetivoId,
+      accion: activo ? "ACTIVAR" : "DESACTIVAR",
+      valorAnterior: { activo: objetivo.activo },
+      valorNuevo: { activo },
+    });
   });
 }
 

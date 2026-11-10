@@ -11,6 +11,7 @@ import {
   resolverRangoInteligencia,
   type TipoRangoInteligencia,
 } from "@/lib/server/master/inteligencia";
+import { obtenerWhatsappEmpresaMaster } from "@/lib/server/master/whatsapp";
 import { EmpresaDetalleView } from "@/components/master/empresa-detalle-view";
 
 export default async function MasterEmpresaDetallePage({
@@ -35,10 +36,11 @@ export default async function MasterEmpresaDetallePage({
   const tipoRango = (sp.periodo as TipoRangoInteligencia | undefined) ?? "ESTE_MES";
   const rango = resolverRangoInteligencia(tipoRango, { desde: sp.desde, hasta: sp.hasta });
 
-  const [planes, configuracionInteligencia, dashboardInteligencia] = await Promise.all([
+  const [planes, configuracionInteligencia, dashboardInteligencia, whatsapp] = await Promise.all([
     listarPlanesCatalogo(usuario),
     obtenerConfiguracionInteligenciaEmpresa(usuario, id),
     obtenerDashboardInteligenciaEmpresa(usuario, id, rango),
+    obtenerWhatsappEmpresaMaster(usuario, id),
   ]);
 
   return (
@@ -46,6 +48,7 @@ export default async function MasterEmpresaDetallePage({
       empresa={empresa}
       planes={planes}
       inteligencia={{ configuracion: configuracionInteligencia, dashboard: dashboardInteligencia, rango, tipoRango }}
+      whatsapp={whatsapp}
     />
   );
 }

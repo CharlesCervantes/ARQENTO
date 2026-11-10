@@ -13,6 +13,14 @@ import { registerHooks } from "node:module";
 
 process.env.DATABASE_URL = "postgresql://pruebas-unitarias-sin-bd@127.0.0.1:1/sin_base_de_datos";
 
+// WhatsApp: nunca credenciales reales en pruebas — se retiran y se ponen
+// secretos ficticios; sin token de acceso no sale ningún mensaje a Meta.
+for (const clave of Object.keys(process.env)) if (clave.startsWith("WHATSAPP_")) delete process.env[clave];
+process.env.WHATSAPP_APP_SECRET = "secreto-webhook-de-prueba";
+process.env.WHATSAPP_VERIFY_TOKEN = "token-verificacion-de-prueba";
+process.env.WHATSAPP_PHONE_NUMBER_ID = "phone-number-id-simulado";
+process.env.WHATSAPP_CODIGO_PEPPER = "pimienta-de-prueba-0123456789";
+
 const stubLucide = new URL("./lucide-stub.cjs", import.meta.url).href;
 
 registerHooks({

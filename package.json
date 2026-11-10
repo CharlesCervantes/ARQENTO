@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --conditions=react-server --import tsx --import ./tests/setup/unitarias.mjs --test \"tests/{dashboard,contabilidad,seguridad,cobro,reposiciones}/**/*.test.ts\"",
+    "test": "node --conditions=react-server --import tsx --import ./tests/setup/unitarias.mjs --test \"tests/{dashboard,contabilidad,seguridad,cobro,reposiciones,whatsapp}/**/*.test.ts\"",
     "test:integracion": "node --conditions=react-server --import tsx --import ./tests/setup/integracion.mjs --test --test-concurrency=1 \"tests/integracion/**/*.test.ts\"",
     "test:integracion:preparar": "node --import tsx scripts/pruebas/preparar-base-pruebas.ts",
     "test:integracion:migrar": "node --import tsx scripts/pruebas/migrar-base-pruebas.ts",

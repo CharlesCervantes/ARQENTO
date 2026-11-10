@@ -155,7 +155,7 @@ export function validarBaseDePruebas(testUrl: string | undefined, otrasUrls: str
 // Variables que nunca deben llegar al proceso de pruebas: proveedores de IA,
 // almacenamiento (R2/S3) y cualquier conexión o secreto de producción. Se
 // devuelven solo los NOMBRES eliminados.
-const VARIABLES_PROHIBIDAS = [/^OPENAI_/i, /^ANTHROPIC_/i, /^R2_/i, /^AWS_/i, /_PRODUCTION$/i, /^CRON_SECRET$/i];
+const VARIABLES_PROHIBIDAS = [/^OPENAI_/i, /^ANTHROPIC_/i, /^R2_/i, /^AWS_/i, /^WHATSAPP_/i, /_PRODUCTION$/i, /^CRON_SECRET$/i];
 
 export function sanitizarEntornoDePruebas(env: Entorno, testUrl: string): string[] {
   const eliminadas: string[] = [];

@@ -141,7 +141,7 @@ describe("Conexiones conocidas (desarrollo, producción, credenciales temporales
 });
 
 describe("Saneamiento del proceso de pruebas", () => {
-  test("Retira OpenAI, R2/AWS, *_PRODUCTION y CRON_SECRET; apunta toda conexión a la base de pruebas", () => {
+  test("Retira OpenAI, R2/AWS, WhatsApp, *_PRODUCTION y CRON_SECRET; apunta toda conexión a la base de pruebas", () => {
     const env: Entorno = {
       OPENAI_API_KEY: "sk-ficticia",
       R2_SECRET_ACCESS_KEY: "r2-ficticia",
@@ -149,12 +149,17 @@ describe("Saneamiento del proceso de pruebas", () => {
       AWS_ACCESS_KEY_ID: "aws",
       DATABASE_URL_PRODUCTION: NEON_PROD,
       CRON_SECRET: "cron",
+      WHATSAPP_ACCESS_TOKEN: "token-ficticio",
+      WHATSAPP_APP_SECRET: "secreto-ficticio",
       DATABASE_URL: NEON_DEV,
       DIRECT_URL: NEON_DEV,
       PATH: "/usr/bin",
     };
     const eliminadas = sanitizarEntornoDePruebas(env, LOCAL);
-    assert.deepEqual(eliminadas.sort(), ["AWS_ACCESS_KEY_ID", "CRON_SECRET", "DATABASE_URL_PRODUCTION", "OPENAI_API_KEY", "R2_BUCKET_NAME", "R2_SECRET_ACCESS_KEY"].sort());
+    assert.deepEqual(
+      eliminadas.sort(),
+      ["AWS_ACCESS_KEY_ID", "CRON_SECRET", "DATABASE_URL_PRODUCTION", "OPENAI_API_KEY", "R2_BUCKET_NAME", "R2_SECRET_ACCESS_KEY", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_APP_SECRET"].sort()
+    );
     assert.equal(env.DATABASE_URL, LOCAL);
     assert.equal(env.DIRECT_URL, LOCAL);
     assert.match(env.DOTENV_CONFIG_PATH!, /inexistente/);
@@ -183,7 +188,7 @@ describe("Los puntos de entrada abortan ANTES de conectarse", () => {
   // Procesos reales con URLs que la validación rechaza: nunca llegan a abrir
   // una conexión. Se retira cualquier variable sensible del entorno heredado.
   const entornoBase = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !/^(OPENAI_|R2_|AWS_|TEST_DATABASE_URL$)|_PRODUCTION$/.test(k))
+    Object.entries(process.env).filter(([k]) => !/^(OPENAI_|R2_|AWS_|WHATSAPP_|TEST_DATABASE_URL$)|_PRODUCTION$/.test(k))
   );
   const ejecutar = (args: string[], testUrl?: string) =>
     spawnSync(process.execPath, args, {

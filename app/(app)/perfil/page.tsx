@@ -1,10 +1,15 @@
 import { requireSession } from "@/lib/server/auth/dal";
-import { puedeConfigurarVistaPrivada } from "@/lib/server/permisos";
+import { puedeAdministrarWhatsappEmpresa, puedeConfigurarVistaPrivada } from "@/lib/server/permisos";
+import { obtenerMiWhatsapp } from "@/lib/server/whatsapp/vinculos";
+import { WhatsappVinculacion } from "@/components/perfil/whatsapp-vinculacion";
 import { NOMBRE_ROL } from "@/lib/roles";
 import { PerfilView } from "@/components/perfil/perfil-view";
 
 export default async function PerfilPage() {
   const usuario = await requireSession();
+  // WhatsApp (Fase 1): solo para roles que pueden vincular, con datos leídos
+  // del servidor (nunca de la sesión).
+  const whatsapp = await obtenerMiWhatsapp(usuario);
 
   return (
     <div className="max-w-xl space-y-6">
@@ -22,6 +27,8 @@ export default async function PerfilPage() {
         mostrarPrivacidad={puedeConfigurarVistaPrivada(usuario)}
         vistaPrivadaActivaInicial={usuario.vistaPrivadaActiva}
       />
+
+      {whatsapp && <WhatsappVinculacion estado={whatsapp} puedeAdministrar={puedeAdministrarWhatsappEmpresa(usuario)} />}
     </div>
   );
 }
