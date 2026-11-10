@@ -15,6 +15,8 @@
     "test:integracion:preparar": "node --import tsx scripts/pruebas/preparar-base-pruebas.ts",
     "test:integracion:migrar": "node --import tsx scripts/pruebas/migrar-base-pruebas.ts",
     "test:integracion:limpiar": "node --import tsx scripts/pruebas/limpiar-base-pruebas.ts",
+    "preview:verificar": "node --import tsx scripts/preview/preparar-base-preview.ts",
+    "preview:preparar": "node --import tsx scripts/preview/preparar-base-preview.ts --preparar",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
