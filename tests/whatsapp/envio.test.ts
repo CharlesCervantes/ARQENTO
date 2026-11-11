@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { EnvioWhatsappError, enviarMensajeWhatsapp, salidaSimulada } from "@/lib/server/whatsapp/cliente";
+import { destinatarioDeEnvio } from "@/lib/whatsapp/telefono";
 import { recibirWebhookWhatsapp } from "@/lib/server/whatsapp/mensajes";
 import { iniciarVinculacionWhatsapp } from "@/lib/server/whatsapp/vinculos";
 import { obtenerEstadoMensajesMaster } from "@/lib/server/master/whatsapp";
@@ -132,9 +133,36 @@ describe("Cliente de Meta — diagnóstico de rechazos", () => {
     assert.ok(!llamadas[0].url.includes(TOKEN), "el token nunca va en la URL");
     assert.equal((llamadas[0].init.headers as Record<string, string>).Authorization, `Bearer ${TOKEN}`);
     assert.ok(llamadas[0].init.signal instanceof AbortSignal);
-    // Sin evidencia no se cambia el formato del destinatario: tal como llegó.
-    assert.equal(JSON.parse(String(llamadas[0].init.body)).to, WA);
+    // México: el remitente llega como 521… y la respuesta se dirige a 52….
+    assert.equal(JSON.parse(String(llamadas[0].init.body)).to, "523312345678");
     assert.equal(salidaSimulada.length, 0);
+  });
+});
+
+describe("Destinatario al enviar — solo México 521 → 52", () => {
+  const destinoDe = async (waId: string, tipo: "texto" | "lista" = "texto") => {
+    llamadas = [];
+    simularMeta(() => new Response("{}", { status: 200 }));
+    await enviarMensajeWhatsapp(tipo === "texto" ? { tipo, waId, texto: TEXTO } : { tipo, waId, texto: TEXTO, opciones: [{ id: "v1", titulo: "Constructora A" }] });
+    return JSON.parse(String(llamadas[0].init.body)).to as string;
+  };
+
+  test("521 + 10 dígitos se envía como 52 + 10 dígitos (texto y lista)", async () => {
+    assert.equal(await destinoDe("5213312345678"), "523312345678");
+    assert.equal(await destinoDe("5215598765432", "lista"), "525598765432");
+    assert.equal(destinatarioDeEnvio("5218112345678"), "528112345678");
+  });
+
+  test("México ya en formato 52 no cambia", async () => {
+    assert.equal(await destinoDe("523312345678"), "523312345678");
+    assert.equal(destinatarioDeEnvio("525512345678"), "525512345678");
+  });
+
+  test("Números de otros países se envían tal como llegaron", async () => {
+    for (const waId of ["14155550100", "34612345678", "5491112345678", "5511987654321", "573001234567", "447911123456", "5215551234", "52133123456789", "5210312345678", "5211312345678"]) {
+      assert.equal(await destinoDe(waId), waId, waId);
+      assert.equal(destinatarioDeEnvio(waId), waId, waId);
+    }
   });
 });
 
@@ -171,6 +199,10 @@ describe("Webhook — un envío fallido deja diagnóstico y no altera la vincula
 
     assert.equal((await recibir(entrega)).status, 200, "un envío fallido no pide reentrega a Meta");
     assert.equal(bd.t.vinculos[0].estado, "VERIFICADO", "la vinculación no depende del envío");
+    // El vínculo conserva el identificador ORIGINAL de Meta; solo el envío usa 52.
+    assert.equal(bd.t.vinculos[0].waId, WA);
+    assert.equal(bd.t.vinculos[0].telefonoE164, "+523312345678");
+    assert.equal(JSON.parse(String(llamadas[0].init.body)).to, "523312345678");
     assert.equal(ultimo().estadoProceso, "PROCESADO");
     assert.equal(ultimo().resultado, "VINCULADO");
     assert.equal(ultimo().respondido, false);

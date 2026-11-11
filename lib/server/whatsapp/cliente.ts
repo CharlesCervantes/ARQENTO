@@ -1,4 +1,5 @@
 import "server-only";
+import { destinatarioDeEnvio } from "@/lib/whatsapp/telefono";
 import { configuracionWhatsapp } from "./config";
 
 // Envío de mensajes por la Graph API de Meta (Fase 1 WhatsApp + ARQENTO IA).
@@ -52,12 +53,14 @@ export async function enviarMensajeWhatsapp(mensaje: MensajeSaliente): Promise<v
     salidaSimulada.push(mensaje);
     return;
   }
+  // Solo cambia el formato del destinatario al enviar (México 521 → 52).
+  const destinatario = destinatarioDeEnvio(mensaje.waId);
   const cuerpo =
     mensaje.tipo === "texto"
-      ? { messaging_product: "whatsapp", to: mensaje.waId, type: "text", text: { body: mensaje.texto } }
+      ? { messaging_product: "whatsapp", to: destinatario, type: "text", text: { body: mensaje.texto } }
       : {
           messaging_product: "whatsapp",
-          to: mensaje.waId,
+          to: destinatario,
           type: "interactive",
           interactive: {
             type: "list",

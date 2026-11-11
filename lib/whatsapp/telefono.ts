@@ -42,6 +42,17 @@ export function normalizarWaId(waId: string): ResultadoTelefono {
   return normalizarTelefono(`+${waId}`);
 }
 
+// Destinatario para ENVIAR por Meta Cloud API (noviembre 2026). Meta entrega
+// el remitente de un móvil mexicano con el prefijo antiguo (521 + 10
+// dígitos), pero rechaza el envío a ese mismo valor cuando el destinatario
+// está registrado como 52 + 10 dígitos (error 131030, confirmado en Preview).
+// Solo se retira ese 1, y solo en ese caso exacto; cualquier otro número
+// (México sin el 1, otros países) se envía tal como llegó. No se usa para
+// identificar, vincular ni guardar: eso sigue con el valor original.
+export function destinatarioDeEnvio(waId: string): string {
+  return /^521[2-9]\d{9}$/.test(waId) ? `52${waId.slice(3)}` : waId;
+}
+
 // Teléfono enmascarado para mostrarlo a terceros (Master, administradores):
 // solo el código de país (o sus primeros dígitos) y los últimos 4.
 export function enmascararTelefono(e164: string): string {
