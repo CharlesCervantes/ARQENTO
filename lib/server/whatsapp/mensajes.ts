@@ -7,7 +7,7 @@ import { RESPUESTAS_WHATSAPP, comandoDeTexto } from "@/lib/whatsapp/respuestas";
 import { extraerMensajesEntrantes, type MensajeEntrante } from "@/lib/whatsapp/payload";
 import { WhatsappNoConfiguradoError, configuracionWhatsapp, hashRemitente, secretoWhatsapp } from "./config";
 import { verificarFirmaMeta } from "./firma";
-import { enviarMensajeWhatsapp, type MensajeSaliente } from "./cliente";
+import { EnvioWhatsappError, enviarMensajeWhatsapp, type MensajeSaliente } from "./cliente";
 import { verificarCodigoTx, vinculosUtilizablesTx } from "./vinculos";
 import { seleccionarEmpresaTx } from "./seleccion-empresa";
 
@@ -187,8 +187,13 @@ export async function procesarMensajeWhatsapp(id: string): Promise<ResultadoProc
       await enviarMensajeWhatsapp(respuesta);
       await db.mensajeWhatsapp.update({ where: { id }, data: { respondido: true } });
     } catch (error) {
-      // Informativa: nunca se reenvía (evita duplicados). Queda el diagnóstico.
-      await db.mensajeWhatsapp.update({ where: { id }, data: { error: `envio:${diagnosticoDeError(error)}` } }).catch(() => {});
+      // Informativa: nunca se reenvía (evita duplicados). Queda el diagnóstico:
+      // si Meta rechazó el envío, su HTTP status y su código numérico
+      // ("envio:http400:meta131030"); si no hubo respuesta, el tipo de error
+      // ("envio:TimeoutError"). Nunca destinatario, texto ni token.
+      const diagnostico = `envio:${error instanceof EnvioWhatsappError ? error.diagnostico : diagnosticoDeError(error)}`;
+      console.warn(JSON.stringify({ evento: "whatsapp_envio_fallido", diagnostico }));
+      await db.mensajeWhatsapp.update({ where: { id }, data: { error: diagnostico } }).catch(() => {});
     }
   }
   return "PROCESADO";
