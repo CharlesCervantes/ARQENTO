@@ -31,7 +31,7 @@ export type FilaVinculoMaster = {
 
 // `canal`: conteos de mensajes de TODO el canal (los mensajes de números
 // desconocidos no pertenecen a ninguna Empresa) — nunca números ni textos.
-export type EstadoCanalWhatsapp = { pendientes: number; reintentables: number; definitivos: number };
+export type EstadoCanalWhatsapp = { pendientes: number; reintentables: number; detenidos: number; definitivos: number };
 export type WhatsappEmpresaMaster = { whatsappHabilitado: boolean; vinculos: FilaVinculoMaster[]; canal: EstadoCanalWhatsapp };
 
 export async function obtenerWhatsappEmpresaMaster(usuario: UsuarioSesion, empresaId: string): Promise<WhatsappEmpresaMaster> {
@@ -107,7 +107,9 @@ export async function obtenerEstadoMensajesMaster(usuario: UsuarioSesion) {
 
 export async function reprocesarMensajesPendientesMaster(usuario: UsuarioSesion): Promise<ResumenReproceso> {
   requerirMaster(usuario);
-  const resumen = await procesarMensajesPendientes(50);
+  // Acción explícita: incluye los mensajes con archivo detenidos. Acotada en
+  // tiempo; lo que falte sigue pendiente para la siguiente ejecución.
+  const resumen = await procesarMensajesPendientes(50, [], { manual: true, presupuestoMs: 40_000 });
   await registrarAuditoria({
     empresaId: null,
     usuarioId: usuario.id,

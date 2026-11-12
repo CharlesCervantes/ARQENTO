@@ -218,7 +218,7 @@ describe("Webhook — un envío fallido deja diagnóstico y no altera la vincula
     assert.equal(bd.t.mensajes.length, 1);
 
     // Un fallo de envío no es un error de proceso: los contadores no cambian.
-    assert.deepEqual(await obtenerEstadoMensajesMaster(sesionDe(MASTER)), { pendientes: 0, reintentables: 0, definitivos: 0 });
+    assert.deepEqual(await obtenerEstadoMensajesMaster(sesionDe(MASTER)), { pendientes: 0, reintentables: 0, detenidos: 0, definitivos: 0 });
 
     // Ni la base ni el registro del servidor guardan token, teléfono, texto o respuesta de Meta.
     sinDatosSensibles(JSON.stringify(bd.t.mensajes));

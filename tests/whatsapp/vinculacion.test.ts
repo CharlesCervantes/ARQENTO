@@ -412,8 +412,8 @@ describe("Webhook: autenticidad, idempotencia y recuperación", () => {
     const { codigo } = await iniciarVinculacionWhatsapp(sesion(SUP_A), TEL);
     await registrarMensajesEntrantes(extraerMensajesEntrantes(JSON.parse(cuerpoWebhook([textoDe(WA, codigo)]).toString()), "phone-number-id-simulado"));
     bd.t.mensajes[0].createdAt = new Date(Date.now() - 60_000);
-    assert.deepEqual(await obtenerEstadoMensajesMaster(sesion(MASTER)), { pendientes: 1, reintentables: 0, definitivos: 0 });
-    assert.deepEqual((await obtenerWhatsappEmpresaMaster(sesion(MASTER), "A")).canal, { pendientes: 1, reintentables: 0, definitivos: 0 });
+    assert.deepEqual(await obtenerEstadoMensajesMaster(sesion(MASTER)), { pendientes: 1, reintentables: 0, detenidos: 0, definitivos: 0 });
+    assert.deepEqual((await obtenerWhatsappEmpresaMaster(sesion(MASTER), "A")).canal, { pendientes: 1, reintentables: 0, detenidos: 0, definitivos: 0 });
     for (const u of [ADMIN_A, DIRECTOR_A, SUP_A]) await assert.rejects(reprocesarMensajesPendientesMaster(sesion(u)), /permiso/i);
     const r = await reprocesarMensajesPendientesMaster(sesion(MASTER));
     assert.deepEqual([r.revisados, r.procesados], [1, 1]);
@@ -446,7 +446,7 @@ describe("Números desconocidos, límites y archivos", () => {
     assert.equal(salidaSimulada.length, 19);
   });
 
-  test("Imágenes y documentos: nunca se descargan, solo se responde que aún no se reciben", async () => {
+  test("Audio, video y stickers: nunca se descargan, solo se responde qué se recibe", async () => {
     await vincular(SUP_A);
     const fetchOriginal = globalThis.fetch;
     let llamadas = 0;
@@ -455,13 +455,71 @@ describe("Números desconocidos, límites y archivos", () => {
       throw new Error("sin red");
     }) as typeof fetch;
     try {
-      await enviar({ id: "wamid.doc", from: WA, timestamp: "1760000000", type: "document", document: { id: "media-1", mime_type: "application/pdf" } });
+      await enviar({ id: "wamid.audio", from: WA, timestamp: "1760000000", type: "audio", audio: { id: "media-1", mime_type: "audio/ogg" } });
     } finally {
       globalThis.fetch = fetchOriginal;
     }
     assert.equal(llamadas, 0);
     assert.equal(bd.t.mensajes.at(-1)!.resultado, "ARCHIVO_IGNORADO");
     assert.equal(ultimaRespuesta()!.texto, RESPUESTAS_WHATSAPP.soloVinculacion);
+  });
+
+  test("Comprobante sin almacenamiento configurado: falla de forma segura, sin descargar nada, y al agotar los intentos avisa al remitente", async () => {
+    await vincular(SUP_A);
+    salidaSimulada.length = 0;
+    const fetchOriginal = globalThis.fetch;
+    let llamadas = 0;
+    globalThis.fetch = (async () => {
+      llamadas++;
+      throw new Error("sin red");
+    }) as typeof fetch;
+    const documento = { id: "wamid.doc", from: WA, timestamp: "1760000000", type: "document", document: { id: "media-1", mime_type: "application/pdf", filename: "factura-ficticia.pdf" } };
+    const mensaje = () => bd.t.mensajes.find((m) => m.wamid === "wamid.doc")!;
+    try {
+      assert.equal((await enviar(documento)).status, 500, "sin guardar: se pide la reentrega");
+      assert.equal(mensaje().etapaArchivo, "ASIGNADO", "la etapa queda persistida para reanudar");
+      assert.equal(mensaje().estadoProceso, "ERROR");
+      assert.equal(mensaje().error, "proceso:RecepcionInterrumpida:almacenamiento");
+      assert.equal(mensaje().empresaId, "A");
+      assert.equal(mensaje().usuarioId, SUP_A.id);
+      assert.equal(salidaSimulada.length, 0, "nunca se confirma lo que no se guardó");
+      assert.equal((await enviar(documento)).status, 500);
+      assert.equal((await enviar(documento)).status, 200, "agotados los intentos, Meta deja de reentregar");
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+    assert.equal(llamadas, 0, "sin almacenamiento no se descarga nada de Meta");
+    // No se descarta: queda DETENIDO, con lo necesario para recuperarlo
+    // cuando el almacenamiento esté configurado.
+    assert.equal(mensaje().resultado, "ARCHIVO_DETENIDO");
+    assert.equal(mensaje().etapaArchivo, "ASIGNADO");
+    assert.equal(mensaje().intentos, 3);
+    assert.equal(mensaje().remitentePendiente, WA);
+    assert.deepEqual(mensaje().archivoPendiente, { mediaId: "media-1", nombre: "factura-ficticia.pdf" });
+    assert.equal(mensaje().error, "proceso:RecepcionInterrumpida:almacenamiento");
+    assert.equal((await enviar(documento)).status, 200, "una reentrega tardía ya no lo intenta");
+    assert.equal(mensaje().intentos, 3);
+    assert.equal(salidaSimulada.length, 1);
+    assert.equal(ultimaRespuesta()!.texto, RESPUESTAS_WHATSAPP.archivoDetenido);
+  });
+
+  test("Comprobante de un número sin vínculo o con varias Empresas sin elegir: no se recibe ni se descarga", async () => {
+    const imagen = (id: string) => ({ id, from: WA, timestamp: "1760000000", type: "image", image: { id: "media-2", mime_type: "image/jpeg" } });
+    await enviar(imagen("wamid.img.1"));
+    assert.equal(bd.t.mensajes.at(-1)!.resultado, "NO_VINCULADO");
+    assert.equal(bd.t.mensajes.at(-1)!.etapaArchivo, null);
+
+    await vincular(SUP_A);
+    await vincular(SUP_B);
+    salidaSimulada.length = 0;
+    assert.equal((await enviar(imagen("wamid.img.2"))).status, 200);
+    const m = bd.t.mensajes.at(-1)!;
+    assert.equal(m.resultado, "EMPRESA_REQUERIDA");
+    assert.equal(m.estadoProceso, "PROCESADO");
+    assert.equal(m.empresaId, null, "nunca se asigna a una Empresa por omisión");
+    assert.equal(m.etapaArchivo, null);
+    assert.equal(ultimaRespuesta()!.tipo, "lista");
+    assert.equal(ultimaRespuesta()!.texto, RESPUESTAS_WHATSAPP.eligeEmpresaYReenvia);
   });
 
   test("Una pregunta financiera nunca recibe datos: solo la ayuda genérica", async () => {

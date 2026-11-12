@@ -50,13 +50,14 @@ export function TabWhatsapp({ empresaId, whatsapp }: { empresaId: string; whatsa
         <h3 className="text-sm font-semibold text-[var(--foreground)]">Mensajes del canal</h3>
         <p className="text-xs text-[var(--muted)]">
           De todas las Empresas: {whatsapp.canal.pendientes} pendiente(s), {whatsapp.canal.reintentables} con error por reintentar,{" "}
-          {whatsapp.canal.definitivos} con error definitivo. Meta reentrega automáticamente los mensajes que fallan; usa esta opción solo
-          si alguno se quedó pendiente.
+          {whatsapp.canal.detenidos} comprobante(s) detenido(s) y {whatsapp.canal.definitivos} con error definitivo. Meta reentrega
+          automáticamente los mensajes que fallan; usa esta opción si alguno se quedó pendiente. Un comprobante detenido agotó sus
+          reintentos automáticos sin perderse: solo avanza al reprocesar aquí o desde la bandeja de su Empresa.
         </p>
         {resumen && <p className="text-xs text-[var(--foreground)]">{resumen}</p>}
         <button
           type="button"
-          disabled={pendiente || whatsapp.canal.pendientes + whatsapp.canal.reintentables === 0}
+          disabled={pendiente || whatsapp.canal.pendientes + whatsapp.canal.reintentables + whatsapp.canal.detenidos === 0}
           onClick={() => {
             setError(null);
             setResumen(null);
@@ -65,7 +66,7 @@ export function TabWhatsapp({ empresaId, whatsapp }: { empresaId: string; whatsa
               if (r.error) setError(r.error);
               else if (r.resumen)
                 setResumen(
-                  `Revisados ${r.resumen.revisados}: ${r.resumen.procesados} procesado(s), ${r.resumen.reintentables} por reintentar, ${r.resumen.definitivos} con error definitivo.`
+                  `Revisados ${r.resumen.revisados}: ${r.resumen.procesados} procesado(s), ${r.resumen.reintentables} por reintentar, ${r.resumen.detenidos} detenido(s), ${r.resumen.definitivos} con error definitivo.`
                 );
             });
           }}

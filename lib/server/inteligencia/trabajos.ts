@@ -20,10 +20,23 @@ export function calcularHashArchivo(bytes: Buffer): string {
 export async function buscarDocumentoPorHash(
   empresaId: string,
   hashArchivo: string,
-  cliente: Prisma.TransactionClient = db
+  cliente: Prisma.TransactionClient = db,
+  // La recepción por WhatsApp no reutiliza NINGÚN documento descartado (de
+  // cualquier origen): el comprobante quedaría "recibido" sin estar a la
+  // vista de nadie.
+  opciones: { excluirDescartados?: boolean } = {}
 ): Promise<{ id: string; createdAt: Date; loteId: string; contextoUsuario: string | null; contextosAdicionales: unknown } | null> {
   return cliente.documentoEgreso.findFirst({
-    where: { empresaId, hashArchivo },
+    // Un documento cuyo archivo se eliminó (o uno de WhatsApp ya descartado,
+    // cuyo archivo se elimina) no sirve para reutilizarse: si el mismo
+    // archivo vuelve a llegar, es un documento nuevo (Fase 2A, noviembre 2026).
+    where: {
+      empresaId,
+      hashArchivo,
+      archivoEliminadoEn: null,
+      NOT: { origen: "WHATSAPP", estatus: "DESCARTADO" },
+      ...(opciones.excluirDescartados ? { estatus: { not: "DESCARTADO" } } : {}),
+    },
     select: { id: true, createdAt: true, loteId: true, contextoUsuario: true, contextosAdicionales: true },
     orderBy: { createdAt: "desc" },
   });

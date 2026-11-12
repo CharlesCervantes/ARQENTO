@@ -236,7 +236,7 @@ describe("WhatsApp en PostgreSQL — recuperación de mensajes (reentregas de Me
     const m = textoDe(WA, codigo, "wamid.int.huerfano");
     await registrarMensajesEntrantes(extraerMensajesEntrantes(JSON.parse(cuerpo([m]).toString()), "phone-number-id-simulado"));
     await db.$executeRawUnsafe(`UPDATE mensajes_whatsapp SET "createdAt" = now() - interval '5 minutes'`);
-    assert.deepEqual(await obtenerEstadoMensajesMaster(master), { pendientes: 1, reintentables: 0, definitivos: 0 });
+    assert.deepEqual(await obtenerEstadoMensajesMaster(master), { pendientes: 1, reintentables: 0, detenidos: 0, definitivos: 0 });
     await assert.rejects(reprocesarMensajesPendientesMaster(admin), /permiso/i);
     const r = await reprocesarMensajesPendientesMaster(master);
     assert.deepEqual([r.revisados, r.procesados], [1, 1]);

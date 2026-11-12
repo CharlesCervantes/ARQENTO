@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import * as z from "zod";
 import { requireSession } from "@/lib/server/auth/dal";
+import { descartarDocumentoRecibido, reanudarRecepcionesRecibidas, type ResultadoReanudacion } from "@/lib/server/contabilidad/documentos/recibidos-whatsapp";
 import { subirArchivo } from "@/lib/server/archivos";
 import {
   crearMedioFinanciero,
@@ -563,6 +564,35 @@ export async function crearProveedorDesdeDocumentoAction(
     return { error: mensajeError(error) };
   }
   return { guardado: true };
+}
+
+// Bandeja «Recibidos por WhatsApp» (Fase 2A): descartar un comprobante
+// recibido por error elimina su archivo. No depende de ARQENTO IA.
+export async function descartarDocumentoRecibidoAction(
+  documentoEgresoId: string
+): Promise<{ error?: string; archivoEliminado?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    const resultado = await descartarDocumentoRecibido(usuario, documentoEgresoId);
+    revalidarContabilidad();
+    return resultado;
+  } catch (error) {
+    revalidarContabilidad();
+    return { error: mensajeError(error) };
+  }
+}
+
+// Reintento explícito de las recepciones sin terminar de la Empresa.
+export async function reanudarRecepcionesRecibidasAction(): Promise<{ error?: string; resultado?: ResultadoReanudacion }> {
+  const usuario = await requireSession();
+  try {
+    const resultado = await reanudarRecepcionesRecibidas(usuario);
+    revalidarContabilidad();
+    return { resultado };
+  } catch (error) {
+    revalidarContabilidad();
+    return { error: mensajeError(error) };
+  }
 }
 
 export async function descartarDocumentoEgresoAction(documentoEgresoId: string) {

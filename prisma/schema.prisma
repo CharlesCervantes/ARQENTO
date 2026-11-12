@@ -2680,6 +2680,14 @@ enum EstatusDocumentoEgreso {
 // Egreso. Relación canónica única vía egresoId (nunca gastoObraId directo:
 // Egreso ya es la capa de decoración canónica de cualquier operación de
 // gasto — ver docs/negocio/05-modulo-contabilidad.md).
+// De dónde llegó el documento (Fase 2A WhatsApp, noviembre 2026). WEB = la
+// subida de Captura Inteligente; WHATSAPP = un comprobante enviado al número
+// oficial por un usuario vinculado (bandeja «Recibidos por WhatsApp»).
+enum OrigenDocumentoEgreso {
+  WEB
+  WHATSAPP
+}
+
 model DocumentoEgreso {
   id        String  @id @default(cuid())
   empresa   Empresa @relation(fields: [empresaId], references: [id])
@@ -2737,6 +2745,14 @@ model DocumentoEgreso {
   // cada retry. null = todavía no se decidió (documento recién subido).
   estrategiaExtraccion String? // "TEXTO_NATIVO" | "VISION"
 
+  origen OrigenDocumentoEgreso @default(WEB)
+
+  // Un documento recibido por WhatsApp y descartado (enviado por error)
+  // pierde su archivo: el objeto privado se elimina del almacenamiento y
+  // aquí queda cuándo. La fila se conserva (auditoría mínima, sin nombre de
+  // archivo ni pie de foto) y deja de contar para detectar duplicados.
+  archivoEliminadoEn DateTime?
+
   egreso   Egreso? @relation(fields: [egresoId], references: [id])
   egresoId String?
 
@@ -2750,6 +2766,7 @@ model DocumentoEgreso {
 
   @@index([empresaId, estatus])
   @@index([empresaId, hashArchivo])
+  @@index([empresaId, origen, estatus])
   @@index([loteId])
   @@index([egresoId])
   @@index([trabajoProcesamientoId])
@@ -2831,6 +2848,23 @@ model CodigoVinculacionWhatsapp {
 // lib/server/whatsapp/retencion.ts). Del remitente solo se guarda un HMAC
 // (remitenteHash), nunca el número; el texto solo mientras el mensaje está
 // pendiente de procesar (textoPendiente, truncado) y se borra al procesarlo.
+// Etapas EXPLÍCITAS de la recepción de un archivo (Fase 2A, noviembre 2026).
+// Cada una se persiste antes de avanzar, para reanudar una recepción
+// interrumpida exactamente donde quedó (ver archivos-recibidos.ts):
+// - ASIGNADO: remitente autorizado y Empresa resuelta; falta descargar.
+// - ALMACENADO: el archivo ya está en el almacenamiento privado (su
+//   referencia y su huella quedaron en archivoPendiente); falta el documento.
+// - GUARDADO: el documento existe (nuevo o reutilizado). Terminal.
+// - RECHAZADO: no se guardó (tipo, tamaño o contenido no permitidos, archivo
+//   ya no disponible en Meta, remitente sin autorización o intentos
+//   agotados). Terminal.
+enum EtapaArchivoWhatsapp {
+  ASIGNADO
+  ALMACENADO
+  GUARDADO
+  RECHAZADO
+}
+
 model MensajeWhatsapp {
   id                 String                       @id @default(cuid())
   // Identificador del mensaje de Meta — idempotencia (un reintento del
@@ -2850,12 +2884,22 @@ model MensajeWhatsapp {
   vinculoId          String?
   empresaId          String?
   usuarioId          String?
+  // Recepción de archivos (Fase 2A). archivoPendiente guarda SOLO mientras
+  // la recepción está en curso lo necesario para reanudarla: el identificador
+  // del archivo en Meta, su nombre y, ya almacenado, su referencia privada,
+  // tipo real y huella. Se borra al terminar, igual que el texto.
+  etapaArchivo       EtapaArchivoWhatsapp?
+  archivoPendiente   Json?
+  // Documento que originó este mensaje — id opaco, sin relación real (igual
+  // que vinculoId/empresaId/usuarioId en este registro operativo).
+  documentoEgresoId  String?
   recibidoEn         DateTime
   procesadoEn        DateTime?
   createdAt          DateTime                     @default(now())
 
   @@index([remitenteHash, createdAt])
   @@index([estadoProceso, createdAt])
+  @@index([documentoEgresoId])
   @@map("mensajes_whatsapp")
 }
 

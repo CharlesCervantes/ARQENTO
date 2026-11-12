@@ -3,6 +3,9 @@
 // descarta cualquier evento de otro número de ARQENTO (phone_number_id) o con
 // una forma inesperada. Nunca lanza: un payload malformado da una lista vacía.
 // Los "statuses" (confirmaciones de entrega) se ignoran en esta fase.
+// Fase 2A (noviembre 2026): de una fotografía o un documento se toma además
+// el identificador del archivo en Meta, su nombre (solo documentos) y el pie
+// de foto. El archivo NO viaja en el webhook: se descarga después.
 
 export type MensajeEntrante = {
   wamid: string;
@@ -12,6 +15,8 @@ export type MensajeEntrante = {
   texto: string | null;
   // Respuesta a una lista interactiva (selección de Empresa).
   seleccionId: string | null;
+  // Fotografía o documento adjunto (tipo image | document).
+  archivo: { mediaId: string; nombre: string | null } | null;
 };
 
 const texto = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
@@ -37,6 +42,10 @@ export function extraerMensajesEntrantes(payload: unknown, phoneNumberIdEsperado
         const segundos = Number(m.timestamp);
         const tipo = texto(m.type, 30) ?? "desconocido";
         const interactivo = m.interactive as { list_reply?: { id?: unknown }; button_reply?: { id?: unknown } } | undefined;
+        const adjunto = (tipo === "image" ? m.image : tipo === "document" ? m.document : undefined) as
+          | { id?: unknown; filename?: unknown; caption?: unknown }
+          | undefined;
+        const mediaId = texto(adjunto?.id, 200);
         mensajes.push({
           wamid,
           waId,
@@ -44,8 +53,10 @@ export function extraerMensajesEntrantes(payload: unknown, phoneNumberIdEsperado
           tipo,
           // Solo se conservan los primeros caracteres: en esta fase basta
           // para leer un código o un comando.
-          texto: tipo === "text" ? texto((m.text as { body?: unknown } | undefined)?.body, 200) : null,
+          // …o el pie de foto de un archivo (contexto del comprobante).
+          texto: tipo === "text" ? texto((m.text as { body?: unknown } | undefined)?.body, 200) : texto(adjunto?.caption, 200),
           seleccionId: texto(interactivo?.list_reply?.id ?? interactivo?.button_reply?.id, 100),
+          archivo: mediaId && /^[A-Za-z0-9_.:-]+$/.test(mediaId) ? { mediaId, nombre: texto(adjunto?.filename, 200) } : null,
         });
       }
     }

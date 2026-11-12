@@ -5,8 +5,14 @@ import { recibirWebhookWhatsapp } from "@/lib/server/whatsapp/mensajes";
 
 // Webhook de Meta WhatsApp Business Platform (Fase 1 WhatsApp + ARQENTO IA,
 // octubre 2026). Ruta pública (proxy.ts excluye /api), protegida por la
-// firma de Meta. Solo vinculación de usuarios: no descarga ni procesa
-// archivos, ni responde información interna.
+// firma de Meta. Vinculación de usuarios y, desde la Fase 2A, recepción de
+// comprobantes (fotografía o PDF) para revisión humana; nunca responde
+// información interna.
+
+// Recibir un comprobante incluye descargarlo de Meta y guardarlo. Nada
+// depende de que esta ejecución termine (la recepción se reanuda por
+// etapas), pero se le da margen para completarla en el primer intento.
+export const maxDuration = 60;
 
 const LIMITE_BYTES = 256 * 1024;
 

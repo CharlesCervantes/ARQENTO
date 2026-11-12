@@ -59,6 +59,7 @@ export function crearBdWhatsapp(inicial: { usuarios: Usuario[]; empresas: Empres
         if ("gte" in c && !((v as Date) >= (c.gte as Date))) return false;
         if ("gt" in c && !((v as Date) > (c.gt as Date))) return false;
         if ("lt" in c && !((v as Date) < (c.lt as Date))) return false;
+        if ("lte" in c && !((v as Date) <= (c.lte as Date))) return false;
         continue;
       }
       if (cond === null ? !(v === null || v === undefined) : v !== cond) return false;
@@ -182,7 +183,7 @@ export function crearBdWhatsapp(inicial: { usuarios: Usuario[]; empresas: Empres
   function defaults(tabla: string): Fila {
     if (tabla === "vinculos") return { estado: "PENDIENTE", waId: null, verificadoEn: null, revocadoEn: null, revocadoPorId: null, motivoRevocacion: null };
     if (tabla === "codigos") return { usadoEn: null, invalidadoEn: null, intentosFallidos: 0 };
-    if (tabla === "mensajes") return { estadoProceso: "PENDIENTE", resultado: null, intentos: 0, error: null, respondido: false, vinculoId: null, empresaId: null, usuarioId: null, procesadoEn: null };
+    if (tabla === "mensajes") return { estadoProceso: "PENDIENTE", resultado: null, intentos: 0, error: null, respondido: false, vinculoId: null, empresaId: null, usuarioId: null, procesadoEn: null, etapaArchivo: null, archivoPendiente: null, documentoEgresoId: null };
     return {};
   }
 

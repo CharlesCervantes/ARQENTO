@@ -27,6 +27,9 @@ export async function depurarRegistrosWhatsapp(
   const corte = new Date(ahora.getTime() - DIAS_RETENCION_MENSAJES_WHATSAPP * 86_400_000);
   const filtroMensajes = {
     createdAt: { lt: corte },
+    // Fase 2A: el mensaje que dio origen a un documento se conserva (es su
+    // trazabilidad; ya no guarda número, texto ni archivo).
+    documentoEgresoId: null,
     OR: [{ estadoProceso: "PROCESADO" as const }, { estadoProceso: "ERROR" as const, remitentePendiente: null }],
   };
   const filtroCodigos = { createdAt: { lt: corte } };

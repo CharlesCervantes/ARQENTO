@@ -292,12 +292,12 @@ export async function cambiarWhatsappEmpresaAction(empresaId: string, habilitado
 
 export async function reprocesarMensajesWhatsappAction(
   empresaId: string
-): Promise<{ error?: string; resumen?: { revisados: number; procesados: number; reintentables: number; definitivos: number } }> {
+): Promise<{ error?: string; resumen?: { revisados: number; procesados: number; reintentables: number; definitivos: number; detenidos: number } }> {
   const usuario = await requireSession();
   try {
-    const { revisados, procesados, reintentables, definitivos } = await reprocesarMensajesPendientesMaster(usuario);
+    const { revisados, procesados, reintentables, definitivos, detenidos } = await reprocesarMensajesPendientesMaster(usuario);
     revalidatePath(`/master/empresas/${empresaId}`);
-    return { resumen: { revisados, procesados, reintentables, definitivos } };
+    return { resumen: { revisados, procesados, reintentables, definitivos, detenidos } };
   } catch {
     return { error: "No se pudieron reprocesar los mensajes." };
   }

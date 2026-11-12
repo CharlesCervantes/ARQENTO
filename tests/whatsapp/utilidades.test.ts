@@ -131,11 +131,13 @@ describe("Lectura del payload", () => {
     }
   });
 
-  test("Documentos e imágenes: solo se registra el tipo (nunca la URL ni el id del archivo)", () => {
+  test("Documentos e imágenes: se registra el tipo y el identificador del archivo (nunca la URL)", () => {
     const [r] = extraerMensajesEntrantes(payload([{ id: "w", from: "5213312345678", type: "document", document: { id: "media-1", link: "https://x" } }]), "pn-1");
-    assert.deepEqual(Object.keys(r).sort(), ["recibidoEn", "seleccionId", "texto", "tipo", "waId", "wamid"]);
+    assert.deepEqual(Object.keys(r).sort(), ["archivo", "recibidoEn", "seleccionId", "texto", "tipo", "waId", "wamid"]);
     assert.equal(r.tipo, "document");
     assert.equal(r.texto, null);
+    assert.deepEqual(r.archivo, { mediaId: "media-1", nombre: null });
+    assert.ok(!JSON.stringify(r).includes("https://x"));
   });
 
   test("Comandos", () => {

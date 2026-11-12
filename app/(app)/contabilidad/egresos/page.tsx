@@ -11,7 +11,13 @@ import { parametroAPeriodo } from "@/lib/contabilidad/periodo";
 import { NavContabilidad } from "@/components/contabilidad/nav-contabilidad";
 import { NavegacionMes } from "@/components/contabilidad/navegacion-mes";
 import { EgresosView } from "@/components/contabilidad/egresos-view";
+import { RecibidosWhatsapp } from "@/components/contabilidad/recibidos-whatsapp";
+import { obtenerBandejaRecibidos } from "@/lib/server/contabilidad/documentos/recibidos-whatsapp";
 import { Card } from "@/components/ui/card";
+
+// Tiempo máximo de las acciones de esta página: reintentar una recepción de
+// WhatsApp descarga y guarda archivos (acción explícita de la bandeja).
+export const maxDuration = 60;
 
 export default async function EgresosContabilidadPage(props: PageProps<"/contabilidad/egresos">) {
   const usuario = await requireSession();
@@ -29,12 +35,15 @@ export default async function EgresosContabilidadPage(props: PageProps<"/contabi
   const searchParams = await props.searchParams;
   const periodo = parametroAPeriodo(typeof searchParams.periodo === "string" ? searchParams.periodo : undefined);
 
-  const [egresos, medios, facturas, proyectos, capturaInteligenteHabilitada] = await Promise.all([
+  // Comprobantes recibidos por WhatsApp: independiente de ARQENTO IA (null si
+  // WhatsApp no está habilitado para la Empresa).
+  const [egresos, medios, facturas, proyectos, capturaInteligenteHabilitada, recibidosWhatsapp] = await Promise.all([
     obtenerEgresos(usuario, periodo.anio, periodo.mes),
     listarMediosFinancieros(usuario, true),
     listarFacturas(usuario),
     listarProyectos(usuario),
     inteligenciaHabilitadaParaEmpresa(usuario.empresa.id),
+    obtenerBandejaRecibidos(usuario),
   ]);
   // Solo hacen falta para registrar un documento como gasto de obra.
   const [beneficiarios, semanasRegistro] = capturaInteligenteHabilitada
@@ -49,6 +58,8 @@ export default async function EgresosContabilidadPage(props: PageProps<"/contabi
       </div>
 
       <NavContabilidad />
+      {recibidosWhatsapp && <RecibidosWhatsapp bandeja={recibidosWhatsapp} />}
+
       <NavegacionMes periodo={periodo} rutaBase="/contabilidad/egresos" />
 
       <EgresosView

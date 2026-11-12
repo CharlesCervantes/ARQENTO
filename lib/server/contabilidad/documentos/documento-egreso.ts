@@ -10,6 +10,7 @@ import { puedeVerContabilidad, puedeRegistrarMovimientoContable } from "@/lib/se
 import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError, ValidacionError } from "@/lib/server/control-de-obra/proyectos";
 import { requerirCapturaInteligente } from "./habilitacion";
+import { MAX_BYTES_POR_DOCUMENTO, MAX_PAGINAS_POR_DOCUMENTO, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
 import "./reconciliar-egreso"; // efecto secundario: se auto-registra en registro-operaciones
 
 // Carga inteligente de documentos — entrypoint de Contabilidad. Único
@@ -18,10 +19,7 @@ import "./reconciliar-egreso"; // efecto secundario: se auto-registra en registr
 // inteligente de documentos, V1 — octubre 2026).
 
 const MAX_ARCHIVOS_POR_LOTE = 5;
-const MAX_BYTES_POR_ARCHIVO = 10 * 1024 * 1024; // 10MB
-const MAX_PAGINAS_POR_DOCUMENTO = 20;
-
-type MimeSoportado = "application/pdf" | "image/jpeg" | "image/png";
+const MAX_BYTES_POR_ARCHIVO = MAX_BYTES_POR_DOCUMENTO; // 10MB
 
 function requerirContabilidad(usuario: UsuarioSesion): string {
   if (!puedeVerContabilidad(usuario)) throw new SinPermisoError();
@@ -35,14 +33,8 @@ function requerirContabilidad(usuario: UsuarioSesion): string {
 // para este último, ver reconciliar-egreso.ts) y JPG/PNG directos (siempre
 // VISION, no hay texto que extraer de una imagen suelta) — V1.2, octubre
 // 2026.
-function tipoArchivoDetectado(bytes: Buffer): MimeSoportado | null {
-  if (bytes.length > 5 && bytes.subarray(0, 5).toString("latin1") === "%PDF-") return "application/pdf";
-  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes.length > 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-    return "image/png";
-  }
-  return null;
-}
+// (El detector vive en lib/contabilidad/tipo-archivo.ts — lo comparte la
+// recepción por WhatsApp, Fase 2A.)
 
 export type DocumentoSubidoResultado = {
   documentoEgresoId: string;
@@ -161,7 +153,7 @@ export async function subirDocumentosEgreso(
 
 // Reutiliza un documento ya existente (mismo archivo, misma Empresa) para
 // el lote actual — nunca reprocesa ni vuelve a pagar IA.
-async function reutilizarDocumento(
+export async function reutilizarDocumento(
   cliente: Prisma.TransactionClient,
   duplicado: { id: string; loteId: string; contextoUsuario: string | null; contextosAdicionales: unknown },
   ctx: { loteId: string; contexto: string | null; usuarioId: string }
