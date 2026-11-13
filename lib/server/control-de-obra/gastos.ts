@@ -14,7 +14,7 @@ import { CATEGORIAS_GASTO, CATEGORIA_GASTO_SENSIBLE } from "@/lib/control-de-obr
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
 import { asignarGastoAReposicionTx } from "./reposiciones";
-import { intentarReclamarGastoParaCapas } from "./estimacion-cliente";
+import { asegurarEstimacionDeSemanaCerradaTx, intentarReclamarGastoParaCapas } from "./estimacion-cliente";
 import { EMPRESA_PROYECTO_LABEL } from "./proyecto-oficina";
 
 function requerirEmpresa(usuario: UsuarioSesion): string {
@@ -390,6 +390,15 @@ export async function aprobarGasto(usuario: UsuarioSesion, gastoId: string) {
     // dónde ponerlo; se resuelve más tarde, en el próximo cierre de semana
     // que sí toque esa capa (arquitectura por capas, agosto 2026).
     if (gasto.tratamientoCliente === "COBRABLE_EN_ESTIMACION") {
+      // Semana ya cerrada que nunca generó estimación: se crea ahora (misma
+      // lógica que el cierre) para que el gasto tenga dónde reclamarse. No
+      // hace nada si la semana está abierta o ya tiene estimación.
+      await asegurarEstimacionDeSemanaCerradaTx(tx, {
+        empresaId,
+        proyectoId: gasto.proyectoId,
+        semanaId: gasto.semanaId,
+        usuarioId: usuario.id,
+      });
       await intentarReclamarGastoParaCapas(tx, gasto.proyectoId, {
         id: gasto.id,
         semanaId: gasto.semanaId,

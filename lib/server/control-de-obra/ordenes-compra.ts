@@ -101,6 +101,7 @@ export async function crearOrdenCompra(
     const empresa = await tx.empresa.update({
       where: { id: empresaId },
       data: { ultimoFolioOrdenCompra: { increment: 1 } },
+      select: { ultimoFolioOrdenCompra: true },
     });
     const folio = `OC-${String(empresa.ultimoFolioOrdenCompra).padStart(6, "0")}`;
 

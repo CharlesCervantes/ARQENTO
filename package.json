@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/despliegue/verificar-migraciones.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "node --conditions=react-server --import tsx --import ./tests/setup/unitarias.mjs --test \"tests/{dashboard,contabilidad,seguridad,cobro,reposiciones}/**/*.test.ts\"",

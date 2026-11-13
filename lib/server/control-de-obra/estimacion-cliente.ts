@@ -271,14 +271,18 @@ async function obtenerContextoProyecto(cliente: Cliente, proyectoId: string) {
   return { esquemaContractual: proyecto.esquemaContractual, porcentajesDefault };
 }
 
+// Vista preliminar de semana ABIERTA: avance valorizado + los gastos
+// cobrables que entrarían a cada capa al cerrar (`preliminar`). Solo lectura.
 export async function obtenerEstimacionSemanalEnVivo(
   usuario: UsuarioSesion,
   proyectoId: string,
   semana: { id: string; fechaInicio: Date }
-): Promise<ResultadoValorizacion> {
+): Promise<ResultadoValorizacion & { preliminar: PreliminarSemanaAbierta }> {
   await obtenerProyecto(usuario, proyectoId);
   const { esquemaContractual, porcentajesDefault } = await obtenerContextoProyecto(db, proyectoId);
-  return construirDetalleValorizado(db, proyectoId, semana, esquemaContractual, porcentajesDefault);
+  const valorizacion = await construirDetalleValorizado(db, proyectoId, semana, esquemaContractual, porcentajesDefault);
+  const preliminar = await construirPreliminar(db, proyectoId, semana, valorizacion, esquemaContractual, porcentajesDefault);
+  return { ...valorizacion, preliminar };
 }
 
 // ---------------------------------------------------------------------------
@@ -470,13 +474,39 @@ async function valorizarCapaEnVivo(
   }
   filas.sort((a, b) => a.descripcionConcepto.localeCompare(b.descripcionConcepto));
 
-  const campoCapa = params.capa === "OPERATIVO" ? "incluidoEnCapaOperativoId" : "incluidoEnCapaPrivadoId";
   const gastosClaimed = await cliente.gastoObra.findMany({
-    where: { [campoCapa]: params.capaId },
-    include: { detalle: { orderBy: { orden: "asc" } } },
+    where: { [campoCapaGasto(params.capa)]: params.capaId },
+    include: INCLUDE_DETALLE_GASTO,
     orderBy: { fecha: "asc" },
   });
-  const gastos: FilaGastoEstimacion[] = gastosClaimed.map((g) => ({
+  const gastos = gastosClaimed.map(aFilaGastoEstimacion);
+
+  return {
+    filas,
+    totales: totalesCapa({
+      capa: params.capa,
+      subtotal,
+      montoAdministracionTrabajos,
+      gastos,
+      esquemaContractual: params.esquemaContractual,
+      porcentajesDefault: params.porcentajesDefault,
+      aplicaIVA: params.aplicaIVA,
+      porcentajeIVA: params.porcentajeIVA,
+    }),
+    gastos,
+  };
+}
+
+function campoCapaGasto(capa: CapaEstimacion) {
+  return capa === "OPERATIVO" ? ("incluidoEnCapaOperativoId" as const) : ("incluidoEnCapaPrivadoId" as const);
+}
+
+const INCLUDE_DETALLE_GASTO = { detalle: { orderBy: { orden: "asc" as const } } };
+
+function aFilaGastoEstimacion(
+  g: Prisma.GastoObraGetPayload<{ include: typeof INCLUDE_DETALLE_GASTO }>
+): FilaGastoEstimacion {
+  return {
     id: g.id,
     gastoObraId: g.id,
     fecha: g.fecha.toISOString(),
@@ -489,34 +519,42 @@ async function valorizarCapaEnVivo(
       cantidad: Number(d.cantidad),
       precioUnitario: Number(d.precioUnitario),
     })),
-  }));
-  const subtotalGastosCobrables = gastos.reduce((t, g) => t + g.monto, 0);
+  };
+}
 
-  const pct = porcentajesGastosPorCapa(params.esquemaContractual, params.porcentajesDefault);
-  const porcentajeAdministracionGastos = pct[params.capa];
-
+// Totales de UNA capa a partir de sus trabajos ya valorizados y sus gastos
+// cobrables — único cálculo compartido por la capa BORRADOR en vivo, el
+// instante de emitir y el preliminar de semana abierta, para que los tres
+// den exactamente el mismo número con los mismos insumos.
+function totalesCapa(p: {
+  capa: CapaEstimacion;
+  subtotal: number;
+  montoAdministracionTrabajos: number;
+  gastos: FilaGastoEstimacion[];
+  esquemaContractual: EsquemaContractual | null;
+  porcentajesDefault: PorcentajesDefaultProyecto;
+  aplicaIVA: boolean;
+  porcentajeIVA: number | null;
+}): TotalesCapaCalculados {
+  const subtotalGastosCobrables = p.gastos.reduce((t, g) => t + g.monto, 0);
+  const porcentajeAdministracionGastos = porcentajesGastosPorCapa(p.esquemaContractual, p.porcentajesDefault)[p.capa];
   const calc = calcularTotalesEstimacion({
-    subtotalTrabajos: subtotal,
-    montoAdministracionTrabajos,
+    subtotalTrabajos: p.subtotal,
+    montoAdministracionTrabajos: p.montoAdministracionTrabajos,
     subtotalGastosCobrables,
     porcentajeAdministracionGastos,
-    aplicaIVA: params.aplicaIVA,
-    porcentajeIVA: params.porcentajeIVA,
+    aplicaIVA: p.aplicaIVA,
+    porcentajeIVA: p.porcentajeIVA,
   });
-
   return {
-    filas,
-    totales: {
-      subtotal,
-      montoAdministracionTrabajos,
-      subtotalGastosCobrables,
-      porcentajeAdministracionGastos,
-      montoAdministracionGastos: calc.montoAdministracionGastos,
-      montoAdministracionTotal: calc.montoAdministracionTotal,
-      montoIVA: calc.montoIVA,
-      total: calc.total,
-    },
-    gastos,
+    subtotal: p.subtotal,
+    montoAdministracionTrabajos: p.montoAdministracionTrabajos,
+    subtotalGastosCobrables,
+    porcentajeAdministracionGastos,
+    montoAdministracionGastos: calc.montoAdministracionGastos,
+    montoAdministracionTotal: calc.montoAdministracionTotal,
+    montoIVA: calc.montoIVA,
+    total: calc.total,
   };
 }
 
@@ -701,33 +739,66 @@ export async function obtenerEstimacionCliente(
 // responsabilidad exclusiva de asegurarFisicoYCapas (al cerrar semana).
 // ---------------------------------------------------------------------------
 
+// Capa que el cierre de una semana ABIERTA crearía (BORRADOR, todavía sin
+// fila). Solo la usa el preliminar de semana abierta para simular el cierre
+// con exactamente la misma regla — nunca se escribe.
+type CapaHipotetica = { semanaId: string; fechaInicio: Date };
+const CAPA_PRELIMINAR = "__capa_preliminar__";
+
 async function resolverCapaElegibleParaGasto(
   tx: Cliente,
   proyectoId: string,
   capa: CapaEstimacion,
-  semanaOrigenId: string
+  semanaOrigenId: string,
+  hipotetica?: CapaHipotetica
 ): Promise<{ id: string } | null> {
   const propia = await tx.estimacionClienteCapa.findFirst({
     where: { capa, estimacionCliente: { proyectoId, semanaId: semanaOrigenId } },
     select: { id: true, estatus: true, estimacionCliente: { select: { semana: { select: { fechaInicio: true } } } } },
   });
-  if (!propia) return null; // su propia semana todavía no tiene esta capa
+  if (!propia) {
+    // su propia semana todavía no tiene esta capa (o la tendrá al cerrar)
+    return hipotetica?.semanaId === semanaOrigenId ? { id: CAPA_PRELIMINAR } : null;
+  }
   if (propia.estatus === "BORRADOR") return { id: propia.id };
 
   const semanaOrigenFecha = propia.estimacionCliente.semana.fechaInicio;
-  const posteriores = await tx.estimacionClienteCapa.findMany({
-    where: {
-      capa,
-      estatus: "BORRADOR",
-      estimacionCliente: { proyectoId, semana: { fechaInicio: { gt: semanaOrigenFecha } } },
-    },
-    select: { id: true, estimacionCliente: { select: { semana: { select: { fechaInicio: true } } } } },
+  const posteriores = (
+    await tx.estimacionClienteCapa.findMany({
+      where: {
+        capa,
+        estatus: "BORRADOR",
+        estimacionCliente: { proyectoId, semana: { fechaInicio: { gt: semanaOrigenFecha } } },
+      },
+      select: { id: true, estimacionCliente: { select: { semana: { select: { fechaInicio: true } } } } },
+    })
+  ).map((c) => ({ id: c.id, fechaInicio: c.estimacionCliente.semana.fechaInicio }));
+  if (hipotetica && hipotetica.fechaInicio > semanaOrigenFecha) {
+    posteriores.push({ id: CAPA_PRELIMINAR, fechaInicio: hipotetica.fechaInicio });
+  }
+  posteriores.sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime());
+  return posteriores[0] ? { id: posteriores[0].id } : null;
+}
+
+// Criterio ÚNICO de qué gastos barre un cierre de semana — lo comparten el
+// cierre real (reclamarGastosCobrablesPendientes) y el preliminar de semana
+// abierta (simularGastosDelCierre), para que nunca diverjan.
+function filtroGastosPorReclamar(proyectoId: string, hastaFechaInicio: Date): Prisma.GastoObraWhereInput {
+  return {
+    proyectoId,
+    tratamientoCliente: "COBRABLE_EN_ESTIMACION",
+    estatus: "APROBADO",
+    semana: { fechaInicio: { lte: hastaFechaInicio } },
+    OR: [{ incluidoEnCapaOperativoId: null }, { incluidoEnCapaPrivadoId: null }],
+  };
+}
+
+async function hayGastoCobrableAprobadoEnSemana(cliente: Cliente, proyectoId: string, semanaId: string) {
+  const gasto = await cliente.gastoObra.findFirst({
+    where: { proyectoId, semanaId, estatus: "APROBADO", tratamientoCliente: "COBRABLE_EN_ESTIMACION" },
+    select: { id: true },
   });
-  posteriores.sort(
-    (a, b) =>
-      a.estimacionCliente.semana.fechaInicio.getTime() - b.estimacionCliente.semana.fechaInicio.getTime()
-  );
-  return posteriores[0] ?? null;
+  return gasto !== null;
 }
 
 // Intenta reclamar UN gasto en cada capa que todavía no lo tenga — llamada
@@ -765,18 +836,160 @@ async function reclamarGastosCobrablesPendientes(
   semanaActual: { id: string; fechaInicio: Date }
 ): Promise<void> {
   const candidatos = await tx.gastoObra.findMany({
-    where: {
-      proyectoId,
-      tratamientoCliente: "COBRABLE_EN_ESTIMACION",
-      estatus: "APROBADO",
-      semana: { fechaInicio: { lte: semanaActual.fechaInicio } },
-      OR: [{ incluidoEnCapaOperativoId: null }, { incluidoEnCapaPrivadoId: null }],
-    },
+    where: filtroGastosPorReclamar(proyectoId, semanaActual.fechaInicio),
     select: { id: true, semanaId: true, incluidoEnCapaOperativoId: true, incluidoEnCapaPrivadoId: true },
   });
   for (const g of candidatos) {
     await intentarReclamarGastoParaCapas(tx, proyectoId, g);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Preliminar de semana ABIERTA (noviembre 2026) — qué gastos cobrables
+// entrarían a cada capa de esta semana si se cerrara AHORA. Simula
+// asegurarFisicoYCapas + reclamarGastosCobrablesPendientes con los mismos
+// criterios (filtroGastosPorReclamar, hayGastoCobrableAprobadoEnSemana,
+// resolverCapaElegibleParaGasto con la capa hipotética) — SOLO LECTURA: no
+// crea estimaciones ni capas, no liga gastos, no escribe nada.
+// ---------------------------------------------------------------------------
+
+export type PreliminarCapa = { gastos: FilaGastoEstimacion[]; totales: TotalesCapaCalculados; aplicaIVA: boolean };
+export type PreliminarSemanaAbierta = Record<CapaEstimacion, PreliminarCapa>;
+
+async function simularGastosDelCierre(
+  cliente: Cliente,
+  proyectoId: string,
+  semana: { id: string; fechaInicio: Date },
+  hayAvance: boolean
+): Promise<{ capa: CapaEstimacion; gastos: FilaGastoEstimacion[]; aplicaIVA: boolean; porcentajeIVA: number | null }[]> {
+  const existente = await cliente.estimacionCliente.findUnique({
+    where: { proyectoId_semanaId: { proyectoId, semanaId: semana.id } },
+    select: { capas: { select: { id: true, capa: true, estatus: true, aplicaIVA: true, porcentajeIVA: true } } },
+  });
+  const congelado = existente?.capas.some((c) => c.estatus === "EMITIDA") ?? false;
+  const cierreCrearia = hayAvance || !!existente || (await hayGastoCobrableAprobadoEnSemana(cliente, proyectoId, semana.id));
+
+  const candidatos =
+    cierreCrearia && !congelado
+      ? await cliente.gastoObra.findMany({
+          where: filtroGastosPorReclamar(proyectoId, semana.fechaInicio),
+          include: INCLUDE_DETALLE_GASTO,
+          orderBy: { fecha: "asc" },
+        })
+      : [];
+
+  const resultado = [];
+  for (const capa of ["OPERATIVO", "PRIVADO"] as const) {
+    const campo = campoCapaGasto(capa);
+    const real = existente?.capas.find((c) => c.capa === capa);
+    // Semana reabierta: su capa BORRADOR real ya existe y conserva lo que
+    // ya tenía reclamado.
+    const yaReclamados = real
+      ? await cliente.gastoObra.findMany({ where: { [campo]: real.id }, include: INCLUDE_DETALLE_GASTO })
+      : [];
+    const destino = real?.id ?? CAPA_PRELIMINAR;
+    const hipotetica = real ? undefined : { semanaId: semana.id, fechaInicio: semana.fechaInicio };
+
+    const nuevos = [];
+    for (const g of candidatos) {
+      if (g[campo] !== null) continue;
+      const d = await resolverCapaElegibleParaGasto(cliente, proyectoId, capa, g.semanaId, hipotetica);
+      if (d?.id === destino) nuevos.push(g);
+    }
+
+    const gastos = [...yaReclamados, ...nuevos]
+      .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+      .map(aFilaGastoEstimacion);
+    resultado.push({
+      capa,
+      gastos,
+      aplicaIVA: real?.aplicaIVA ?? false,
+      porcentajeIVA: real ? numOrNull(real.porcentajeIVA) : null,
+    });
+  }
+  return resultado;
+}
+
+async function construirPreliminar(
+  cliente: Cliente,
+  proyectoId: string,
+  semana: { id: string; fechaInicio: Date },
+  valorizacion: ResultadoValorizacion,
+  esquemaContractual: EsquemaContractual | null,
+  porcentajesDefault: PorcentajesDefaultProyecto
+): Promise<PreliminarSemanaAbierta> {
+  const simulado = await simularGastosDelCierre(cliente, proyectoId, semana, valorizacion.filas.length > 0);
+  const trabajos = {
+    OPERATIVO: {
+      subtotal: valorizacion.totalesOperativos.subtotal,
+      montoAdministracionTrabajos: valorizacion.totalesOperativos.montoAdministracion,
+    },
+    PRIVADO: {
+      subtotal: valorizacion.totalesPrivados.subtotal,
+      montoAdministracionTrabajos: valorizacion.totalesPrivados.montoAdministracionOUtilidad,
+    },
+  };
+  const porCapa = {} as PreliminarSemanaAbierta;
+  for (const s of simulado) {
+    porCapa[s.capa] = {
+      gastos: s.gastos,
+      aplicaIVA: s.aplicaIVA,
+      totales: totalesCapa({
+        capa: s.capa,
+        ...trabajos[s.capa],
+        gastos: s.gastos,
+        esquemaContractual,
+        porcentajesDefault,
+        aplicaIVA: s.aplicaIVA,
+        porcentajeIVA: s.porcentajeIVA,
+      }),
+    };
+  }
+  return porCapa;
+}
+
+// ---------------------------------------------------------------------------
+// Aprobación de un gasto cobrable cuya semana YA está cerrada y nunca generó
+// estimación (se cerró sin avance ni gastos cobrables, o antes de que
+// existiera este módulo) — noviembre 2026. Sin esto, el gasto quedaba sin
+// capa para siempre: su propia semana no tenía capa y el cierre ya no se
+// vuelve a ejecutar. Reutiliza asegurarFisicoYCapas tal cual (la misma que
+// usa el cierre y la materialización histórica).
+//
+// - Solo actúa si la semana está CERRADA y NO existe EstimacionCliente. Si
+//   ya existe (BORRADOR o EMITIDA) no crea nada: el reclamo normal decide
+//   (una capa EMITIDA nunca se toca; el gasto pasa a la siguiente BORRADOR).
+// - Bloquea la fila del cierre (FOR UPDATE): dos aprobaciones simultáneas de
+//   la misma semana se serializan y la segunda ya ve la estimación creada —
+//   nunca duplica. reabrirSemana también espera ese candado.
+// - Llamada dentro de la transacción de aprobarGasto, con el gasto ya
+//   APROBADO en esa transacción.
+// ---------------------------------------------------------------------------
+
+export async function asegurarEstimacionDeSemanaCerradaTx(
+  tx: Cliente,
+  ctx: { empresaId: string; proyectoId: string; semanaId: string; usuarioId: string }
+): Promise<boolean> {
+  const [cierre] = await tx.$queryRaw<{ estatus: string }[]>`
+    SELECT estatus::text AS estatus FROM cierres_semana_proyecto
+    WHERE "proyectoId" = ${ctx.proyectoId} AND "semanaId" = ${ctx.semanaId}
+    FOR UPDATE`;
+  if (!cierre || cierre.estatus !== "CERRADA") return false;
+
+  const existente = await tx.estimacionCliente.findUnique({
+    where: { proyectoId_semanaId: { proyectoId: ctx.proyectoId, semanaId: ctx.semanaId } },
+    select: { id: true },
+  });
+  if (existente) return false;
+
+  const semana = await tx.semana.findFirst({
+    where: { id: ctx.semanaId, empresaId: ctx.empresaId },
+    select: { id: true, fechaInicio: true },
+  });
+  if (!semana) throw new RegistroNoEncontradoError("La semana");
+
+  const resultado = await asegurarFisicoYCapas(tx, { ...ctx, origen: "aprobacion_gasto_semana_cerrada" }, semana);
+  return resultado.tipo === "CREADA";
 }
 
 // ---------------------------------------------------------------------------
@@ -799,7 +1012,7 @@ export async function asegurarFisicoYCapas(
     proyectoId: string;
     semanaId: string;
     usuarioId: string;
-    origen?: "cierre_semana" | "backfill_historico";
+    origen?: "cierre_semana" | "backfill_historico" | "aprobacion_gasto_semana_cerrada";
   },
   semana: { id: string; fechaInicio: Date }
 ): Promise<ResultadoAsegurarCapas> {
@@ -825,16 +1038,7 @@ export async function asegurarFisicoYCapas(
   // dónde reclamarse y la capa se pueda emitir solo con el material
   // (decisión de sesión, septiembre 2026 — semanas sin avance con gasto).
   if (filas.length === 0 && !existente) {
-    const hayGastoCobrablePendiente = await tx.gastoObra.findFirst({
-      where: {
-        proyectoId: ctx.proyectoId,
-        semanaId: ctx.semanaId,
-        estatus: "APROBADO",
-        tratamientoCliente: "COBRABLE_EN_ESTIMACION",
-      },
-      select: { id: true },
-    });
-    if (!hayGastoCobrablePendiente) {
+    if (!(await hayGastoCobrableAprobadoEnSemana(tx, ctx.proyectoId, ctx.semanaId))) {
       return { tipo: "SIN_AVANCE" };
     }
   }

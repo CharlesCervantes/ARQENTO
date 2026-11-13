@@ -12,7 +12,6 @@ import {
   obtenerEstimacionCliente,
   soloOperativo,
   agruparPorPartida,
-  totalOperativo,
   type FilaEstimacionCapa,
 } from "@/lib/server/control-de-obra/estimacion-cliente";
 import { obtenerControlContractual } from "@/lib/server/control-de-obra/financiero-cliente";
@@ -104,6 +103,7 @@ export default async function ClienteGeneralEstimacionPage({
   ]);
   const fondoDisponible = controlContractual.financiero?.fondo?.disponible ?? 0;
   const semanaCerrada = resumenCierre.estatus === "CERRADA";
+  const preliminar = enVivoCandidato.preliminar.OPERATIVO;
 
   const congelado = semanaCerrada ? congeladoCandidato : null;
   const sinSnapshot = semanaCerrada && congelado === null;
@@ -194,7 +194,19 @@ export default async function ClienteGeneralEstimacionPage({
               />
             </>
           ) : (
-            <ResumenEstimacionOperativa total={totalOperativo(soloOperativo(enVivoCandidato.filas))} />
+            // Semana abierta: avance + gastos cobrables que entrarían al
+            // cerrar (mismos criterios que el cierre; solo lectura).
+            <>
+              <TablaGastosEstimacion gastos={preliminar.gastos} />
+              <ResumenEstimacionOperativa
+                subtotalTrabajos={preliminar.totales.subtotal}
+                gastosCobrables={preliminar.totales.subtotalGastosCobrables}
+                administracion={preliminar.totales.montoAdministracionTotal}
+                aplicaIVA={preliminar.aplicaIVA}
+                montoIVA={preliminar.totales.montoIVA}
+                total={preliminar.totales.total}
+              />
+            </>
           )}
         </>
       )}
