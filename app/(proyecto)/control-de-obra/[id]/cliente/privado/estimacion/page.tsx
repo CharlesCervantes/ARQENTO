@@ -118,7 +118,9 @@ export default async function ClientePrivadoEstimacionPage({
   const congelado = semanaCerrada ? congeladoCandidato : null;
   const sinSnapshot = semanaCerrada && congelado === null;
 
-  const totalesVivos = enVivoCandidato.totalesPrivados;
+  // Semana abierta: avance + gastos cobrables que entrarían al cerrar
+  // (mismos criterios que el cierre; solo lectura).
+  const preliminar = enVivoCandidato.preliminar.PRIVADO;
 
   const partidas = semanaCerrada
     ? agruparPorPartida(congelado?.filas ?? []).map((p) => ({
@@ -219,15 +221,18 @@ export default async function ClientePrivadoEstimacionPage({
               />
             </>
           ) : (
-            <ResumenEstimacionPrivada
-              esquemaContractual={proyecto.esquemaContractual}
-              subtotalTrabajos={totalesVivos.subtotal}
-              gastosCobrables={0}
-              administracion={totalesVivos.montoAdministracionOUtilidad}
-              aplicaIVA={false}
-              montoIVA={0}
-              total={totalesVivos.total}
-            />
+            <>
+              <TablaGastosEstimacion gastos={preliminar.gastos} />
+              <ResumenEstimacionPrivada
+                esquemaContractual={proyecto.esquemaContractual}
+                subtotalTrabajos={preliminar.totales.subtotal}
+                gastosCobrables={preliminar.totales.subtotalGastosCobrables}
+                administracion={preliminar.totales.montoAdministracionTotal}
+                aplicaIVA={preliminar.aplicaIVA}
+                montoIVA={preliminar.totales.montoIVA}
+                total={preliminar.totales.total}
+              />
+            </>
           )}
         </>
       )}

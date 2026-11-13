@@ -638,6 +638,19 @@ export async function generarRecibo(
     const empresa = await tx.empresa.update({
       where: { id: empresaId },
       data: { ultimoFolioRecibo: { increment: 1 } },
+      select: {
+        ultimoFolioRecibo: true,
+        nombre: true,
+        razonSocial: true,
+        logoRef: true,
+        reciboTitulo: true,
+        reciboLeyenda: true,
+        reciboRazonSocial: true,
+        reciboMostrarDetalle: true,
+        reciboMostrarPU: true,
+        reciboMostrarLeyenda: true,
+        reciboTituloLeyenda: true,
+      },
     });
     const folio = `REC-${String(empresa.ultimoFolioRecibo).padStart(6, "0")}`;
 

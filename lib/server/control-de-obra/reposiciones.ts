@@ -33,6 +33,10 @@ async function crearReposicionAutomaticaTx(
   const empresa = await tx.empresa.update({
     where: { id: ctx.empresaId },
     data: { ultimoFolioReposicion: { increment: 1 } },
+    // Solo el contador: sin select, Prisma devuelve TODAS las columnas de
+    // empresas y el folio queda acoplado a columnas ajenas (incidente PRD
+    // nov-2026, inteligenciaHabilitada sin migrar).
+    select: { ultimoFolioReposicion: true },
   });
   const folio = `REP-${String(empresa.ultimoFolioReposicion).padStart(6, "0")}`;
 
