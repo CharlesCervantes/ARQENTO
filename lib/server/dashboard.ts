@@ -17,7 +17,6 @@ import {
   redondear,
   type MovimientoCobro,
 } from "@/lib/control-de-obra/cobro-estimacion";
-import { obtenerResumenFiscalPeriodo } from "@/lib/server/contabilidad/resumen";
 import { obtenerFacturasPendientes } from "@/lib/server/contabilidad/facturas-pendientes";
 import { obtenerFacturasConDiferencia } from "@/lib/server/contabilidad/facturas";
 import {
@@ -276,6 +275,12 @@ export type FilaProyectoDashboard = {
   porPagar: number | null;
   utilidad: UtilidadProyecto | null;
   salud: EstadoSalud;
+  // Pendiente principal de la obra (Inicio V2) — la señal más grave de las
+  // mismas que deciden `salud`, en texto. Supervisor solo recibe señales
+  // operativas (nunca pagos); la desviación solo en vista Privado.
+  // "AVISO": señal que todavía no cambia la salud (p. ej. semana por cerrar
+  // de menos de 7 días) — se muestra sin color de alerta.
+  motivo: { texto: string; severidad: "ATENCION" | "REQUIERE_ACCION" | "AVISO" } | null;
   // Señales crudas expuestas para construir las alertas de "Requiere tu
   // atención" sin volver a re-derivarlas a partir de `salud` (que ya las
   // combina y pierde granularidad).
@@ -310,15 +315,33 @@ export type CompromisoDashboard = {
   href: string;
 };
 
-// Fiscal (Contabilidad: solo lo marcado requiereFactura/Ingreso.facturaEsperada)
-// — DELIBERADAMENTE distinto de `flujoDinero` (operativo: todo movimiento
-// real, con o sin factura). Nunca se muestran como si fueran el mismo
-// número (Rediseño de Inicio, C. Fiscal vs Operativo). null para
-// nivelAcceso "operativo".
-export type ResumenFiscalDashboard = {
-  ingresosFiscales: number;
-  egresosFiscales: number;
-  resultado: number;
+// Pendiente de "Requiere tu atención" (Inicio V2, noviembre 2026): fusión de
+// alertas y compromisos sin repetir el mismo asunto, ya ordenada por
+// prioridad. Ver priorizarPendientes.
+export type PendienteDashboard = {
+  tipo: AlertaDashboard["tipo"] | CompromisoDashboard["tipo"];
+  severidad: "ATENCION" | "REQUIERE_ACCION";
+  titulo: string;
+  detalle: string;
+  monto: number | null;
+  href: string;
+};
+
+// Indicadores de la fila principal de vista Privado (Inicio V2). Solo existen
+// con vista Privado efectiva (incluirPrivado); null en General y Supervisor.
+// - costoCubierto: MovimientoSemanal APROBADO en LIQUIDADO o PAGADO_PUENTE —
+//   la misma suma "ejercido" del % por obra, SIN gasto directo solo aprobado.
+//   Elección de presentación V2; no resuelve D8 de forma global ni cambia el
+//   flujo (que sigue contando solo LIQUIDADO).
+// - obrasAdelantadas: desviacionPrivadaPP > UMBRAL_DESVIACION_PP (misma regla
+//   que la alerta de desviación), de mayor a menor.
+export type IndicadoresPrivados = {
+  costoCubierto: number;
+  presupuestoCosto: number;
+  porcentajeCubierto: number | null;
+  obrasConDesviacionCalculable: number;
+  obrasAdelantadas: { id: string; nombre: string; desviacionPP: number }[];
+  umbralPP: number;
 };
 
 export type UtilidadConsolidada = {
@@ -348,17 +371,26 @@ export type ResumenEjecutivo = {
   porPagarObras: number | null;
   porPagarEmpresa: number | null;
   porPagarTotal: number | null;
+  // Días del pago de obra aprobado y sin liquidar más antiguo — SOLO Obras
+  // (Por pagar Empresa no tiene antigüedad calculada; nunca se le atribuye).
+  porPagarObrasDiasMax: number | null;
   porCobrar: number | null;
+  // Estimaciones con saldo pendiente dentro del mismo cálculo de porCobrar.
+  estimacionesPorCobrar: number | null;
   // base "general" = Flujo General (vista General: cobros a valores General,
   // con tope cronológico por estimación — no necesariamente efectivo
   // bancario); base "real" = Flujo real (vista Privado: todo cobro real).
   flujoDinero: { base: "general" | "real"; entradas: number; pagosDeObra: number; gastosReposicionesDentro: number; neto: number } | null;
-  resumenFiscal: ResumenFiscalDashboard | null;
   gastosProyectoPeriodo: number | null;
   gastosEmpresaPeriodo: number | null;
   utilidadConsolidada: UtilidadConsolidada | null;
+  privado: IndicadoresPrivados | null;
+  // Obras activas en ejecución con SEMANAS_SIN_AVANCE_ATENCION o más sin
+  // avance — mismo criterio que la alerta operativa; dato no financiero.
+  obrasSinAvanceReciente: number;
   alertas: AlertaDashboard[];
   compromisos: CompromisoDashboard[];
+  pendientes: PendienteDashboard[];
   proyectos: FilaProyectoDashboard[];
 };
 
@@ -435,14 +467,18 @@ export async function obtenerResumenEjecutivo(
       porPagarObras: null,
       porPagarEmpresa: null,
       porPagarTotal: null,
+      porPagarObrasDiasMax: null,
       porCobrar: null,
+      estimacionesPorCobrar: null,
       flujoDinero: null,
-      resumenFiscal: null,
       gastosProyectoPeriodo: null,
       gastosEmpresaPeriodo: null,
       utilidadConsolidada: null,
+      privado: null,
+      obrasSinAvanceReciente: 0,
       alertas: [],
       compromisos: [],
+      pendientes: [],
       proyectos: [],
     };
   }
@@ -648,8 +684,9 @@ async function cargarDatosDashboard(
       )
     : new Map<string, number>();
 
+  // El resumen fiscal (Contabilidad) ya no se pide aquí: Inicio V2 lo retira
+  // (plan D2/D4, punto 1.9) y Contabilidad lo conserva.
   const [
-    resumenFiscalPeriodo,
     facturasPendientesLista,
     facturasConDiferencia,
     reposicionesPendientesLista,
@@ -658,7 +695,6 @@ async function cargarDatosDashboard(
     gastosEmpresaPeriodoAgg,
     porPagarEmpresaAgg,
   ] = await Promise.all([
-    nivelAcceso === "completo" ? obtenerResumenFiscalPeriodo(usuario, rango.inicio, rango.fin) : Promise.resolve(null),
     nivelAcceso === "completo" ? obtenerFacturasPendientes(usuario, { incluirPrivado }) : Promise.resolve([]),
     nivelAcceso === "completo" ? obtenerFacturasConDiferencia(usuario, { incluirPrivado }) : Promise.resolve([]),
     nivelAcceso === "completo" ? obtenerReposicionesPendientes(usuario) : Promise.resolve([]),
@@ -703,7 +739,6 @@ async function cargarDatosDashboard(
     ultimaSemanaConAvance,
     montosContratoGeneral,
     costoDirectoEmpresaPorProyecto,
-    resumenFiscalPeriodo,
     facturasPendientesLista,
     facturasConDiferencia,
     reposicionesPendientesLista,
@@ -741,7 +776,6 @@ export function proyectarResumenEjecutivo(
     ultimaSemanaConAvance,
     montosContratoGeneral,
     costoDirectoEmpresaPorProyecto,
-    resumenFiscalPeriodo,
     facturasPendientesLista,
     facturasConDiferencia,
     reposicionesPendientesLista,
@@ -825,6 +859,9 @@ export function proyectarResumenEjecutivo(
   let sumaEjecutadoGeneral = 0;
   let sumaPresupuestoCosto = 0;
   let sumaCostoRealPagado = 0;
+  // Costo cubierto (Privado, Inicio V2) — Σ financieroPrivado.ejercido, sin
+  // el gasto directo aprobado que sí suma costoRealPagado.
+  let sumaCostoCubierto = 0;
 
   for (const proyecto of proyectos) {
     const conceptos = conceptosPorProyecto.get(proyecto.id) ?? [];
@@ -930,6 +967,7 @@ export function proyectarResumenEjecutivo(
       sumaEjecutadoGeneral += ejecutadoGeneral;
       sumaPresupuestoCosto += financieroPrivado.presupuestoCosto;
       sumaCostoRealPagado += costoRealPagado;
+      sumaCostoCubierto += financieroPrivado.ejercido;
     }
 
     const ejecutado = vistaEfectiva === "privado" && financieroPrivado ? financieroPrivado.ejercido : ejecutadoGeneral;
@@ -1006,6 +1044,17 @@ export function proyectarResumenEjecutivo(
       porPagar: esCompleto ? porPagarProyecto : null,
       utilidad: utilidadProyecto,
       salud,
+      motivo:
+        proyecto.estatus === "PAUSADO" || etapa === "POR_INICIAR"
+          ? null
+          : motivoPrincipal({
+              esCompleto,
+              semanasSinCerrarDias: semanasSinCerrarDiasMax,
+              diasPagoPendienteMax,
+              gastosPendientesCount,
+              semanasSinAvance: tieneAvanceHistorico ? semanasSinAvance : 0,
+              desviacionPrivadaPP,
+            }),
       desviacionPrivadaPP,
       semanasSinCerrarDias: semanasSinCerrarDiasMax,
       diasPagoPendienteMax,
@@ -1058,12 +1107,15 @@ export function proyectarResumenEjecutivo(
   // Privado: total real de cada estimación (Privado emitida si existe; si no,
   // Operativo — nunca ambas capas sumadas como obligaciones distintas).
   let porCobrarTotal = 0;
+  let estimacionesPorCobrar = 0;
   for (const [estimacionClienteId, capasEstimacion] of capasPorEstimacionClienteId) {
     // capasEmitidas solo trae capas EMITIDA.
     const capaReal = capaRealDeEstimacion(capasEstimacion.map((c) => ({ capa: c.capa, estatus: "EMITIDA" })));
     const capaBase = capasEstimacion.find((c) => c.capa === (vistaEfectiva === "privado" ? capaReal : "OPERATIVO"));
     if (!capaBase) continue;
-    porCobrarTotal += calcularCobroEstimacion(num(capaBase.total), cobrosPorEstimacion.get(estimacionClienteId) ?? []).pendiente;
+    const { pendiente } = calcularCobroEstimacion(num(capaBase.total), cobrosPorEstimacion.get(estimacionClienteId) ?? []);
+    porCobrarTotal += pendiente;
+    if (pendiente > 0) estimacionesPorCobrar++;
   }
 
   // Flujo — TODO movimiento real, con o sin factura. Deliberadamente
@@ -1147,7 +1199,6 @@ export function proyectarResumenEjecutivo(
         })
       : [];
 
-  const resumenFiscal: ResumenFiscalDashboard | null = nivelAcceso === "completo" ? resumenFiscalPeriodo : null;
   const gastosProyectoPeriodo = nivelAcceso === "completo" ? num(gastosProyectoPeriodoAgg?._sum.monto ?? null) : null;
   const gastosEmpresaPeriodo = nivelAcceso === "completo" ? num(gastosEmpresaPeriodoAgg?._sum.monto ?? null) : null;
 
@@ -1164,6 +1215,28 @@ export function proyectarResumenEjecutivo(
       })()
     : null;
 
+  // Indicadores de la fila principal Privado — solo con vista Privado
+  // efectiva (incluirPrivado ya exige puedeVerInformacionPrivada, que a su
+  // vez excluye a Supervisor); se repite nivelAcceso por defensa en
+  // profundidad. Agregan datos ya calculados por obra, sin fórmula nueva.
+  const privado: IndicadoresPrivados | null =
+    incluirPrivado && nivelAcceso === "completo"
+      ? {
+          costoCubierto: sumaCostoCubierto,
+          presupuestoCosto: sumaPresupuestoCosto,
+          porcentajeCubierto: sumaPresupuestoCosto > 0 ? (sumaCostoCubierto / sumaPresupuestoCosto) * 100 : null,
+          obrasConDesviacionCalculable: filas.filter((f) => f.desviacionPrivadaPP !== null).length,
+          obrasAdelantadas: filas
+            .filter((f) => f.desviacionPrivadaPP !== null && f.desviacionPrivadaPP > UMBRAL_DESVIACION_PP)
+            .map((f) => ({ id: f.id, nombre: f.nombre, desviacionPP: f.desviacionPrivadaPP as number }))
+            .sort((a, b) => b.desviacionPP - a.desviacionPP),
+          umbralPP: UMBRAL_DESVIACION_PP,
+        }
+      : null;
+
+  // Antigüedad SOLO de Obras — el mismo dato que ya alimenta salud/alertas.
+  const porPagarObrasDiasMax = filas.reduce((max, f) => Math.max(max, f.diasPagoPendienteMax), 0);
+
   return {
     nivelAcceso,
     puedeVerPrivado,
@@ -1179,16 +1252,110 @@ export function proyectarResumenEjecutivo(
     porPagarObras: nivelAcceso === "completo" ? porPagarObras : null,
     porPagarEmpresa: nivelAcceso === "completo" ? porPagarEmpresa : null,
     porPagarTotal: nivelAcceso === "completo" ? porPagarObras + porPagarEmpresa : null,
+    porPagarObrasDiasMax: nivelAcceso === "completo" && porPagarObras > 0 ? Math.floor(porPagarObrasDiasMax) : null,
     porCobrar: nivelAcceso === "completo" ? porCobrarTotal : null,
+    estimacionesPorCobrar: nivelAcceso === "completo" ? estimacionesPorCobrar : null,
     flujoDinero: nivelAcceso === "completo" ? flujoDinero : null,
-    resumenFiscal,
     gastosProyectoPeriodo,
     gastosEmpresaPeriodo,
     utilidadConsolidada,
+    privado,
+    obrasSinAvanceReciente: filas.filter(conAvanceAtrasado).length,
     alertas,
     compromisos,
+    pendientes: priorizarPendientes(alertas, compromisos, vistaEfectiva),
     proyectos: filas,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pendientes de Inicio V2 — un solo bloque con alertas y compromisos.
+// - Se omite lo que ya muestra un indicador de la fila principal de esa
+//   vista (Por pagar/Por cobrar en General; desviación en Privado).
+// - Un compromiso se omite si su asunto ya tiene alerta (la alerta lo
+//   agrega) o si lo cubre un indicador visible.
+// - Orden: severidad actual, luego la prioridad propuesta en D13
+//   (decisiones-financieras-pendientes.md §5) — solo ordena, no cambia
+//   qué genera una alerta ni su severidad.
+// ---------------------------------------------------------------------------
+
+const PRIORIDAD_PENDIENTE: AlertaDashboard["tipo"][] = [
+  "sin_avance_reciente",
+  "pagos_pendientes",
+  "semanas_sin_cerrar",
+  "reposicion_pendiente_antigua",
+  "desviacion",
+  "estimaciones_listas",
+  "pendiente_cobro",
+  "gastos_pendientes",
+  "gasto_recurrente_variable_pendiente",
+  "cfdi_diferencia",
+  "facturas_pendientes",
+];
+
+const CUBIERTO_POR_INDICADOR: Record<VistaDashboard, AlertaDashboard["tipo"][]> = {
+  general: ["pagos_pendientes", "pendiente_cobro"],
+  privado: ["desviacion"],
+};
+
+const ALERTA_DEL_COMPROMISO: Record<CompromisoDashboard["tipo"], AlertaDashboard["tipo"]> = {
+  gasto_recurrente_variable: "gasto_recurrente_variable_pendiente",
+  reposicion_pendiente: "reposicion_pendiente_antigua",
+  pago_pendiente: "pagos_pendientes",
+};
+
+export function priorizarPendientes(
+  alertas: AlertaDashboard[],
+  compromisos: CompromisoDashboard[],
+  vista: VistaDashboard
+): PendienteDashboard[] {
+  const cubiertos = new Set(CUBIERTO_POR_INDICADOR[vista]);
+  const tiposConAlerta = new Set(alertas.map((a) => a.tipo));
+  const rango = (tipo: AlertaDashboard["tipo"]) => {
+    const i = PRIORIDAD_PENDIENTE.indexOf(tipo);
+    return i === -1 ? PRIORIDAD_PENDIENTE.length : i;
+  };
+
+  const items: (PendienteDashboard & { orden: number })[] = [
+    ...alertas
+      .filter((a) => !cubiertos.has(a.tipo))
+      .map((a) => ({
+        tipo: a.tipo,
+        severidad: a.severidad,
+        titulo: a.titulo,
+        detalle: a.detalle,
+        monto: a.monto ?? null,
+        href: a.href,
+        orden: rango(a.tipo),
+      })),
+    ...compromisos
+      .filter((c) => {
+        const alerta = ALERTA_DEL_COMPROMISO[c.tipo];
+        return !tiposConAlerta.has(alerta) && !cubiertos.has(alerta);
+      })
+      .map((c) => ({
+        tipo: c.tipo,
+        severidad: "ATENCION" as const,
+        titulo: c.titulo,
+        detalle: c.detalle,
+        monto: c.monto,
+        href: c.href,
+        orden: rango(ALERTA_DEL_COMPROMISO[c.tipo]),
+      })),
+  ];
+
+  return items
+    .sort(
+      (a, b) =>
+        (a.severidad === b.severidad ? 0 : a.severidad === "REQUIERE_ACCION" ? -1 : 1) ||
+        a.orden - b.orden ||
+        (b.monto ?? 0) - (a.monto ?? 0)
+    )
+    .map((p) => ({ tipo: p.tipo, severidad: p.severidad, titulo: p.titulo, detalle: p.detalle, monto: p.monto, href: p.href }));
+}
+
+function conAvanceAtrasado(p: FilaProyectoDashboard): boolean {
+  return p.estatus === "ACTIVO" && p.etapa === "EN_EJECUCION" && p.semanasSinAvance >= SEMANAS_SIN_AVANCE_ATENCION;
 }
 
 function saludo(nombreCompleto: string): string {
@@ -1233,6 +1400,35 @@ function calcularSaludProyecto(señales: {
   return "SALUDABLE";
 }
 
+// Misma lógica y umbrales que calcularSaludProyecto, devolviendo la primera
+// señal (la más grave) en texto.
+function motivoPrincipal(s: {
+  esCompleto: boolean;
+  semanasSinCerrarDias: number;
+  diasPagoPendienteMax: number;
+  gastosPendientesCount: number;
+  semanasSinAvance: number;
+  desviacionPrivadaPP: number | null;
+}): FilaProyectoDashboard["motivo"] {
+  const dias = (n: number) => `${Math.floor(n)} día${Math.floor(n) === 1 ? "" : "s"}`;
+  const semanas = (n: number) => `${Math.floor(n)} semana${Math.floor(n) === 1 ? "" : "s"}`;
+  const desviacion = s.desviacionPrivadaPP ?? 0;
+  const candidatos: { activo: boolean; severidad: "ATENCION" | "REQUIERE_ACCION" | "AVISO"; texto: string }[] = [
+    { activo: s.esCompleto && s.semanasSinCerrarDias / 7 >= SEMANAS_SIN_CERRAR_CRITICO, severidad: "REQUIERE_ACCION", texto: `Semana sin cerrar desde hace ${dias(s.semanasSinCerrarDias)}` },
+    { activo: s.esCompleto && s.diasPagoPendienteMax >= DIAS_PAGO_PENDIENTE_CRITICO, severidad: "REQUIERE_ACCION", texto: `Pago pendiente desde hace ${dias(s.diasPagoPendienteMax)}` },
+    { activo: s.semanasSinAvance >= SEMANAS_SIN_AVANCE_CRITICO, severidad: "REQUIERE_ACCION", texto: `Sin avance desde hace ${semanas(s.semanasSinAvance)}` },
+    { activo: desviacion > UMBRAL_DESVIACION_PP * 2, severidad: "REQUIERE_ACCION", texto: `Costo adelantado al avance (+${desviacion.toFixed(0)} pp)` },
+    { activo: s.esCompleto && s.semanasSinCerrarDias / 7 >= 1, severidad: "ATENCION", texto: `Semana sin cerrar desde hace ${dias(s.semanasSinCerrarDias)}` },
+    { activo: s.esCompleto && s.diasPagoPendienteMax > 0, severidad: "ATENCION", texto: `Pago pendiente desde hace ${dias(s.diasPagoPendienteMax)}` },
+    { activo: s.esCompleto && s.gastosPendientesCount > 0, severidad: "ATENCION", texto: `${s.gastosPendientesCount} gasto${s.gastosPendientesCount === 1 ? "" : "s"} por revisar` },
+    { activo: s.semanasSinAvance >= SEMANAS_SIN_AVANCE_ATENCION, severidad: "ATENCION", texto: `Sin avance desde hace ${semanas(s.semanasSinAvance)}` },
+    { activo: desviacion > UMBRAL_DESVIACION_PP, severidad: "ATENCION", texto: `Costo adelantado al avance (+${desviacion.toFixed(0)} pp)` },
+    { activo: s.esCompleto && s.semanasSinCerrarDias > 0, severidad: "AVISO", texto: "Semana por cerrar" },
+  ];
+  const elegido = candidatos.find((c) => c.activo);
+  return elegido ? { texto: elegido.texto, severidad: elegido.severidad } : null;
+}
+
 // ---------------------------------------------------------------------------
 // Alertas — "Requiere tu atención"
 // ---------------------------------------------------------------------------
@@ -1271,7 +1467,8 @@ function construirAlertas(ctx: {
       severidad: conSemanaSinCerrar.some((p) => p.semanasSinCerrarDias / 7 >= SEMANAS_SIN_CERRAR_CRITICO) ? "REQUIERE_ACCION" : "ATENCION",
       titulo: `${conSemanaSinCerrar.length} proyecto${conSemanaSinCerrar.length === 1 ? "" : "s"} con semanas pendientes de cierre`,
       detalle: conSemanaSinCerrar.map((p) => p.nombre).slice(0, 3).join(", "),
-      href: "/control-de-obra",
+      // Con una sola obra se lleva directo a donde se cierra la semana.
+      href: hrefDeObra(conSemanaSinCerrar, "/ejecucion/avance"),
     });
   }
 
@@ -1283,8 +1480,9 @@ function construirAlertas(ctx: {
       tipo: "gastos_pendientes",
       severidad: "ATENCION",
       titulo: `${totalGastos} gasto${totalGastos === 1 ? "" : "s"} pendiente${totalGastos === 1 ? "" : "s"} de revisión`,
-      detalle: "Requieren aprobación o rechazo.",
-      href: "/control-de-obra",
+      detalle:
+        conGastosPendientes.length === 1 ? `${conGastosPendientes[0].nombre} · requieren aprobación o rechazo.` : "Requieren aprobación o rechazo.",
+      href: hrefDeObra(conGastosPendientes, "/ejecucion/gastos"),
     });
   }
 
@@ -1322,7 +1520,7 @@ function construirAlertas(ctx: {
         severidad: conDesviacion.some((p) => (p.desviacionPrivadaPP ?? 0) > UMBRAL_DESVIACION_PP * 2) ? "REQUIERE_ACCION" : "ATENCION",
         titulo: `${conDesviacion.length} proyecto${conDesviacion.length === 1 ? "" : "s"} con el costo adelantado al avance físico`,
         detalle: conDesviacion.map((p) => `${p.nombre} (+${(p.desviacionPrivadaPP ?? 0).toFixed(0)}pp)`).slice(0, 3).join(", "),
-        href: "/control-de-obra",
+        href: hrefDeObra(conDesviacion, ""),
       });
     }
   }
@@ -1386,7 +1584,7 @@ function construirAlertas(ctx: {
 // propia alerta) — semanas sin cerrar y gastos pendientes de revisión son
 // acciones de Administrador/Director, no de Supervisor.
 function construirAlertasOperativas(proyectos: FilaProyectoDashboard[]): AlertaDashboard[] {
-  const sinAvance = proyectos.filter((p) => p.estatus === "ACTIVO" && p.etapa === "EN_EJECUCION" && p.semanasSinAvance >= SEMANAS_SIN_AVANCE_ATENCION);
+  const sinAvance = proyectos.filter(conAvanceAtrasado);
   if (sinAvance.length === 0) return [];
   return [
     {
@@ -1394,9 +1592,14 @@ function construirAlertasOperativas(proyectos: FilaProyectoDashboard[]): AlertaD
       severidad: sinAvance.some((p) => p.semanasSinAvance >= SEMANAS_SIN_AVANCE_CRITICO) ? "REQUIERE_ACCION" : "ATENCION",
       titulo: `${sinAvance.length} proyecto${sinAvance.length === 1 ? "" : "s"} sin avance capturado reciente`,
       detalle: sinAvance.map((p) => p.nombre).slice(0, 3).join(", "),
-      href: "/control-de-obra",
+      href: hrefDeObra(sinAvance, "/ejecucion/avance"),
     },
   ];
+}
+
+// Una sola obra involucrada → su pantalla concreta; varias → la lista.
+function hrefDeObra(proyectos: FilaProyectoDashboard[], subruta: string): string {
+  return proyectos.length === 1 ? `/control-de-obra/${proyectos[0].id}${subruta}` : "/control-de-obra";
 }
 
 // ---------------------------------------------------------------------------

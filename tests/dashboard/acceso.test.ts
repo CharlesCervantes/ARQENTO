@@ -39,6 +39,7 @@ describe("Matriz de acceso a Inicio", () => {
 
         if (vistaEsperada === "general") {
           assert.equal(r.utilidadConsolidada, null, "utilidadConsolidada debe ser null en General");
+          assert.equal(r.privado, null, "los indicadores privados deben ser null en General");
           for (const p of r.proyectos) {
             assert.equal(p.utilidad, null, `utilidad de ${p.nombre} debe ser null en General`);
             assert.equal(p.desviacionPrivadaPP, null, `desviacionPrivadaPP de ${p.nombre} debe ser null en General`);
@@ -46,6 +47,7 @@ describe("Matriz de acceso a Inicio", () => {
           assert.ok(!r.alertas.some((a) => a.tipo === "desviacion"), "no debe haber alerta de desviación en General");
         } else {
           assert.notEqual(r.utilidadConsolidada, null, "Privado conserva la utilidad consolidada");
+          assert.notEqual(r.privado, null, "Privado recibe sus indicadores");
           assert.ok(r.proyectos.some((p) => p.desviacionPrivadaPP !== null), "Privado conserva la desviación por obra");
         }
 
@@ -55,7 +57,8 @@ describe("Matriz de acceso a Inicio", () => {
           assert.equal(r.porPagarTotal, null);
           assert.equal(r.porCobrar, null);
           assert.equal(r.flujoDinero, null);
-          assert.equal(r.resumenFiscal, null);
+          assert.equal(r.porPagarObrasDiasMax, null);
+          assert.equal(r.estimacionesPorCobrar, null);
           assert.equal(r.gastosProyectoPeriodo, null);
           assert.equal(r.gastosEmpresaPeriodo, null);
           assert.deepEqual(r.compromisos, []);

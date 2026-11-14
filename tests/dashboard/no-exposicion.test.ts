@@ -8,7 +8,20 @@ import { datosDePrueba, HOY, rangoDePrueba, TRAMPAS_PRIVADAS } from "../helpers/
 // debe contener ningún campo privado con valor ni ningún monto que solo
 // exista del lado privado.
 
-const LLAVES_PRIVADAS = ["utilidad", "desviacionPrivadaPP", "utilidadConsolidada", "costoRealPagado", "utilidadReal", "utilidadPresupuestada"];
+const LLAVES_PRIVADAS = [
+  "utilidad",
+  "desviacionPrivadaPP",
+  "utilidadConsolidada",
+  "costoRealPagado",
+  "utilidadReal",
+  "utilidadPresupuestada",
+  // Indicadores de la fila principal Privado (Inicio V2).
+  "privado",
+  "costoCubierto",
+  "presupuestoCosto",
+  "porcentajeCubierto",
+  "obrasAdelantadas",
+];
 
 function llavesPrivadasConValor(valor: unknown, ruta = "$"): string[] {
   if (valor === null || typeof valor !== "object") return [];
