@@ -197,7 +197,6 @@ export function datosDePrueba(): DatosDashboard {
       [PAUSADA, 0],
     ]),
     costoDirectoEmpresaPorProyecto: new Map([[TORRE, TRAMPAS_PRIVADAS.costoDirectoEmpresaTorre]]),
-    resumenFiscalPeriodo: { ingresosFiscales: 980000, egresosFiscales: 450000, resultado: 530000 },
     facturasPendientesLista: [],
     facturasConDiferencia: [],
     reposicionesPendientesLista: [],

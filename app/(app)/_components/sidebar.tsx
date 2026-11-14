@@ -2,7 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import {
+  BarChart3,
+  BookOpen,
+  Building2,
+  Calculator,
+  HandCoins,
+  House,
+  LayoutGrid,
+  LogOut,
+  Receipt,
+  ShoppingCart,
+  type LucideIcon,
+} from "lucide-react";
 import { EstatusProyectoBadge } from "@/components/control-de-obra/estatus-proyecto-badge";
 import { EnlaceProtegido } from "@/components/control-de-obra/enlace-protegido";
 import { cn } from "@/lib/cn";
@@ -54,6 +66,17 @@ type SidebarProps =
       rolLabel: string;
     };
 
+// Iconos por módulo (solo presentación; rutas y permisos no cambian).
+const ICONO_MODULO: Record<string, LucideIcon> = {
+  reporte_general: BarChart3,
+  control_de_obra: Building2,
+  control_prestamos: HandCoins,
+  catalogos: BookOpen,
+  gastos: Receipt,
+  contabilidad: Calculator,
+  compras: ShoppingCart,
+};
+
 function iniciales(nombre: string): string {
   return nombre
     .split(" ")
@@ -77,18 +100,23 @@ export function Sidebar(props: SidebarProps) {
   const tieneLogo = props.variant !== "master" && Boolean(props.logoUrl);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)]">
+    // 268 px y alto completo (el padre de AppShell es h-screen). Arriba, un
+    // espacio fijo para el logo (horizontal o vertical: object-contain, nunca
+    // se recorta ni deforma); en medio el menú con desplazamiento propio; al
+    // pie, usuario, cerrar sesión y la marca de plataforma.
+    <aside className="flex h-full min-h-0 w-[268px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)]">
       <Link
         href={props.variant === "master" ? "/master" : "/dashboard"}
+        aria-label={props.variant === "master" ? "Portal Master" : `${props.empresaNombre}: ir a Inicio`}
         className={cn(
-          "flex items-center gap-2.5 px-5 transition-opacity duration-150 ease-out hover:opacity-80",
-          tieneLogo ? "py-6" : "py-5"
+          "flex h-[112px] shrink-0 items-center gap-3 border-b border-[var(--border)] px-[22px] py-5 transition-opacity duration-150 ease-out hover:opacity-80 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]",
+          tieneLogo && "py-4"
         )}
       >
         {props.variant === "master" ? (
           <>
             <span
-              className="flex h-10 w-10 items-center justify-center rounded-md text-sm font-semibold text-[var(--brand-foreground)]"
+              className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl text-sm font-bold text-[var(--brand-foreground)]"
               style={{ backgroundColor: "var(--brand)" }}
             >
               M
@@ -100,36 +128,36 @@ export function Sidebar(props: SidebarProps) {
           <img
             src={props.logoUrl!}
             alt={props.empresaNombre}
-            className="h-auto w-full max-h-28 object-contain"
+            className="h-full w-full object-contain object-left"
           />
         ) : (
           <>
             <span
-              className="flex h-10 w-10 items-center justify-center rounded-md text-sm font-semibold text-[var(--brand-foreground)]"
+              className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl text-sm font-bold text-[var(--brand-foreground)]"
               style={{ backgroundColor: "var(--brand)" }}
             >
               {iniciales(props.empresaNombre)}
             </span>
-            <span className="truncate text-sm font-semibold text-[var(--foreground)]">
+            <span className="line-clamp-2 text-[15px] leading-5 font-semibold text-[var(--foreground)]">
               {props.empresaNombre}
             </span>
           </>
         )}
       </Link>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3">
+      <nav aria-label="Navegación principal" className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3.5 py-4">
         {props.variant === "master" ? (
           <>
-            <NavLink href="/master" active={pathname === "/master"}>
+            <NavLink href="/master" active={pathname === "/master"} icono={LayoutGrid}>
               Resumen
             </NavLink>
-            <NavLink href="/master/empresas" active={pathname.startsWith("/master/empresas")}>
+            <NavLink href="/master/empresas" active={pathname.startsWith("/master/empresas")} icono={Building2}>
               Empresas
             </NavLink>
           </>
         ) : props.variant === "global" ? (
           <>
-            <NavLink href="/dashboard" active={pathname === "/dashboard"}>
+            <NavLink href="/dashboard" active={pathname === "/dashboard"} icono={House}>
               Inicio
             </NavLink>
 
@@ -140,15 +168,19 @@ export function Sidebar(props: SidebarProps) {
                   href={modulo.href}
                   active={pathname.startsWith(modulo.href)}
                   pendiente={modulo.pendiente}
+                  icono={ICONO_MODULO[modulo.clave]}
                 >
                   {modulo.nombre}
                 </NavLink>
               ) : (
                 <div
                   key={modulo.clave}
-                  className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-[var(--muted)]"
+                  className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm text-[var(--muted)]"
                 >
-                  <span>{modulo.nombre}</span>
+                  <span className="flex items-center gap-3">
+                    <IconoModulo clave={modulo.clave} />
+                    {modulo.nombre}
+                  </span>
                   <span className="rounded-full bg-black/[0.04] px-2 py-0.5 text-[11px]">
                     Próximamente
                   </span>
@@ -198,12 +230,7 @@ export function Sidebar(props: SidebarProps) {
                       <EnlaceProtegido
                         key={hijo.href}
                         href={hijo.href}
-                        className={cn(
-                          "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out",
-                          activo
-                            ? "bg-[var(--brand)]/10 text-[var(--brand)]"
-                            : "text-[var(--foreground)] hover:bg-black/[0.04]"
-                        )}
+                        className={cn(ESTILO_ITEM, activo ? ESTILO_ACTIVO : ESTILO_INACTIVO)}
                       >
                         <span>{hijo.label}</span>
                         {hijo.pendiente && <PuntoPendiente />}
@@ -217,7 +244,7 @@ export function Sidebar(props: SidebarProps) {
         )}
       </nav>
 
-      <div className="border-t border-[var(--border)] p-3">
+      <div className="shrink-0 border-t border-[var(--border)] px-3.5 pt-3 pb-2">
         <Link
           href="/perfil"
           className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors duration-150 ease-out hover:bg-black/[0.04]"
@@ -236,37 +263,58 @@ export function Sidebar(props: SidebarProps) {
           </div>
         </Link>
         <form action={logout} className="mt-1">
-          <Button variant="ghost" type="submit" className="w-full justify-start">
+          <button
+            type="submit"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[var(--muted)] transition-colors duration-150 ease-out hover:bg-black/[0.04] hover:text-[var(--foreground)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
+          >
+            <LogOut size={18} strokeWidth={1.8} aria-hidden />
             Cerrar sesión
-          </Button>
+          </button>
         </form>
+        {/* Marca de plataforma (dorado de ARQENTO, definido en app/login/page.tsx). */}
+        <p className="mt-2 flex items-center gap-2 border-t border-[var(--border)] px-3 pt-3 pb-1 text-xs font-semibold tracking-[0.02em] text-[var(--muted)]">
+          <span aria-hidden className="h-2 w-2 rounded-[2px] bg-[#c99a63]" />
+          ARQENTO
+        </p>
       </div>
     </aside>
   );
+}
+
+// Estado activo en grafito (diseño de Inicio V4), igual en las tres variantes.
+const ESTILO_ITEM =
+  "flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]";
+const ESTILO_ACTIVO = "bg-[#1e2226] text-[#f3f4f5]";
+const ESTILO_INACTIVO = "text-[#4d5257] hover:bg-black/[0.04] hover:text-[var(--foreground)]";
+
+function IconoModulo({ clave }: { clave: string }) {
+  const Icono = ICONO_MODULO[clave];
+  return Icono ? <Icono size={19} strokeWidth={1.8} aria-hidden className="shrink-0" /> : null;
 }
 
 function NavLink({
   href,
   active,
   pendiente,
+  icono: Icono,
   children,
 }: {
   href: string;
   active: boolean;
   pendiente?: boolean;
+  icono?: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
-      className={cn(
-        "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out",
-        active
-          ? "bg-[var(--brand)]/10 text-[var(--brand)]"
-          : "text-[var(--foreground)] hover:bg-black/[0.04]"
-      )}
+      aria-current={active ? "page" : undefined}
+      className={cn(ESTILO_ITEM, active ? ESTILO_ACTIVO : ESTILO_INACTIVO)}
     >
-      <span>{children}</span>
+      <span className="flex min-w-0 items-center gap-3">
+        {Icono && <Icono size={19} strokeWidth={1.8} aria-hidden className="shrink-0" />}
+        <span className="truncate">{children}</span>
+      </span>
       {pendiente && <PuntoPendiente />}
     </Link>
   );
