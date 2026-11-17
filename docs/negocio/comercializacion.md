@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.3 · 16 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo) implementado en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.4 · 17 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo) y B2 (clientes, obras y cotizaciones en borrador) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -252,6 +252,7 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
 | P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
+| P11 — propuesta implementada (B2), confirmar | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
 | P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
 | P8 | Reparto y deuda en primera entrega | Resultado estimado; automatización avanzada después si no es necesaria |
 
@@ -297,7 +298,9 @@ Decisiones confirmadas por el usuario: precios editables solo por Administrador,
 
 ### B1 — Módulo, permisos y catálogo de productos (implementado, sin desplegar)
 
-Rama `feature/comercializacion`. Migración `20261116120000_comercializacion_b1_catalogo` (aditiva). Aplicada solo en la base de desarrollo y en la base local de pruebas; **no aplicada en PRD**.
+Rama `feature/comercializacion`. Migración `20261116120000_comercializacion_b1_catalogo` (aditiva). Aplicada en la base de desarrollo compartida (Neon, antes de B2), en la base local de pruebas y, desde B2, en las bases locales independientes del worktree; **no aplicada en PRD**.
+
+Corrección hecha en B2: la verificación previa de «código ya existe» usaba la comparación sin mayúsculas de Prisma, que se traduce a `ILIKE` y trataba «_» y «%» como comodines (crear `CEM_50` fallaba si existía `CEMX50`). Ahora compara con `lower(codigo)`, la misma expresión del índice único.
 
 Decisiones confirmadas para B1 (noviembre 2026):
 - **Administración:** Administrador y Director tienen las facultades administrativas de Comercialización, siguiendo la jerarquía existente. Master solo habilita el módulo por Empresa desde Portal Master; no opera dentro del módulo.
@@ -313,8 +316,52 @@ Qué puede hacer cada usuario al terminar B1:
 - Master: habilitar Comercialización a una Empresa (Portal Master → Empresas → Módulos). No se habilita automáticamente para ninguna Empresa.
 - Administrador/Director: ver el módulo, administrar Productos y asignar la función Vendedor.
 - Vendedor: ver el módulo y consultar Productos activos con precios de venta.
-- «Nueva cotización» aparece deshabilitado con el aviso de que se habilitará en la siguiente entrega.
+- «Nueva cotización» aparecía deshabilitado hasta B2 (ya habilitado, ver B2).
 
-Fuera de B1 (sin cambios de estado): cotizaciones, OC de cliente, compras, créditos/cuotas, avisos, entregas, resultado, importación masiva del catálogo y navegación móvil.
+### B2 — Clientes, obras comerciales y cotizaciones en borrador (implementado, sin desplegar)
 
-Pendientes que bloquean B2/B3: P1 (folio y prefijo de la OC de cliente; el prefijo `OC-` ya lo usan las compras a proveedor), P3 (quién registra la aceptación y visibilidad/registro de cobros del vendedor). P5, P6, P7 (importación) y P8 siguen pendientes para sus bloques.
+Rama `feature/comercializacion`. Migración `20261117090000_comercializacion_b2_cotizaciones` (aditiva). Aplicada solo en la base de desarrollo **independiente** del worktree (PostgreSQL local en Docker) y en su base de pruebas dedicada; **no** en la base de desarrollo compartida con `develop` ni en PRD.
+
+Entidades (propias del módulo, aisladas por Empresa; no crean Proyecto, contratos ni semanas):
+- `ClienteComercial` (nombre único por Empresa sin distinguir mayúsculas ni espacios; contacto y teléfono opcionales).
+- `ObraComercial` (de un cliente; nombre único por cliente; ubicación opcional).
+- `CotizacionVenta` (estatus BORRADOR; creador y vendedor separados; fecha y vigencia como fechas de calendario; condiciones y observaciones; totales derivados; versión; clave de creación).
+- `PartidaCotizacionVenta` (copia histórica del producto y precios).
+- La base garantiza con llaves foráneas compuestas que cliente, obra, partidas y productos sean de la misma Empresa y que la obra sea del cliente de la cotización; una obra sin cliente se rechaza.
+
+Reglas implementadas:
+- **Alcance:** Administrador/Director ven y editan las cotizaciones de su Empresa; el vendedor solo las asignadas a él (por listado, búsqueda, filtro o ID directo; fuera de alcance = «no existe»).
+- **Clientes y obras:** administración y vendedores consultan la lista y dan de alta los mínimos desde el formulario. Un nombre repetido devuelve el registro existente (también evita duplicados por doble clic). Los selectores solo exponen id y nombre, nunca cotizaciones ni importes.
+- **Vendedor:** el vendedor siempre queda asignado a sí mismo; enviar otro vendedor se rechaza. Administración asigna un vendedor elegible de su Empresa: Supervisor activo con la función Vendedor, o Administrador/Director activo (administración puede vender directamente). La elegibilidad se valida al asignar; conservar a un vendedor que después perdió la función no falla.
+- **Mínimos de un borrador:** el sistema asigna folio, vendedor y fecha (hoy en America/Monterrey, editable); además se exige al menos uno de cliente, descripción o un material. Cliente, obra, vigencia, condiciones y materiales pueden completarse después. Si hay obra, debe haber cliente y ser suyo. La vigencia no puede ser anterior a la fecha.
+- **Productos:** buscador de productos activos por código o descripción; al agregar se precargan unidad, precio y tratamiento de impuesto. Un producto inactivo no puede agregarse como partida nueva; sus partidas existentes se conservan.
+- **Copia histórica:** cada partida guarda código, descripción, unidad, tratamiento, tasa, precio base (catálogo al agregarla) y precio aplicado. Cambiar o desactivar el producto no altera partidas guardadas; cambiar el precio de una partida no altera el catálogo.
+- **Precios:** solo Administrador/Director fijan un precio distinto al de catálogo; queda registrado quién y cuándo. El vendedor cambia cantidades y quita o agrega partidas, pero no precios, impuestos, descuentos ni importes: el servidor rechaza esos campos. Un precio ajustado por administración se conserva cuando el vendedor edita cantidades.
+- **Sin costos para el vendedor:** las partidas no guardan costo; el formulario y las respuestas solo usan campos de venta.
+- **Folios:** consecutivo propio por Empresa `COT-000001` (`Empresa.ultimoFolioCotizacionVenta`), asignado en la misma transacción; no consume el contador de OC de Compras.
+- **Reintentos:** el formulario envía una clave de creación por intento; un doble clic o reintento con la misma clave devuelve la misma cotización y no consume folio. La clave de otra persona no permite recuperar una cotización ajena.
+- **Conflictos:** cada guardado envía la versión leída; si otra persona guardó antes, se rechaza sin sobrescribir y se pide recargar.
+- **Bitácora:** creación (folio, vendedor, cliente/obra, partidas, total) y cada edición (campos cambiados, vendedor, partidas agregadas/eliminadas/modificadas con cantidad y precio anterior/nuevo, total y versión). Guardar sin cambios no genera registro.
+- **Sin efectos financieros:** un borrador no crea OC, compra, cobro, ingreso, egreso, gasto ni deuda.
+- **Listado:** «Cotizaciones y órdenes» con cotizaciones reales; filtros por búsqueda (folio, descripción, cliente u obra), cliente, obra y —solo administración— vendedor. Cobro y entrega muestran «No aplica». No se muestran indicadores de saldos, utilidades ni entregas mientras no existan datos reales.
+
+Cálculos (servidor; el navegador solo muestra una vista previa con las mismas funciones):
+- **Cantidad:** mayor que 0, hasta 3 decimales (metros, toneladas…), hasta 11 dígitos enteros. Nunca se redondea a entero.
+- **Precio unitario:** mayor que 0, 2 decimales, sin IVA.
+- **Importe de partida:** cantidad × precio calculado exacto (enteros, sin punto flotante) y redondeado una sola vez, half-up, al centavo.
+- **Subtotal:** suma de importes de partida.
+- **IVA:** la base gravada se agrupa por tasa; IVA de cada tasa = base × tasa, redondeado half-up al centavo; IVA total = suma por tasa. Tasa 0 % y Exento se muestran como bases separadas con IVA $0.00 y nunca se mezclan entre sí.
+- **Total:** subtotal + IVA. La base exige `total = subtotal + iva`.
+- Nota: el IVA se redondea por tasa sobre el documento, no por partida. Si en el futuro se facturan cotizaciones con CFDI (que calcula impuesto por concepto) puede haber diferencias de centavos; decidir al llegar a facturación.
+
+Fuera de B2: emitir/PDF, aceptación, conversión a OC, compras, créditos, entregas, resultado, importación de catálogo y navegación móvil.
+
+### Pendientes para B3
+
+- **P1:** quién genera el folio de la OC de cliente (Arqento, el cliente o ambos) y con qué prefijo; `OC-` ya lo usan las compras a proveedor.
+- **P3:** si el vendedor puede registrar la aceptación y si ve o registra cobros.
+- Campos obligatorios para emitir: se propone cliente, obra, vigencia y al menos una partida.
+- Contenido del PDF: §11 indica «vendedor según decisión comercial».
+- Qué hacer con una cotización vencida: §4 indica no convertir ni cobrar automáticamente.
+- Si se requieren datos fiscales del cliente (RFC/razón social) para el PDF.
+- P5, P6, P7 (importación) y P8 siguen pendientes para sus bloques.

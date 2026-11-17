@@ -211,21 +211,21 @@ function instantanea(p: {
 }
 
 // La unicidad real la garantiza el índice único lower(codigo) por Empresa;
-// esta consulta solo da un mensaje claro antes de intentar escribir.
+// esta consulta solo da un mensaje claro antes de intentar escribir. Usa la
+// MISMA expresión que el índice: `mode: "insensitive"` de Prisma genera
+// ILIKE sin escapar "_" ni "%", y daba falsos duplicados ("CEM_50" contra
+// "CEMX50") — corregido en B2.
 async function asegurarCodigoDisponible(
   tx: Prisma.TransactionClient,
   empresaId: string,
   codigo: string,
   excluirId?: string
 ) {
-  const existente = await tx.productoComercial.findFirst({
-    where: {
-      empresaId,
-      codigo: { equals: codigo, mode: "insensitive" },
-      ...(excluirId ? { id: { not: excluirId } } : {}),
-    },
-    select: { codigo: true, activo: true },
-  });
+  const [existente] = await tx.$queryRaw<{ codigo: string; activo: boolean }[]>`
+    SELECT codigo, activo FROM productos_comerciales
+    WHERE "empresaId" = ${empresaId} AND lower(codigo) = lower(${codigo})
+      AND (${excluirId ?? null}::text IS NULL OR id <> ${excluirId ?? null})
+    LIMIT 1`;
   if (existente) {
     throw new ValidacionError(
       `Ya existe un producto con el código «${existente.codigo}»${existente.activo ? "" : " (inactivo — reactívalo en lugar de crear otro)"}.`

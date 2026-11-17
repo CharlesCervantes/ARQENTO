@@ -98,8 +98,12 @@ model Empresa {
 
   // Gastos de Obra (sección "Gastos de Obra" de 04-modulo-control-de-obra.md)
   // — mismo mecanismo atómico que ultimoFolioRecibo, folio único por empresa.
-  ultimoFolioReposicion  Int @default(0)
-  ultimoFolioOrdenCompra Int @default(0)
+  ultimoFolioReposicion      Int @default(0)
+  ultimoFolioOrdenCompra     Int @default(0)
+  // Comercialización B2 — consecutivo PROPIO de cotizaciones de venta
+  // (COT-000001), independiente del de OC de Compras. Mismo mecanismo
+  // atómico (increment dentro de la transacción que crea la cotización).
+  ultimoFolioCotizacionVenta Int @default(0)
 
   dominiosCorreo         DominioCorreo[]
   usuarios               Usuario[]
@@ -127,6 +131,10 @@ model Empresa {
   documentosEgreso       DocumentoEgreso[]
   capacidadesInteligencia EmpresaCapacidadInteligencia[]
   productosComerciales    ProductoComercial[]
+  clientesComerciales     ClienteComercial[]
+  obrasComerciales        ObraComercial[]
+  cotizacionesVenta       CotizacionVenta[]
+  partidasCotizacionVenta PartidaCotizacionVenta[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -341,8 +349,14 @@ model Usuario {
   // Director de SU Empresa. Default false: nadie queda marcado al migrar.
   vendedorComercial Boolean @default(false)
 
-  productosComercialesCreados      ProductoComercial[] @relation("ProductoComercialCreado")
-  productosComercialesActualizados ProductoComercial[] @relation("ProductoComercialActualizado")
+  productosComercialesCreados      ProductoComercial[]      @relation("ProductoComercialCreado")
+  productosComercialesActualizados ProductoComercial[]      @relation("ProductoComercialActualizado")
+  clientesComercialesCreados       ClienteComercial[]       @relation("ClienteComercialCreado")
+  obrasComercialesCreadas          ObraComercial[]          @relation("ObraComercialCreada")
+  cotizacionesVentaCreadas         CotizacionVenta[]        @relation("CotizacionVentaCreada")
+  cotizacionesVentaActualizadas    CotizacionVenta[]        @relation("CotizacionVentaActualizada")
+  cotizacionesVentaVendidas        CotizacionVenta[]        @relation("CotizacionVentaVendedor")
+  partidasPrecioAjustado           PartidaCotizacionVenta[] @relation("PartidaPrecioAjustado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -2807,6 +2821,184 @@ model ProductoComercial {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  partidasCotizacion PartidaCotizacionVenta[]
+
+  // Destino de llaves foráneas compuestas (id, empresaId): una partida solo
+  // puede referir un producto de SU misma Empresa, garantizado por la base.
+  @@unique([id, empresaId])
   @@index([empresaId, activo])
   @@map("productos_comerciales")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B2: clientes, obras comerciales y cotizaciones en
+// borrador (noviembre 2026). Entidades PROPIAS del módulo: no crean
+// Proyecto, contratos ni semanas de construcción. La pertenencia a la misma
+// Empresa (y de la obra a su cliente) la garantiza la base con llaves
+// foráneas compuestas, además de la validación del servicio.
+// ---------------------------------------------------------------------------
+
+// Cliente comercial — mínimos para identificarlo al cotizar. Nombre único
+// por Empresa sin distinguir mayúsculas ni espacios extremos (índice por
+// expresión en la migración).
+model ClienteComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  nombre   String
+  contacto String?
+  telefono String?
+
+  creadoPor   Usuario  @relation("ClienteComercialCreado", fields: [creadoPorId], references: [id])
+  creadoPorId String
+  createdAt   DateTime @default(now())
+
+  obras        ObraComercial[]
+  cotizaciones CotizacionVenta[]
+
+  @@unique([id, empresaId])
+  @@index([empresaId])
+  @@map("clientes_comerciales")
+}
+
+// Obra (destino de entrega) de un cliente comercial. No es un Proyecto de
+// construcción. Nombre único por cliente sin distinguir mayúsculas.
+model ObraComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cliente   ClienteComercial @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  clienteId String
+
+  nombre    String
+  ubicacion String?
+
+  creadoPor   Usuario  @relation("ObraComercialCreada", fields: [creadoPorId], references: [id])
+  creadoPorId String
+  createdAt   DateTime @default(now())
+
+  cotizaciones CotizacionVenta[]
+
+  @@unique([id, clienteId, empresaId])
+  @@index([empresaId, clienteId])
+  @@map("obras_comerciales")
+}
+
+// B2 solo maneja borradores. Emitida/Aceptada/Rechazada/Cancelada llegan en
+// B3 con sus reglas (agregar un valor de enum es una migración aditiva).
+enum EstatusCotizacionVenta {
+  BORRADOR
+}
+
+// Cotización de venta. NO es la Cotizacion de Compras (oferta de un
+// proveedor sobre una Requisición). Un borrador nunca crea OC, compra,
+// cobro ni deuda. Importes SIEMPRE calculados por el servidor (ver
+// lib/comercializacion/importes.ts) — nunca se aceptan del navegador.
+model CotizacionVenta {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  // COT-000001 — consecutivo por Empresa (Empresa.ultimoFolioCotizacionVenta).
+  folio       String
+  numeroFolio Int
+
+  estatus EstatusCotizacionVenta @default(BORRADOR)
+
+  // Opcionales mientras sea borrador. La obra, si existe, debe ser del
+  // cliente de la cotización (FK compuesta + CHECK obra ⇒ cliente).
+  cliente   ClienteComercial? @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  clienteId String?
+  obra      ObraComercial?    @relation(fields: [obraId, clienteId, empresaId], references: [id, clienteId, empresaId], onDelete: Restrict)
+  obraId    String?
+
+  descripcion String?
+
+  // Responsable comercial (define el alcance del vendedor) — distinto de
+  // quien capturó el documento.
+  vendedor         Usuario  @relation("CotizacionVentaVendedor", fields: [vendedorId], references: [id])
+  vendedorId       String
+  creadoPor        Usuario  @relation("CotizacionVentaCreada", fields: [creadoPorId], references: [id])
+  creadoPorId      String
+  actualizadoPor   Usuario? @relation("CotizacionVentaActualizada", fields: [actualizadoPorId], references: [id])
+  actualizadoPorId String?
+
+  // Fechas de calendario (sin hora): nunca se desplazan por zona horaria.
+  fecha         DateTime  @db.Date
+  vigenciaHasta DateTime? @db.Date
+
+  condiciones   String?
+  observaciones String?
+
+  // Totales derivados, recalculados por el servidor en cada guardado (para
+  // listar sin recalcular). La fuente son las partidas.
+  subtotal Decimal @default(0) @db.Decimal(14, 2)
+  iva      Decimal @default(0) @db.Decimal(14, 2)
+  total    Decimal @default(0) @db.Decimal(14, 2)
+
+  // Control de concurrencia optimista: cada guardado exige la versión que
+  // leyó el usuario; si otro guardó antes, se rechaza (no se sobrescribe).
+  version Int @default(1)
+
+  // Idempotencia de creación: el formulario genera una clave por intento de
+  // alta; un doble clic o reintento con la misma clave devuelve la misma
+  // cotización en lugar de crear otra (índice único por Empresa).
+  claveCreacion String?
+
+  partidas PartidaCotizacionVenta[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([empresaId, numeroFolio])
+  @@unique([empresaId, folio])
+  @@unique([empresaId, claveCreacion])
+  @@unique([id, empresaId])
+  @@index([empresaId, vendedorId])
+  @@index([empresaId, clienteId])
+  @@map("cotizaciones_venta")
+}
+
+// Partida de una cotización. Copia histórica de los datos comerciales del
+// producto al agregarse: cambiar el catálogo después no la altera, y
+// cambiar su precio no altera el catálogo.
+model PartidaCotizacionVenta {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cotizacion   CotizacionVenta @relation(fields: [cotizacionId, empresaId], references: [id, empresaId], onDelete: Cascade)
+  cotizacionId String
+  orden        Int
+
+  producto   ProductoComercial @relation(fields: [productoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  productoId String
+
+  // Copia histórica del catálogo al agregar la partida.
+  codigo              String
+  descripcion         String
+  unidad              String
+  tratamientoImpuesto TratamientoImpuestoComercial
+  tasaIva             Decimal?                     @db.Decimal(5, 2)
+  // Precio de catálogo vigente al agregar (base) y precio aplicado. Solo
+  // Administrador/Director pueden hacer que difieran.
+  precioBase          Decimal                      @db.Decimal(14, 2)
+  precioUnitario      Decimal                      @db.Decimal(14, 2)
+  precioAjustadoPor   Usuario?                     @relation("PartidaPrecioAjustado", fields: [precioAjustadoPorId], references: [id])
+  precioAjustadoPorId String?
+  precioAjustadoEn    DateTime?
+
+  // Hasta 3 decimales (metros, toneladas…), nunca redondeada a entero.
+  cantidad Decimal @db.Decimal(14, 3)
+  // round_half_up(cantidad × precioUnitario, 2) — calculado por el servidor.
+  importe  Decimal @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cotizacionId])
+  @@index([empresaId, productoId])
+  @@map("partidas_cotizacion_venta")
 }

@@ -103,6 +103,15 @@ describe("Código único por Empresa", () => {
     assert.equal(await db.productoComercial.count({ where: { empresaId: EMPRESA } }), 1);
   });
 
+  test("«_» y «%» en un código no actúan como comodines (regresión corregida en B2)", async () => {
+    await crearProductoComercial(admin, producto({ codigo: "CEMX50" }));
+    await crearProductoComercial(admin, producto({ codigo: "CEM_50" }));
+    await crearProductoComercial(admin, producto({ codigo: "CEM%" }));
+    await crearProductoComercial(admin, producto({ codigo: "CEMZZ" }));
+    assert.equal(await db.productoComercial.count(), 4);
+    await assert.rejects(crearProductoComercial(admin, producto({ codigo: "cem_50" })), ValidacionError);
+  });
+
   test("El mismo código en otra Empresa sí se permite", async () => {
     await crearProductoComercial(admin, producto());
     await crearProductoComercial(adminAjeno, producto());

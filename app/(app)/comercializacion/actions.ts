@@ -13,6 +13,12 @@ import {
   type EntradaHistorialProducto,
 } from "@/lib/server/comercializacion/productos";
 import { cambiarMarcaVendedorComercial } from "@/lib/server/comercializacion/vendedores";
+import { crearClienteComercial, crearObraComercial } from "@/lib/server/comercializacion/clientes";
+import {
+  ConflictoEdicionError,
+  actualizarCotizacionVenta,
+  crearCotizacionVenta,
+} from "@/lib/server/comercializacion/cotizaciones";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
 // Empresa, validación, bitácora) vive en lib/server/comercializacion/*. Los
@@ -105,4 +111,63 @@ export async function cambiarVendedorAction(usuarioId: string, vendedor: boolean
   }
   revalidatePath("/comercializacion/vendedores");
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// B2 — clientes, obras y cotizaciones en borrador
+// ---------------------------------------------------------------------------
+
+export async function crearClienteAction(
+  datos: unknown
+): Promise<{ error?: string; cliente?: { id: string; nombre: string }; existente?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    const { existente, ...cliente } = await crearClienteComercial(usuario, datos);
+    return { cliente, existente };
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+}
+
+export async function crearObraAction(
+  datos: unknown
+): Promise<{ error?: string; obra?: { id: string; nombre: string; clienteId: string }; existente?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    const { existente, ...obra } = await crearObraComercial(usuario, datos);
+    return { obra, existente };
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+}
+
+export type ResultadoGuardarCotizacion = {
+  error?: string;
+  conflicto?: boolean;
+  id?: string;
+  folio?: string;
+  version?: number;
+};
+
+/** Crea (sin id) o actualiza (con id y versión leída) un borrador. */
+export async function guardarCotizacionAction(entrada: {
+  id?: string;
+  version?: number;
+  claveCreacion?: string;
+  datos: unknown;
+}): Promise<ResultadoGuardarCotizacion> {
+  const usuario = await requireSession();
+  try {
+    if (entrada.id) {
+      const r = await actualizarCotizacionVenta(usuario, entrada.id, entrada.version, entrada.datos);
+      revalidatePath("/comercializacion");
+      revalidatePath(`/comercializacion/cotizaciones/${r.id}`);
+      return { id: r.id, version: r.version };
+    }
+    const r = await crearCotizacionVenta(usuario, entrada.datos, entrada.claveCreacion);
+    revalidatePath("/comercializacion");
+    return { id: r.id, folio: r.folio };
+  } catch (error) {
+    return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
+  }
 }

@@ -108,3 +108,113 @@ export function formatearImporte(canonico: string | null): string {
   const conComas = enteros.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${negativo ? "-" : ""}$${conComas}.${decimales}`;
 }
+
+// ---------------------------------------------------------------------------
+// B2 — cantidades, importe por partida y totales de la cotización.
+//
+// Reglas (documentadas en docs/negocio/comercializacion.md §20, B2):
+// - Cantidad: mayor que 0, hasta 3 decimales (metros, toneladas…), máximo
+//   11 dígitos enteros (Decimal(14,3)). Nunca se redondea a entero.
+// - Precio unitario: mayor que 0, 2 decimales, sin IVA.
+// - Importe de partida = cantidad × precio, calculado EXACTO (milésimas ×
+//   centavos) y redondeado UNA vez, half-up, al centavo.
+// - Subtotal = Σ importes de partida (ya redondeados).
+// - IVA: se agrupa la base por tasa de los productos GRAVADOS; IVA de cada
+//   tasa = round_half_up(base_tasa × tasa / 100) al centavo; IVA = Σ por tasa.
+//   Tasa 0 % y Exento se reportan como bases separadas con IVA $0.00 — nunca
+//   se mezclan entre sí ni con una tasa gravada.
+// - Total = Subtotal + IVA.
+// ---------------------------------------------------------------------------
+
+const MAX_DIGITOS_ENTEROS_CANTIDAD = 11;
+const MAX_CENTAVOS_IMPORTE = BigInt("99999999999999"); // 999,999,999,999.99 — Decimal(14,2)
+
+/** "2.5" → "2.500"; null si no es una cantidad válida (> 0, ≤ 3 decimales). */
+export function normalizarCantidad(valor: unknown): string | null {
+  if (typeof valor !== "string" && typeof valor !== "number") return null;
+  const texto = String(valor).trim().replace(/,/g, "");
+  const m = /^(\d+)(?:\.(\d{1,3}))?$/.exec(texto);
+  if (!m) return null;
+  const enteros = m[1].replace(/^0+(?=\d)/, "");
+  if (enteros.length > MAX_DIGITOS_ENTEROS_CANTIDAD) return null;
+  const canonico = `${enteros}.${(m[2] ?? "").padEnd(3, "0")}`;
+  if (aMilesimas(canonico) === BigInt(0)) return null;
+  return canonico;
+}
+
+/** "2.500" → 2500n. Solo acepta la forma canónica de 3 decimales. */
+export function aMilesimas(canonico: string): bigint {
+  const m = /^(\d+)\.(\d{3})$/.exec(canonico);
+  if (!m) throw new Error(`Cantidad no canónica: ${canonico}`);
+  return BigInt(m[1]) * BigInt(1000) + BigInt(m[2]);
+}
+
+/**
+ * Importe de una partida: cantidad (3 dec.) × precio (2 dec.), exacto en
+ * cienmilésimas y redondeado half-up al centavo una sola vez. Lanza si el
+ * resultado excede la capacidad de la columna (Decimal(14,2)).
+ */
+export function calcularImportePartida(cantidad: string, precioUnitario: string): string {
+  const exacto = aMilesimas(cantidad) * aCentavos(precioUnitario); // centavos × 1000
+  const centavos = (exacto + BigInt(500)) / BigInt(1000);
+  if (centavos > MAX_CENTAVOS_IMPORTE) throw new RangeError("El importe excede el máximo permitido.");
+  return deCentavos(centavos);
+}
+
+export type PartidaParaTotales = {
+  importe: string;
+  tratamientoImpuesto: TratamientoImpuesto;
+  tasaIva: string | null;
+};
+
+export type DesgloseImpuesto = { tasa: string; base: string; iva: string };
+
+export type TotalesCotizacion = {
+  subtotal: string;
+  gravado: DesgloseImpuesto[]; // una fila por tasa, de mayor a menor
+  baseTasaCero: string;
+  baseExenta: string;
+  iva: string;
+  total: string;
+};
+
+export function calcularTotalesCotizacion(partidas: PartidaParaTotales[]): TotalesCotizacion {
+  let subtotal = BigInt(0);
+  let tasaCero = BigInt(0);
+  let exenta = BigInt(0);
+  const porTasa = new Map<string, bigint>();
+  for (const p of partidas) {
+    const importe = aCentavos(p.importe);
+    subtotal += importe;
+    if (p.tratamientoImpuesto === "GRAVADO") {
+      if (!p.tasaIva) throw new Error("Una partida gravada requiere tasa de IVA.");
+      porTasa.set(p.tasaIva, (porTasa.get(p.tasaIva) ?? BigInt(0)) + importe);
+    } else if (p.tratamientoImpuesto === "TASA_CERO") {
+      tasaCero += importe;
+    } else {
+      exenta += importe;
+    }
+  }
+  const gravado = [...porTasa.entries()]
+    .sort(([a], [b]) => (aCentavos(b) > aCentavos(a) ? 1 : aCentavos(b) < aCentavos(a) ? -1 : 0))
+    .map(([tasa, base]) => ({ tasa, base: deCentavos(base), iva: calcularImpuesto(deCentavos(base), "GRAVADO", tasa).iva }));
+  const iva = gravado.reduce((s, g) => s + aCentavos(g.iva), BigInt(0));
+  const total = subtotal + iva;
+  if (total > MAX_CENTAVOS_IMPORTE) throw new RangeError("El total excede el máximo permitido.");
+  return {
+    subtotal: deCentavos(subtotal),
+    gravado,
+    baseTasaCero: deCentavos(tasaCero),
+    baseExenta: deCentavos(exenta),
+    iva: deCentavos(iva),
+    total: deCentavos(total),
+  };
+}
+
+/** Formato de cantidad para pantalla: sin ceros decimales sobrantes. */
+export function formatearCantidad(canonico: string): string {
+  const [enteros, decimales = ""] = canonico.split(".");
+  const limpio = decimales.replace(/0+$/, "");
+  const conComas = enteros.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return limpio ? `${conComas}.${limpio}` : conComas;
+}
