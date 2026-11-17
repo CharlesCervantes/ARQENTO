@@ -22,6 +22,8 @@ La documentación funcional del sistema se encuentra en `/docs/negocio`.
 
 Antes de trabajar sobre un módulo, consultar los documentos relacionados.
 
+Para tareas de Comercialización, leer `docs/negocio/comercializacion.md` antes de proponer o modificar modelos, permisos, cotizaciones, compras, créditos, pagos, recordatorios o entregas. Distinguir acuerdos confirmados de propuestas y pendientes. Actualizar ese documento con las decisiones aprobadas y el estado real de implementación. No alterar permisos globales ni flujos de construcción para resolver reglas exclusivas de Comercialización.
+
 ## Arquitectura
 
 Las decisiones técnicas y de arquitectura se documentan en `/docs/arquitectura`.
