@@ -248,7 +248,7 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P2 — resuelto | Edición de precios | Solo Administrador; vendedor no modifica precios |
 | P3 — resuelto (B3) | Alcance del vendedor, aceptación y cobros | Vendedor solo ve sus cotizaciones. Registran aceptación: Administrador, Director y el vendedor asignado (solo las suyas), con evidencia obligatoria. Solo Administrador y Director ven y registran cobros (a implementar en el bloque financiero). El vendedor ve precios y totales de venta, nunca cobranza, costos ni utilidad |
 | P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
-| P5 — provisional (B5), confirmar | Una transferencia para varias órdenes, anticipos y ajustes | Implementado: un movimiento = una obligación, distribuido entre sus cuotas; sin saldo a favor ni sobrepago; sin pagos agrupados ni ajustes. Ver §20 B5 |
+| P5 — provisional (B5), confirmar | Una transferencia para varias órdenes, anticipos y ajustes | Implementado: un movimiento = una obligación, distribuido entre sus cuotas. Sí se admite el anticipo dentro de una OV o compra (primera cuota de anticipo, dinero antes del vencimiento, aplicación a cuotas futuras de la misma cuenta). Excluidos: anticipos sin documento, saldo a favor, sobrepago, movimientos repartidos entre varios documentos y ajustes. Ver §20 B5 |
 | P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
 | P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
@@ -554,7 +554,9 @@ Verificación:
   - El vendedor no ve nada de cobranza.
 
 Decisiones provisionales de B5 (confirmar):
-- P5: un movimiento se aplica a una sola OV o compra; no hay pagos agrupados entre documentos, anticipos, saldo a favor, notas de crédito ni ajustes.
+- P5: un movimiento se aplica a una sola OV o compra.
+  - **Sí incluido — anticipo dentro del documento:** el calendario puede empezar con una cuota de anticipo; el dinero puede registrarse antes de su vencimiento y aplicarse a cuotas futuras de la misma cuenta (propuesta automática o distribución explícita). Verificado con pruebas de integración para cobro y pago (anticipo $3,000 + $9,000).
+  - **Excluido:** anticipos sin documento asociado, saldo a favor, sobrepago, movimientos repartidos entre varios documentos, notas de crédito y ajustes.
 - La reprogramación del calendario de una cuenta con movimientos no está disponible (queda pendiente definir cómo reasignar aplicaciones con historial).
 - Cobros y pagos sin IVA desglosado ni conciliación bancaria; el comprobante es opcional.
 

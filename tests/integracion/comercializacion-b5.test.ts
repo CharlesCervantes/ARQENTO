@@ -231,6 +231,45 @@ for (const lado of ["cobro", "pago"] as const) {
   });
 }
 
+for (const lado of ["cobro", "pago"] as const) {
+  describe(`Anticipo como primera cuota — ${lado}`, () => {
+    test("Anticipo $3,000 + $9,000: se registra antes de su vencimiento y el excedente va a la cuota futura de la misma cuenta", async () => {
+      const ov = await ordenDe12000();
+      const compraId = lado === "pago" ? await compraDe12000(ov.ordenId, ov.partidaVentaId) : null;
+      const cuentaId = compraId ? (await cuentaDeCompra(compraId)).id : (await cuentaDeOrden(ov.ordenId)).id;
+      const detalle = async () => (compraId ? (await detalleCuentaDeCompra(admin, compraId))! : detalleCuentaDeOrden(admin, ov.ordenId));
+      // Las dos cuotas vencen en el futuro: la primera es el anticipo.
+      await definirCondicionesCuenta(admin, cuentaId, 1, credito([[dias(3), "3000"], [dias(30), "9000"]]));
+
+      // 1) Anticipo recibido HOY, antes de su vencimiento (propuesta automática).
+      await registrarMovimientoCuenta(admin, cuentaId, mov("3000"), null, clave());
+      let d = await detalle();
+      assert.deepEqual(d.estado.cuotas.map((q) => [q.numero, q.aplicado, q.saldo, q.situacion]), [
+        [1, "3000.00", "0.00", "LIQUIDADA"],
+        [2, "0.00", "9000.00", "AL_CORRIENTE"],
+      ]);
+      assert.deepEqual([d.estado.saldo, d.estado.vencido, d.estado.liquidacion, d.estado.situacion], ["9000.00", "0.00", "PARCIAL", "AL_CORRIENTE"]);
+
+      // 2) Un abono que excede el anticipo pendiente se reparte hacia la cuota futura.
+      await anularMovimientoCuenta(admin, d.movimientos[0].id, "Se captura como un solo abono");
+      await registrarMovimientoCuenta(admin, cuentaId, mov("5000", { fecha: dias(-1) }), null, clave());
+      d = await detalle();
+      assert.deepEqual(d.estado.cuotas.map((q) => [q.aplicado, q.saldo]), [
+        ["3000.00", "0.00"],
+        ["2000.00", "7000.00"],
+      ]);
+
+      // 3) Dinero anticipado aplicado directamente a la cuota futura (distribución explícita).
+      const q2 = d.estado.cuotas[1];
+      await registrarMovimientoCuenta(admin, cuentaId, mov("7000", { aplicaciones: [{ cuotaId: q2.id, importe: "7000" }] }), null, clave());
+      d = await detalle();
+      assert.deepEqual([d.estado.saldo, d.estado.vencido, d.estado.liquidacion], ["0.00", "0.00", "LIQUIDADA"]);
+      // Sin saldo a favor: ya no se acepta más dinero en esta cuenta.
+      await assert.rejects(registrarMovimientoCuenta(admin, cuentaId, mov("0.01"), null, clave()), /supera el saldo/);
+    });
+  });
+}
+
 describe("Abonos, sobrepagos y concurrencia", () => {
   test("Abono anticipado a una cuota futura con distribución explícita; la vencida sigue vencida", async () => {
     const ov = await ordenDe12000();
