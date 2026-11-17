@@ -21,6 +21,15 @@ import {
 } from "@/lib/server/comercializacion/cotizaciones";
 import { duplicarCotizacionVenta, emitirCotizacionVenta } from "@/lib/server/comercializacion/emision";
 import { registrarAceptacionCotizacion } from "@/lib/server/comercializacion/ordenes";
+import {
+  actualizarReferenciaProveedor,
+  adjuntarDocumentoCompra,
+  anularCompraComercial,
+  confirmarCompraComercial,
+  crearCompraComercial,
+  crearProveedorComercial,
+  guardarBorradorCompra,
+} from "@/lib/server/comercializacion/compras";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
 // Empresa, validación, bitácora) vive en lib/server/comercializacion/*. Los
@@ -231,4 +240,78 @@ export async function registrarAceptacionAction(
   } catch (error) {
     return { error: mensajeError(error) };
   }
+}
+
+// ---------------------------------------------------------------------------
+// B4 — compras a proveedores (solo administración; el servicio lo exige)
+// ---------------------------------------------------------------------------
+
+export async function crearCompraAction(entrada: { ordenVentaId: string; claveCreacion: string }): Promise<{ error?: string; id?: string }> {
+  const usuario = await requireSession();
+  try {
+    const r = await crearCompraComercial(usuario, entrada?.ordenVentaId, entrada?.claveCreacion);
+    return { id: r.id };
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+}
+
+export async function guardarCompraAction(entrada: { id: string; version: number; datos: unknown }): Promise<{ error?: string; conflicto?: boolean; version?: number }> {
+  const usuario = await requireSession();
+  try {
+    const r = await guardarBorradorCompra(usuario, entrada?.id, entrada?.version, entrada?.datos);
+    revalidatePath(`/comercializacion/compras/${entrada.id}`);
+    return { version: r.version };
+  } catch (error) {
+    return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
+  }
+}
+
+export async function confirmarCompraAction(entrada: { id: string; version: number }): Promise<{ error?: string; conflicto?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    await confirmarCompraComercial(usuario, entrada?.id, entrada?.version);
+  } catch (error) {
+    return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
+  }
+  revalidatePath(`/comercializacion/compras/${entrada.id}`);
+  return {};
+}
+
+export async function anularCompraAction(entrada: { id: string; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await anularCompraComercial(usuario, entrada?.id, entrada?.motivo);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/comercializacion/compras/${entrada.id}`);
+  return {};
+}
+
+export async function crearProveedorCompraAction(datos: unknown): Promise<{ error?: string; proveedor?: { id: string; nombre: string } }> {
+  const usuario = await requireSession();
+  try {
+    return { proveedor: await crearProveedorComercial(usuario, datos) };
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+}
+
+export type DocumentoCompraState = { error?: string; ok?: boolean } | undefined;
+
+export async function adjuntarDocumentoCompraAction(compraId: string, _state: DocumentoCompraState, formData: FormData): Promise<DocumentoCompraState> {
+  const usuario = await requireSession();
+  try {
+    const referencia = formData.get("referenciaProveedor");
+    if (typeof referencia === "string") await actualizarReferenciaProveedor(usuario, compraId, referencia);
+    const doc = formData.get("documento");
+    if (doc instanceof File && doc.size > 0) {
+      await adjuntarDocumentoCompra(usuario, compraId, { nombre: doc.name, bytes: new Uint8Array(await doc.arrayBuffer()) });
+    }
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/comercializacion/compras/${compraId}`);
+  return { ok: true };
 }

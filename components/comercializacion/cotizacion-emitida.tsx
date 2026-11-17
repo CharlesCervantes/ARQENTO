@@ -4,6 +4,8 @@ import type { CotizacionDetalle } from "@/lib/server/comercializacion/cotizacion
 import { formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { AccionesCotizacionEmitida } from "./acciones-cotizacion-emitida";
+import type { ResumenComprasOrden } from "@/lib/server/comercializacion/compras";
+import { ComprasOrden } from "./compras-orden";
 
 // Vista de una cotización EMITIDA o ACEPTADA (B3). Solo lectura y armada con
 // la COPIA HISTÓRICA (documentoEmitido): lo que se ve aquí es lo que dice el
@@ -37,7 +39,18 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactN
   );
 }
 
-export function CotizacionEmitidaView({ cotizacion, esAdmin, hoy }: { cotizacion: CotizacionDetalle; esAdmin: boolean; hoy: string }) {
+export function CotizacionEmitidaView({
+  cotizacion,
+  esAdmin,
+  hoy,
+  compras,
+}: {
+  cotizacion: CotizacionDetalle;
+  esAdmin: boolean;
+  hoy: string;
+  // Solo se recibe para administración (B4); para el vendedor es null.
+  compras: ResumenComprasOrden | null;
+}) {
   const doc = cotizacion.emision!.documento;
   const orden = cotizacion.orden;
 
@@ -95,6 +108,8 @@ export function CotizacionEmitidaView({ cotizacion, esAdmin, hoy }: { cotizacion
           </p>
         </Card>
       )}
+
+      {orden && esAdmin && compras && <ComprasOrden resumen={compras} />}
 
       <Card className="space-y-4 p-5">
         <h2 className="text-base font-semibold text-[var(--foreground)]">Datos de la cotización</h2>

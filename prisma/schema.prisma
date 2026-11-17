@@ -106,6 +106,9 @@ model Empresa {
   ultimoFolioCotizacionVenta Int @default(0)
   // Comercialización B3 — consecutivo propio de órdenes de venta (OV-000001).
   ultimoFolioOrdenVenta      Int @default(0)
+  // Comercialización B4 — consecutivo propio de compras comerciales (COC-000001),
+  // separado de las OC de Compras de construcción.
+  ultimoFolioCompraComercial Int @default(0)
 
   dominiosCorreo         DominioCorreo[]
   usuarios               Usuario[]
@@ -138,6 +141,8 @@ model Empresa {
   cotizacionesVenta       CotizacionVenta[]
   partidasCotizacionVenta PartidaCotizacionVenta[]
   ordenesVenta            OrdenVenta[]
+  comprasComerciales      CompraComercial[]
+  partidasCompraComercial PartidaCompraComercial[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -362,6 +367,10 @@ model Usuario {
   partidasPrecioAjustado           PartidaCotizacionVenta[] @relation("PartidaPrecioAjustado")
   cotizacionesVentaEmitidas        CotizacionVenta[]        @relation("CotizacionVentaEmitida")
   ordenesVentaRegistradas          OrdenVenta[]             @relation("OrdenVentaRegistrada")
+  comprasComercialesCreadas        CompraComercial[]        @relation("CompraComercialCreada")
+  comprasComercialesActualizadas   CompraComercial[]        @relation("CompraComercialActualizada")
+  comprasComercialesConfirmadas    CompraComercial[]        @relation("CompraComercialConfirmada")
+  comprasComercialesAnuladas       CompraComercial[]        @relation("CompraComercialAnulada")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -593,6 +602,9 @@ model Beneficiario {
   ordenesCompra          OrdenCompra[]
   cotizaciones           Cotizacion[]
   gastosRecurrentes      GastoRecurrente[]
+  // Comercialización B4: compras comerciales a este proveedor (no afecta
+  // nada de construcción).
+  comprasComerciales     CompraComercial[]
 
   // Vínculo opcional y explícito con el Usuario que inicia sesión como esta
   // misma persona real (ej. Andrés es Usuario/Supervisor y también
@@ -618,6 +630,9 @@ model Beneficiario {
   mismaPersonaQueId String?
   alias             Beneficiario[] @relation("BeneficiarioMismaPersona")
 
+  // Destino de FK compuesta (id, empresaId) de compras comerciales (B4):
+  // garantiza en la base que el proveedor sea de la misma Empresa.
+  @@unique([id, empresaId])
   @@index([empresaId, tipo])
   @@index([mismaPersonaQueId])
   @@map("beneficiarios")
@@ -3024,7 +3039,10 @@ model OrdenVenta {
 
   // Exactamente una orden por cotización (cotizacionId es único por sí solo,
   // ya que el id de la cotización es global).
+  compras CompraComercial[]
+
   @@unique([cotizacionId, empresaId])
+  @@unique([id, empresaId])
   @@unique([empresaId, numeroFolio])
   @@unique([empresaId, folio])
   @@index([empresaId])
@@ -3068,7 +3086,127 @@ model PartidaCotizacionVenta {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  partidasCompra PartidaCompraComercial[]
+
+  @@unique([id, empresaId])
   @@index([cotizacionId])
   @@index([empresaId, productoId])
   @@map("partidas_cotizacion_venta")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B4: compras a proveedores de una orden de venta
+// (noviembre 2026). NO son OrdenCompra de construcción: no generan semanas,
+// movimientos semanales, gastos ni ningún efecto financiero. Pagos, créditos
+// y cuotas llegan en B5; recepciones/entregas en B6.
+// ---------------------------------------------------------------------------
+
+enum EstatusCompraComercial {
+  BORRADOR
+  CONFIRMADA
+  ANULADA
+}
+
+// Compra comercial: pertenece a UNA orden de venta y a UN proveedor
+// (catálogo existente: Beneficiario tipo PROVEEDOR de la misma Empresa).
+// Folio COC-000001 por Empresa. Un borrador no consume cantidades ni crea
+// compromisos; solo una compra CONFIRMADA (no anulada) cuenta como comprada.
+model CompraComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  folio       String
+  numeroFolio Int
+
+  estatus EstatusCompraComercial @default(BORRADOR)
+
+  ordenVenta   OrdenVenta @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String
+
+  // Opcional en borrador; obligatorio para confirmar.
+  proveedor           Beneficiario? @relation(fields: [proveedorId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  proveedorId         String?
+  // Copia del proveedor al confirmar (nombre, razón social, RFC): cambiar el
+  // catálogo después no altera una compra confirmada.
+  proveedorConfirmado Json?
+
+  fecha               DateTime @db.Date
+  referenciaProveedor String?
+  notas               String?
+
+  // Documento del proveedor (cotización, remisión, factura…) — opcional,
+  // infraestructura de archivos existente; solo administración lo ve.
+  documentoRef    String?
+  documentoNombre String?
+  documentoTipo   String?
+  documentoBytes  Int?
+
+  // Totales derivados (servidor), con las reglas exactas de B2.
+  subtotal Decimal @default(0) @db.Decimal(14, 2)
+  iva      Decimal @default(0) @db.Decimal(14, 2)
+  total    Decimal @default(0) @db.Decimal(14, 2)
+
+  version       Int     @default(1)
+  claveCreacion String?
+
+  creadoPor        Usuario   @relation("CompraComercialCreada", fields: [creadoPorId], references: [id])
+  creadoPorId      String
+  actualizadoPor   Usuario?  @relation("CompraComercialActualizada", fields: [actualizadoPorId], references: [id])
+  actualizadoPorId String?
+  confirmadaEn     DateTime?
+  confirmadaPor    Usuario?  @relation("CompraComercialConfirmada", fields: [confirmadaPorId], references: [id])
+  confirmadaPorId  String?
+  anuladaEn        DateTime?
+  anuladaPor       Usuario?  @relation("CompraComercialAnulada", fields: [anuladaPorId], references: [id])
+  anuladaPorId     String?
+  motivoAnulacion  String?
+
+  partidas PartidaCompraComercial[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, empresaId])
+  @@unique([empresaId, numeroFolio])
+  @@unique([empresaId, folio])
+  @@unique([empresaId, claveCreacion])
+  @@index([empresaId, ordenVentaId])
+  @@index([empresaId, proveedorId])
+  @@map("compras_comerciales")
+}
+
+// Partida comprada: vínculo con la partida VENDIDA de la misma OV y copia
+// histórica de descripción, unidad, cantidad, costo e impuesto DE COMPRA
+// (independiente del impuesto de venta). Se compra en la unidad de la
+// partida de venta. Costo e impuesto pueden faltar en borrador; se exigen al
+// confirmar (un costo faltante nunca se toma como cero).
+model PartidaCompraComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  compra   CompraComercial @relation(fields: [compraId, empresaId], references: [id, empresaId], onDelete: Cascade)
+  compraId String
+  orden    Int
+
+  partidaVenta   PartidaCotizacionVenta @relation(fields: [partidaVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaVentaId String
+
+  codigo      String
+  descripcion String
+  unidad      String
+
+  cantidad            Decimal                       @db.Decimal(14, 3)
+  costoUnitario       Decimal?                      @db.Decimal(14, 2)
+  tratamientoImpuesto TratamientoImpuestoComercial?
+  tasaIva             Decimal?                      @db.Decimal(5, 2)
+  importe             Decimal?                      @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([compraId, partidaVentaId])
+  @@index([empresaId, partidaVentaId])
+  @@map("partidas_compra_comercial")
 }

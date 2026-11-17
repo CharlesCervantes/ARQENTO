@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.5 · 18 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) y B3 (emisión, PDF, aceptación y orden de venta) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.6 · 19 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta) y B4 (compras a proveedores) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -254,6 +254,7 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
 | P12 — provisional (B3), confirmar | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
 | P13 — propuesta implementada (B3), confirmar | Reglas de duplicado y de emisión | Ver «Decisiones provisionales de B3» en §20 |
+| P14 — provisional (B4), confirmar | Límites de compras | Sin excedentes sobre lo vendido, sin conversión de unidades, costo > 0, sin PDF de compra; corrección por anulación. Ver §20 B4 |
 | P11 — propuesta implementada (B2), confirmar | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
 | P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
 | P8 | Reparto y deuda en primera entrega | Resultado estimado; automatización avanzada después si no es necesaria |
@@ -442,10 +443,77 @@ Limitaciones conocidas:
 - El logo se toma de la referencia congelada; si ese archivo se borrara del almacenamiento, el PDF usa el nombre de la Empresa de la copia.
 - Las pruebas automáticas renderizan el PDF en un proceso aparte, porque `@react-pdf/renderer` no funciona con la condición `react-server` que usan las pruebas; en la aplicación se genera en un route handler, como los demás PDFs.
 
-### Pendientes para B4 y posteriores
+### B4 — Compras a proveedores de una orden de venta (implementado, sin desplegar)
 
-- Confirmar las decisiones provisionales P11, P12 y P13.
-- Bloque financiero (cobros al cliente, solo Administrador y Director), compras a proveedor, créditos y cuotas: P5 sigue pendiente.
-- P6 (avisos), P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes para sus bloques.
+Rama `feature/comercializacion`. Migración `20261119090000_comercializacion_b4_compras` (aditiva). Aplicada solo en la base de desarrollo independiente del worktree y en su base de pruebas dedicada; **no** en la base compartida con `develop` ni en PRD.
+
+Qué hace:
+- Desde una OV aceptada, Administrador o Director registran una o varias compras, cada una a un proveedor.
+- Cada compra incluye una o varias partidas de esa OV y cada partida queda vinculada al material vendido. Ejemplo verificado: OV de 100 postes → compra A de 60 + compra B de 40 = 100 comprados y 0 pendientes. Esto no significa pagado, recibido ni entregado.
+
+Modelo:
+- `CompraComercial`:
+  - Folio `COC-000001`, consecutivo propio por Empresa (`Empresa.ultimoFolioCompraComercial`), separado de las OC de construcción.
+  - Estados Borrador / Confirmada / Anulada.
+  - Pertenece a una OV y a un proveedor.
+  - Guarda fecha, referencia y documento del proveedor, notas, totales, versión y clave de creación.
+  - Al confirmar copia el proveedor (nombre, razón social, RFC).
+- `PartidaCompraComercial`:
+  - Vínculo con la partida de venta.
+  - Copia de código, descripción y unidad.
+  - Cantidad, costo unitario e impuesto **de compra** (tratamiento y tasa), e importe.
+- **Proveedores:** se reutiliza el catálogo existente (`Beneficiario` de tipo PROVEEDOR de la misma Empresa). El alta rápida desde la compra usa el mismo servicio de Catálogos. Solo se agregó un índice único `(id, empresaId)` que no cambia construcción.
+- **Integridad garantizada también por la base:**
+  - Las llaves compuestas exigen que OV, proveedor y partidas sean de la misma Empresa.
+  - Un trigger exige que cada partida comprada sea de la OV de su compra.
+  - Las partidas solo cambian mientras la compra está en borrador.
+  - Una compra confirmada es inmutable: solo se anula. La referencia y el documento del proveedor pueden agregarse.
+  - Una compra anulada es definitiva.
+  - Al confirmar, la base bloquea la OV y comprueba que lo confirmado no supere lo vendido.
+
+Reglas implementadas:
+- **Permisos:** todo lo de compras exige Administrador o Director (servicio, acciones, página y ruta del documento). El vendedor conserva su OV, pero no recibe compras, proveedores, costos ni documentos de compra, tampoco por API, HTML o URL directa.
+- **Cálculo:**
+  - Cantidades de hasta 3 decimales e importes exactos con las reglas de B2: importe por partida redondeado half-up, IVA agrupado por tasa, Tasa 0 % y Exento por separado.
+  - El impuesto de compra se captura por partida y es independiente del de venta. No hay valor predeterminado; al elegir «Gravado» se sugiere 16 %, editable.
+- **Pendiente por comprar** = cantidad vendida − cantidades de compras **confirmadas** no anuladas. Los borradores y las anuladas no consumen. No se permite comprar más de lo vendido. La validación bloquea la OV, así que dos confirmaciones simultáneas no pueden superarlo juntas.
+- **Borrador:** se crea vacío desde la OV (con folio). Se capturan proveedor, fecha, cantidades, costos e impuestos; puede quedar incompleto. No cuenta como comprado ni crea compromisos.
+- **Confirmar** exige proveedor activo de la Empresa, al menos una partida y costo e impuesto en todas. Un costo faltante nunca se toma como cero. Recalcula importes exactos, congela la copia del proveedor y registra en bitácora.
+- **Costo de referencia del catálogo:** solo orientativo. Se muestra a administración como «Ref. catálogo» y nunca se copia como costo confirmado.
+- **Anular** (borrador o confirmada) exige motivo, conserva el registro y sus partidas, libera las cantidades y queda en bitácora. La función `motivosQueImpidenAnular` es el punto donde B5 (pagos) y B6 (recepciones) bloquearán una anulación simple. En B4 no hay bloqueos porque esas operaciones no existen.
+- **Idempotencia y conflictos:**
+  - Crear con la misma clave devuelve el mismo borrador (sin folio duplicado).
+  - Confirmar o anular dos veces devuelve el mismo resultado (una sola entrada de bitácora).
+  - Guardar con una versión vieja es un conflicto que no sobrescribe.
+- **Documento del proveedor:** referencia opcional y archivo PDF/JPG/PNG de hasta 10 MB, validado por contenido. Usa la infraestructura de archivos existente (`comercializacion/<empresa>/compras/<compra>/`) y se descarga solo por la aplicación, solo administración. Reemplazar el archivo conserva el anterior en el almacenamiento y queda en bitácora.
+- **Sin efectos:** no se modifican cantidades ni precios de la OV. No se crean OC de construcción, semanas, movimientos semanales, gastos, egresos ni ingresos.
+- **Interfaz:**
+  - Bloque «Compras a proveedores» en el detalle de la OV, solo para administración: vendido, comprado, pendiente y en borradores por material; lista de compras con proveedor, folio, fecha, importe y estado; botón «Nueva compra».
+  - Página de la compra (`/comercializacion/compras/[id]`, sin entrada en el menú) con formulario de borrador, confirmación con aviso, anulación con motivo y documento del proveedor.
+  - No se muestran pagos ni saldos por pagar.
+
+Limitaciones de B4 (decisiones provisionales, P14):
+- No se permiten compras por encima de lo vendido (sin excedentes ni mermas).
+- Se compra en la unidad de la partida de venta (sin conversiones de unidades).
+- Una partida de venta aparece a lo más una vez por compra.
+- El costo unitario debe ser mayor que 0 (no hay partidas sin costo o bonificadas).
+- No hay PDF de compra; el documento del proveedor se adjunta.
+- Una compra confirmada no se corrige: se anula y se captura de nuevo.
+
+### Defecto funcional pendiente antes de publicar (fuera de Comercialización)
+
+**Ciclo de redirecciones con una cookie de sesión inválida.**
+- **Qué pasa:** si el navegador conserva la cookie `conkuali_session`, pero la sesión ya no existe en la base (sesión borrada, usuario o empresa desactivados, o cookie de otro entorno en el mismo host), `/dashboard` redirige a `/login` y `proxy.ts` (que solo revisa que exista la cookie) devuelve a `/dashboard`, en un ciclo sin fin.
+- **Dónde se vio:** en la prueba local, por compartir el host `localhost` con el entorno de `develop`.
+- **Alcance:** es código anterior a Comercialización y también puede ocurrir en producción.
+- **Clasificación:** defecto funcional, no ajuste visual. No se corrigió en B4; requiere una corrección acotada de autenticación (por ejemplo, borrar la cookie al detectar una sesión inválida) antes de publicar.
+
+### Pendientes para B5 y posteriores
+
+- Confirmar las decisiones provisionales P11, P12, P13 y P14.
+- B5: cobros al cliente (solo Administrador y Director), pagos a proveedores, créditos, cuotas y vencimientos (P5). Al implementarlos, los pagos deben bloquear la anulación simple de una compra (`motivosQueImpidenAnular`).
+- B6: recepciones y entregas, y avisos (P6). Las recepciones también deben bloquear la anulación simple.
+- P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes.
 - Estados Rechazada/Cancelada de una cotización: no definidos.
+- Corrección del ciclo de redirecciones por cookie inválida (ver arriba).
 - Navegación móvil (B6).
