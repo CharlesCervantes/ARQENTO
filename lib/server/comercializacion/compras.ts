@@ -11,6 +11,7 @@ import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructu
 import { crearProveedor } from "@/lib/server/catalogos";
 import { requerirAdministracionComercial } from "@/lib/server/comercializacion/acceso";
 import { ConflictoEdicionError } from "@/lib/server/comercializacion/cotizaciones";
+import { anularCuentaDeCompraTx, compraTuvoPagosTx, crearCuentaTx } from "@/lib/server/comercializacion/cuentas";
 import {
   aMilesimas,
   calcularImportePartida,
@@ -592,6 +593,8 @@ export async function confirmarCompraComercial(
         total: totales.total,
       },
     });
+    // B5: la cuenta por pagar nace con la confirmación, en la misma transacción.
+    await crearCuentaTx(tx, { empresaId, usuarioId: usuario.id, compraId: c.id, total: totales.total });
     return { version: nuevaVersion, yaConfirmada: false };
   });
 }
@@ -601,15 +604,15 @@ export async function confirmarCompraComercial(
 // ---------------------------------------------------------------------------
 
 /**
- * Motivos que impiden una anulación SIMPLE. Punto único de extensión: cuando
- * existan pagos al proveedor (B5) o recepciones (B6), sus verificaciones se
- * agregan aquí y la anulación deberá resolverse con su reverso, no anulando.
- * En B4 todavía no existen esas operaciones, así que no hay bloqueos.
+ * Motivos que impiden una anulación SIMPLE. Punto único de extensión:
+ * - B5: cualquier pago registrado, AUNQUE se haya anulado después (la
+ *   historia de pagos exige un reverso explícito, no esta acción).
+ * - B6: recepciones (pendiente).
  */
 async function motivosQueImpidenAnular(tx: Prisma.TransactionClient, compraId: string): Promise<string[]> {
-  void tx;
-  void compraId;
-  return [];
+  const motivos: string[] = [];
+  if (await compraTuvoPagosTx(tx, compraId)) motivos.push("la compra tiene historial de pagos al proveedor (aunque estén anulados)");
+  return motivos;
 }
 
 export async function anularCompraComercial(
@@ -628,8 +631,13 @@ export async function anularCompraComercial(
   return db.$transaction(async (tx) => {
     const c = await bloquearCompra(tx, empresaId, compraId);
     if (c.estatus === "ANULADA") return { yaAnulada: true };
+    // Bloquea también la cuenta (orden OV → compra → cuenta): un pago
+    // simultáneo espera y, al continuar, encuentra la cuenta anulada.
+    await tx.$queryRaw`SELECT id FROM cuentas_comerciales WHERE "compraId" = ${c.id} FOR UPDATE`;
     const bloqueos = await motivosQueImpidenAnular(tx, c.id);
     if (bloqueos.length > 0) throw new ValidacionError(`No se puede anular: ${bloqueos.join("; ")}.`);
+    // La cuenta por pagar se anula junto con la compra (misma transacción).
+    await anularCuentaDeCompraTx(tx, empresaId, c.id, usuario.id, motivo);
     await tx.compraComercial.update({
       where: { id: c.id },
       data: { estatus: "ANULADA", anuladaEn: new Date(), anuladaPorId: usuario.id, motivoAnulacion: motivo, version: c.version + 1, actualizadoPorId: usuario.id },

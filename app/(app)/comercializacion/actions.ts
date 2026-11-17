@@ -30,6 +30,7 @@ import {
   crearProveedorComercial,
   guardarBorradorCompra,
 } from "@/lib/server/comercializacion/compras";
+import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
 // Empresa, validación, bitácora) vive en lib/server/comercializacion/*. Los
@@ -314,4 +315,63 @@ export async function adjuntarDocumentoCompraAction(compraId: string, _state: Do
   }
   revalidatePath(`/comercializacion/compras/${compraId}`);
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// B5 — cuentas por cobrar/pagar (solo administración; el servicio lo exige)
+// ---------------------------------------------------------------------------
+
+export async function definirCondicionesAction(entrada: { cuentaId: string; version: number; datos: unknown }): Promise<{ error?: string; conflicto?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    await definirCondicionesCuenta(usuario, entrada?.cuentaId, entrada?.version, entrada?.datos);
+  } catch (error) {
+    return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+export type MovimientoState = { error?: string; ok?: boolean } | undefined;
+
+export async function registrarMovimientoAction(cuentaId: string, _state: MovimientoState, formData: FormData): Promise<MovimientoState> {
+  const usuario = await requireSession();
+  try {
+    const leer = (k: string) => {
+      const v = formData.get(k);
+      return typeof v === "string" ? v : undefined;
+    };
+    let aplicaciones: unknown = undefined;
+    const crudas = leer("aplicaciones");
+    if (crudas) {
+      try {
+        aplicaciones = JSON.parse(crudas);
+      } catch {
+        return { error: "Distribución inválida. Recarga la página." };
+      }
+    }
+    const archivo = formData.get("comprobante");
+    await registrarMovimientoCuenta(
+      usuario,
+      cuentaId,
+      { importe: leer("importe"), fecha: leer("fecha"), metodo: leer("metodo"), referencia: leer("referencia"), observaciones: leer("observaciones"), aplicaciones },
+      archivo instanceof File && archivo.size > 0 ? { nombre: archivo.name, bytes: new Uint8Array(await archivo.arrayBuffer()) } : null,
+      leer("clave")
+    );
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return { ok: true };
+}
+
+export async function anularMovimientoAction(entrada: { movimientoId: string; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await anularMovimientoCuenta(usuario, entrada?.movimientoId, entrada?.motivo);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
 }

@@ -3,6 +3,8 @@ import { requireSession } from "@/lib/server/auth/dal";
 import { evaluarAccesoComercial } from "@/lib/server/comercializacion/acceso";
 import { esAdministradorComercial } from "@/lib/server/permisos";
 import { listarProveedoresComerciales, obtenerCompraComercial } from "@/lib/server/comercializacion/compras";
+import { detalleCuentaDeCompra } from "@/lib/server/comercializacion/cuentas";
+import { CuentaComercialView } from "@/components/comercializacion/cuenta-comercial";
 import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructura-contractual";
 import { Card } from "@/components/ui/card";
 import { SinAccesoComercial } from "@/components/comercializacion/sin-acceso";
@@ -26,5 +28,11 @@ export default async function CompraPage(props: PageProps<"/comercializacion/com
     throw error;
   }
   const proveedores = compra.estatus === "BORRADOR" ? await listarProveedoresComerciales(usuario) : [];
-  return <FormularioCompra key={`${compra.id}-${compra.version}`} compra={compra} proveedoresIniciales={proveedores} />;
+  const cuenta = compra.estatus === "BORRADOR" ? null : await detalleCuentaDeCompra(usuario, compra.id);
+  return (
+    <div className="space-y-6">
+      <FormularioCompra key={`${compra.id}-${compra.version}`} compra={compra} proveedoresIniciales={proveedores} tuvoPagos={cuenta?.tuvoMovimientos ?? false} />
+      {cuenta && <CuentaComercialView cuenta={cuenta} />}
+    </div>
+  );
 }

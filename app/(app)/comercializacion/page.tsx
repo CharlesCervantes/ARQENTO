@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Table, Thead, Th, Tr, Td } from "@/components/ui/table";
 import { SinAccesoComercial } from "@/components/comercializacion/sin-acceso";
 import { EstatusCotizacionBadge } from "@/components/comercializacion/cotizacion-emitida";
+import { estadoCobroDeOrdenes, indicadoresCuentasEmpresa } from "@/lib/server/comercializacion/cuentas";
+import { ETIQUETA_LIQUIDACION, ETIQUETA_SITUACION } from "@/lib/comercializacion/cuentas";
+import { db } from "@/lib/server/db";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 
@@ -45,6 +48,13 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
     listarClientesYObras(usuario),
     listarVendedoresConCotizaciones(usuario),
   ]);
+  // B5 — cobranza e indicadores: solo administración (el vendedor no los recibe).
+  const ordenIds = esAdmin
+    ? (await db.ordenVenta.findMany({ where: { cotizacionId: { in: cotizaciones.filter((c) => c.ordenFolio).map((c) => c.id) } }, select: { id: true, cotizacionId: true } }))
+    : [];
+  const cobros: Awaited<ReturnType<typeof estadoCobroDeOrdenes>> = esAdmin ? await estadoCobroDeOrdenes(usuario, ordenIds.map((o) => o.id)) : new Map();
+  const cobroPorCotizacion = new Map(ordenIds.map((o) => [o.cotizacionId, cobros.get(o.id)]));
+  const indicadores = esAdmin ? await indicadoresCuentasEmpresa(usuario) : null;
   const obrasFiltro = filtros.clienteId ? obras.filter((o) => o.clienteId === filtros.clienteId) : obras;
   const hayFiltros = Boolean(filtros.busqueda || filtros.clienteId || filtros.obraId || filtros.vendedorId || filtros.estatus);
 
@@ -66,6 +76,22 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
           + Nueva cotización
         </Link>
       </div>
+
+      {indicadores && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            ["Por cobrar", indicadores.porCobrar.saldo, false],
+            ["Vencido por cobrar", indicadores.porCobrar.vencido, true],
+            ["Por pagar", indicadores.porPagar.saldo, false],
+            ["Vencido por pagar", indicadores.porPagar.vencido, true],
+          ].map(([etiqueta, valor, alerta]) => (
+            <Card key={String(etiqueta)} className="p-4">
+              <p className="text-xs text-[var(--muted)]">{etiqueta}</p>
+              <p className={`mt-1 text-lg font-semibold tabular-nums ${alerta && valor !== "0.00" ? "text-red-700" : ""}`}>{formatearImporte(String(valor))}</p>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Filtros que se acomodan en varias líneas: con anchos mínimos, nunca se
           cortan los textos de los selectores (verificación en navegador, B3). */}
@@ -172,8 +198,20 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
                 {/* Mientras sea cotización, cobro y entrega no aplican. En una OV
                     todavía no existen (B4+): se muestra "—", nunca una cifra. */}
                 {esAdmin && (
-                  <Td className="whitespace-nowrap text-[var(--muted)]" title={c.ordenFolio ? "Se registrará en un bloque posterior" : undefined}>
-                    {c.ordenFolio ? "—" : "No aplica"}
+                  <Td className="whitespace-nowrap text-[var(--muted)]">
+                    {(() => {
+                      if (!c.ordenFolio) return "No aplica";
+                      const e = cobroPorCotizacion.get(c.id);
+                      if (!e) return "—";
+                      if (e.situacion === "SIN_CALENDARIO") return "Condiciones por definir";
+                      if (e.liquidacion === "LIQUIDADA") return "Cobrada";
+                      return (
+                        <span className={e.situacion === "VENCIDA" ? "text-red-700" : ""}>
+                          {ETIQUETA_LIQUIDACION[e.liquidacion]} · {ETIQUETA_SITUACION[e.situacion]}
+                          <span className="block text-xs">Saldo {formatearImporte(e.saldo)}</span>
+                        </span>
+                      );
+                    })()}
                   </Td>
                 )}
                 <Td className="whitespace-nowrap text-[var(--muted)]" title={c.ordenFolio ? "Se registrará en un bloque posterior" : undefined}>

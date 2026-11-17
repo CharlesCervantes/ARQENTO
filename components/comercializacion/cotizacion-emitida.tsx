@@ -6,6 +6,9 @@ import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { AccionesCotizacionEmitida } from "./acciones-cotizacion-emitida";
 import type { ResumenComprasOrden } from "@/lib/server/comercializacion/compras";
 import { ComprasOrden } from "./compras-orden";
+import type { DetalleCuenta, ResumenSaldos } from "@/lib/server/comercializacion/cuentas";
+import { CuentaComercialView } from "./cuenta-comercial";
+import { formatearImporte as fmt } from "@/lib/comercializacion/importes";
 
 // Vista de una cotización EMITIDA o ACEPTADA (B3). Solo lectura y armada con
 // la COPIA HISTÓRICA (documentoEmitido): lo que se ve aquí es lo que dice el
@@ -44,12 +47,17 @@ export function CotizacionEmitidaView({
   esAdmin,
   hoy,
   compras,
+  cuenta,
+  financiero,
 }: {
   cotizacion: CotizacionDetalle;
   esAdmin: boolean;
   hoy: string;
   // Solo se recibe para administración (B4); para el vendedor es null.
   compras: ResumenComprasOrden | null;
+  // B5 — solo administración; para el vendedor son null.
+  cuenta?: DetalleCuenta | null;
+  financiero?: { porCobrar: ResumenSaldos; porPagar: ResumenSaldos; comprasConCuenta: number } | null;
 }) {
   const doc = cotizacion.emision!.documento;
   const orden = cotizacion.orden;
@@ -109,6 +117,22 @@ export function CotizacionEmitidaView({
         </Card>
       )}
 
+      {orden && esAdmin && financiero && (
+        <Card className="p-5">
+          <h2 className="text-base font-semibold text-[var(--foreground)]">Resumen de la orden</h2>
+          <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Dato etiqueta="Por cobrar (cliente)">{fmt(financiero.porCobrar.saldo)}</Dato>
+            <Dato etiqueta="Vencido por cobrar">{fmt(financiero.porCobrar.vencido)}</Dato>
+            <Dato etiqueta="Por pagar (proveedores)">{fmt(financiero.porPagar.saldo)}</Dato>
+            <Dato etiqueta="Vencido por pagar">{fmt(financiero.porPagar.vencido)}</Dato>
+          </dl>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Saldos reales: por pagar suma solo compras confirmadas vigentes ({financiero.comprasConCuenta}). Cobrado no es utilidad; pagado no es recibido.
+            {financiero.porCobrar.sinCondiciones + financiero.porPagar.sinCondiciones > 0 && " Hay cuentas con condiciones por definir (no cuentan como vencidas)."}
+          </p>
+        </Card>
+      )}
+      {orden && esAdmin && cuenta && <CuentaComercialView cuenta={cuenta} />}
       {orden && esAdmin && compras && <ComprasOrden resumen={compras} />}
 
       <Card className="space-y-4 p-5">

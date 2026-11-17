@@ -48,7 +48,16 @@ function etiquetaImpuesto(t: TratamientoImpuesto | null, tasa: string | null) {
   return t === "GRAVADO" && tasa ? `IVA ${Number(tasa)} %` : ETIQUETA_TRATAMIENTO[t];
 }
 
-export function FormularioCompra({ compra, proveedoresIniciales }: { compra: CompraDetalle; proveedoresIniciales: OpcionProveedor[] }) {
+export function FormularioCompra({
+  compra,
+  proveedoresIniciales,
+  tuvoPagos = false,
+}: {
+  compra: CompraDetalle;
+  proveedoresIniciales: OpcionProveedor[];
+  /** B5: con historial de pagos (aun anulados) la compra ya no se anula sin más. */
+  tuvoPagos?: boolean;
+}) {
   const router = useRouter();
   const editable = compra.estatus === "BORRADOR";
   const [proveedores, setProveedores] = useState(proveedoresIniciales);
@@ -472,9 +481,15 @@ export function FormularioCompra({ compra, proveedoresIniciales }: { compra: Com
               </Button>
             </>
           )}
-          <button type="button" onClick={() => setAnulando(true)} className={claseSecundaria} disabled={pendiente || anulando}>
-            {editable ? "Descartar borrador" : "Anular compra"}
-          </button>
+          {!editable && tuvoPagos ? (
+            <p className="text-xs text-[var(--muted)]">
+              No se puede anular: la compra tiene historial de pagos al proveedor (aunque estén anulados).
+            </p>
+          ) : (
+            <button type="button" onClick={() => setAnulando(true)} className={claseSecundaria} disabled={pendiente || anulando}>
+              {editable ? "Descartar borrador" : "Anular compra"}
+            </button>
+          )}
         </div>
       )}
     </div>

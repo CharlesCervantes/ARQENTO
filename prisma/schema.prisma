@@ -98,17 +98,20 @@ model Empresa {
 
   // Gastos de Obra (sección "Gastos de Obra" de 04-modulo-control-de-obra.md)
   // — mismo mecanismo atómico que ultimoFolioRecibo, folio único por empresa.
-  ultimoFolioReposicion      Int @default(0)
-  ultimoFolioOrdenCompra     Int @default(0)
+  ultimoFolioReposicion      Int     @default(0)
+  ultimoFolioOrdenCompra     Int     @default(0)
   // Comercialización B2 — consecutivo PROPIO de cotizaciones de venta
   // (COT-000001), independiente del de OC de Compras. Mismo mecanismo
   // atómico (increment dentro de la transacción que crea la cotización).
-  ultimoFolioCotizacionVenta Int @default(0)
+  ultimoFolioCotizacionVenta Int     @default(0)
   // Comercialización B3 — consecutivo propio de órdenes de venta (OV-000001).
-  ultimoFolioOrdenVenta      Int @default(0)
+  ultimoFolioOrdenVenta      Int     @default(0)
   // Comercialización B4 — consecutivo propio de compras comerciales (COC-000001),
   // separado de las OC de Compras de construcción.
-  ultimoFolioCompraComercial Int @default(0)
+  ultimoFolioCompraComercial Int     @default(0)
+  // Comercialización B5 — zona horaria IANA de la Empresa para decidir "hoy"
+  // (vencimientos, fechas no futuras). null = America/Monterrey.
+  zonaHoraria                String?
 
   dominiosCorreo         DominioCorreo[]
   usuarios               Usuario[]
@@ -143,6 +146,10 @@ model Empresa {
   ordenesVenta            OrdenVenta[]
   comprasComerciales      CompraComercial[]
   partidasCompraComercial PartidaCompraComercial[]
+  cuentasComerciales      CuentaComercial[]
+  cuotasCuentaComercial   CuotaCuentaComercial[]
+  movimientosComerciales  MovimientoComercial[]
+  aplicacionesMovimiento  AplicacionMovimientoComercial[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -357,20 +364,23 @@ model Usuario {
   // Director de SU Empresa. Default false: nadie queda marcado al migrar.
   vendedorComercial Boolean @default(false)
 
-  productosComercialesCreados      ProductoComercial[]      @relation("ProductoComercialCreado")
-  productosComercialesActualizados ProductoComercial[]      @relation("ProductoComercialActualizado")
-  clientesComercialesCreados       ClienteComercial[]       @relation("ClienteComercialCreado")
-  obrasComercialesCreadas          ObraComercial[]          @relation("ObraComercialCreada")
-  cotizacionesVentaCreadas         CotizacionVenta[]        @relation("CotizacionVentaCreada")
-  cotizacionesVentaActualizadas    CotizacionVenta[]        @relation("CotizacionVentaActualizada")
-  cotizacionesVentaVendidas        CotizacionVenta[]        @relation("CotizacionVentaVendedor")
-  partidasPrecioAjustado           PartidaCotizacionVenta[] @relation("PartidaPrecioAjustado")
-  cotizacionesVentaEmitidas        CotizacionVenta[]        @relation("CotizacionVentaEmitida")
-  ordenesVentaRegistradas          OrdenVenta[]             @relation("OrdenVentaRegistrada")
-  comprasComercialesCreadas        CompraComercial[]        @relation("CompraComercialCreada")
-  comprasComercialesActualizadas   CompraComercial[]        @relation("CompraComercialActualizada")
-  comprasComercialesConfirmadas    CompraComercial[]        @relation("CompraComercialConfirmada")
-  comprasComercialesAnuladas       CompraComercial[]        @relation("CompraComercialAnulada")
+  productosComercialesCreados       ProductoComercial[]      @relation("ProductoComercialCreado")
+  productosComercialesActualizados  ProductoComercial[]      @relation("ProductoComercialActualizado")
+  clientesComercialesCreados        ClienteComercial[]       @relation("ClienteComercialCreado")
+  obrasComercialesCreadas           ObraComercial[]          @relation("ObraComercialCreada")
+  cotizacionesVentaCreadas          CotizacionVenta[]        @relation("CotizacionVentaCreada")
+  cotizacionesVentaActualizadas     CotizacionVenta[]        @relation("CotizacionVentaActualizada")
+  cotizacionesVentaVendidas         CotizacionVenta[]        @relation("CotizacionVentaVendedor")
+  partidasPrecioAjustado            PartidaCotizacionVenta[] @relation("PartidaPrecioAjustado")
+  cotizacionesVentaEmitidas         CotizacionVenta[]        @relation("CotizacionVentaEmitida")
+  ordenesVentaRegistradas           OrdenVenta[]             @relation("OrdenVentaRegistrada")
+  comprasComercialesCreadas         CompraComercial[]        @relation("CompraComercialCreada")
+  comprasComercialesActualizadas    CompraComercial[]        @relation("CompraComercialActualizada")
+  comprasComercialesConfirmadas     CompraComercial[]        @relation("CompraComercialConfirmada")
+  comprasComercialesAnuladas        CompraComercial[]        @relation("CompraComercialAnulada")
+  cuentasComercialesAnuladas        CuentaComercial[]        @relation("CuentaComercialAnulada")
+  movimientosComercialesRegistrados MovimientoComercial[]    @relation("MovimientoComercialRegistrado")
+  movimientosComercialesAnulados    MovimientoComercial[]    @relation("MovimientoComercialAnulado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -3040,6 +3050,7 @@ model OrdenVenta {
   // Exactamente una orden por cotización (cotizacionId es único por sí solo,
   // ya que el id de la cotización es global).
   compras CompraComercial[]
+  cuenta  CuentaComercial?
 
   @@unique([cotizacionId, empresaId])
   @@unique([id, empresaId])
@@ -3163,6 +3174,7 @@ model CompraComercial {
   motivoAnulacion  String?
 
   partidas PartidaCompraComercial[]
+  cuenta   CuentaComercial?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3209,4 +3221,171 @@ model PartidaCompraComercial {
   @@unique([compraId, partidaVentaId])
   @@index([empresaId, partidaVentaId])
   @@map("partidas_compra_comercial")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B5: cuentas por cobrar y por pagar, condiciones
+// (contado/crédito), calendario de cuotas y cobros/pagos con aplicación por
+// cuota (noviembre 2026). Solo Administrador/Director. Ver
+// docs/negocio/comercializacion.md §20 (B5). No toca Contabilidad ni
+// construcción: son registros propios del módulo.
+// ---------------------------------------------------------------------------
+
+enum TipoCuentaComercial {
+  POR_COBRAR // de una OV (cliente)
+  POR_PAGAR // de una compra comercial (proveedor)
+}
+
+enum EstatusCuentaComercial {
+  VIGENTE
+  ANULADA // solo una cuenta por pagar, junto con su compra, si nunca tuvo pagos
+}
+
+enum ModalidadPagoComercial {
+  CONTADO
+  CREDITO
+}
+
+enum EstatusMovimientoComercial {
+  VIGENTE
+  ANULADO
+}
+
+enum MetodoPagoComercial {
+  TRANSFERENCIA
+  DEPOSITO
+  EFECTIVO
+  CHEQUE
+  TARJETA
+  OTRO
+}
+
+// Una cuenta por documento (OV o compra confirmada), creada en la misma
+// transacción que la aceptación/confirmación. total = total del documento
+// con impuestos (copia; nunca cambia). modalidad null = "Condiciones por
+// definir". tuvoMovimientos se vuelve true con el primer cobro/pago y nunca
+// regresa (aunque el movimiento se anule): bloquea cambiar el calendario y
+// anular la compra con la acción simple.
+model CuentaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  tipo TipoCuentaComercial
+
+  ordenVenta   OrdenVenta?      @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String?
+  compra       CompraComercial? @relation(fields: [compraId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  compraId     String?
+
+  total           Decimal                 @db.Decimal(14, 2)
+  estatus         EstatusCuentaComercial  @default(VIGENTE)
+  modalidad       ModalidadPagoComercial?
+  tuvoMovimientos Boolean                 @default(false)
+  version         Int                     @default(1)
+
+  anuladaEn       DateTime?
+  anuladaPor      Usuario?  @relation("CuentaComercialAnulada", fields: [anuladaPorId], references: [id])
+  anuladaPorId    String?
+  motivoAnulacion String?
+
+  cuotas      CuotaCuentaComercial[]
+  movimientos MovimientoComercial[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Una cuenta por documento (además, índices únicos por columna en la migración).
+  @@unique([ordenVentaId, empresaId])
+  @@unique([compraId, empresaId])
+  @@unique([id, empresaId])
+  @@index([empresaId, tipo, estatus])
+  @@map("cuentas_comerciales")
+}
+
+// Cuota del calendario. Al sustituir el calendario (solo sin movimientos),
+// las cuotas anteriores quedan vigente = false como historial.
+model CuotaCuentaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cuenta   CuentaComercial @relation(fields: [cuentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuentaId String
+
+  numero           Int
+  fechaVencimiento DateTime  @db.Date
+  importe          Decimal   @db.Decimal(14, 2)
+  vigente          Boolean   @default(true)
+  sustituidaEn     DateTime?
+
+  aplicaciones AplicacionMovimientoComercial[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([id, empresaId])
+  @@index([cuentaId, vigente])
+  @@map("cuotas_cuenta_comercial")
+}
+
+// Cobro (cuenta por cobrar) o pago (cuenta por pagar) REAL. No se edita ni
+// se borra: se anula con motivo y sus aplicaciones dejan de contar.
+model MovimientoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cuenta   CuentaComercial @relation(fields: [cuentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuentaId String
+
+  importe       Decimal             @db.Decimal(14, 2)
+  fecha         DateTime            @db.Date
+  metodo        MetodoPagoComercial
+  referencia    String?
+  observaciones String?
+
+  comprobanteRef    String?
+  comprobanteNombre String?
+  comprobanteTipo   String?
+  comprobanteBytes  Int?
+
+  estatus         EstatusMovimientoComercial @default(VIGENTE)
+  registradoPor   Usuario                    @relation("MovimientoComercialRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?                   @relation("MovimientoComercialAnulado", fields: [anuladoPorId], references: [id])
+  anuladoPorId    String?
+  motivoAnulacion String?
+
+  // Idempotencia: el formulario envía una clave por intento.
+  claveRegistro String?
+
+  aplicaciones AplicacionMovimientoComercial[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([id, empresaId])
+  @@unique([empresaId, claveRegistro])
+  @@index([cuentaId])
+  @@map("movimientos_comerciales")
+}
+
+// Aplicación de un movimiento a una cuota de la MISMA cuenta. La suma de
+// aplicaciones de un movimiento = su importe (la base lo verifica al cerrar
+// la transacción). Cuentan solo si el movimiento está vigente.
+model AplicacionMovimientoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  movimiento   MovimientoComercial  @relation(fields: [movimientoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  movimientoId String
+  cuota        CuotaCuentaComercial @relation(fields: [cuotaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuotaId      String
+
+  importe Decimal @db.Decimal(14, 2)
+
+  @@unique([movimientoId, cuotaId])
+  @@index([cuotaId])
+  @@map("aplicaciones_movimiento_comercial")
 }

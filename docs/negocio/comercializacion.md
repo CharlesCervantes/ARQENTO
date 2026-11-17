@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.6 · 19 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta) y B4 (compras a proveedores) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.7 · 17 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores) y B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -166,7 +166,7 @@ Reglas propuestas para hacerlo sencillo:
 - Saldo cliente = total vigente de OC menos cobros válidos aplicados y ajustes autorizados correspondientes.
 - Saldo proveedor = total vigente de compra menos pagos válidos aplicados y ajustes autorizados correspondientes.
 - Registrar monto, fecha efectiva, método, referencia, comprobante, autor y obligación vinculada.
-- Primera versión propuesta: cada movimiento se aplica a una obligación. Si una transferencia cubre varias, requiere distribución explícita sin duplicar el importe; confirmar P5 antes de ampliar.
+- Primera versión (B5, provisional): cada movimiento se aplica a una sola obligación (una OV o una compra) y se distribuye entre sus cuotas. Una transferencia que cubra varias obligaciones se captura como varios movimientos; confirmar P5 antes de ampliar.
 - Evitar doble registro por reintento y validar abonos concurrentes. No permitir sobrepago accidental; anticipos excedentes requieren una regla explícita, no saldo negativo silencioso.
 - Anular con motivo y conservar registro; recalcular saldo y alertas. No borrar pagos históricos.
 - Pagos a socios y abonos a deuda son conceptos distintos de pagar material al proveedor.
@@ -248,7 +248,7 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P2 — resuelto | Edición de precios | Solo Administrador; vendedor no modifica precios |
 | P3 — resuelto (B3) | Alcance del vendedor, aceptación y cobros | Vendedor solo ve sus cotizaciones. Registran aceptación: Administrador, Director y el vendedor asignado (solo las suyas), con evidencia obligatoria. Solo Administrador y Director ven y registran cobros (a implementar en el bloque financiero). El vendedor ve precios y totales de venta, nunca cobranza, costos ni utilidad |
 | P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
-| P5 | Una transferencia para varias órdenes, anticipos y ajustes | Aplicación simple primero; confirmar casos habituales |
+| P5 — provisional (B5), confirmar | Una transferencia para varias órdenes, anticipos y ajustes | Implementado: un movimiento = una obligación, distribuido entre sus cuotas; sin saldo a favor ni sobrepago; sin pagos agrupados ni ajustes. Ver §20 B5 |
 | P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
 | P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
@@ -500,6 +500,64 @@ Limitaciones de B4 (decisiones provisionales, P14):
 - No hay PDF de compra; el documento del proveedor se adjunta.
 - Una compra confirmada no se corrige: se anula y se captura de nuevo.
 
+### B5 — Cuentas por cobrar y por pagar, condiciones, cobros y pagos (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. Migraciones:
+- `20261120090000_comercializacion_b5_cuentas` (aditiva, con carga inicial).
+- `20261120090100_comercializacion_b5_corrige_suma_cuotas`: corrige una referencia ambigua en la función que valida que las cuotas sumen el total. Se detectó en pruebas antes de cualquier uso real.
+
+Ambas se aplicaron solo en la base de desarrollo independiente del worktree y en su base de pruebas dedicada; **no** en la base compartida con `develop` ni en PRD.
+
+Qué hace:
+- **Cuentas:**
+  - Cada OV aceptada tiene una cuenta por cobrar y cada compra confirmada una cuenta por pagar.
+  - Se crean en la misma transacción que la aceptación o la confirmación; si una falla, no ocurre ninguna.
+  - La base garantiza una sola cuenta por documento (índices únicos) y que toda OV y toda compra confirmada tengan la suya (trigger diferido).
+- **Carga inicial:** la migración creó, de forma determinista e idempotente, la cuenta de cada OV existente y de cada compra confirmada no anulada, por su total, en «Condiciones por definir». No se inventaron fechas, cuotas ni pagos. En la base de desarrollo: 8 OV → 8 cuentas por cobrar; 1 compra confirmada → 1 cuenta por pagar; la compra anulada no recibió cuenta.
+- **Condiciones:**
+  - Contado: una sola fecha por el total.
+  - Crédito: una o varias cuotas con fecha explícita.
+  - Las cuotas deben sumar exactamente el total (centavos exactos, validado en servicio y base). Se permiten fechas pasadas para capturar historia.
+  - Mientras la cuenta no tenga movimientos, las condiciones pueden reemplazarse: las cuotas anteriores se marcan sustituidas (no se borran) y se muestran como calendario anterior.
+  - En cuanto existe un movimiento, aunque después se anule, el calendario queda fijo (servicio y base).
+- **Cobros y pagos (solo Administrador y Director):**
+  - Datos: importe, fecha real (no futura), método (transferencia, depósito, efectivo, cheque, tarjeta u otro), referencia, observaciones y comprobante opcional (PDF/JPG/PNG ≤ 10 MB, validado por contenido, en `comercializacion/<empresa>/movimientos/<cuenta>/`, descargable solo por administración).
+  - Requiere condiciones definidas.
+  - Propone aplicar a la cuota más antigua primero; el usuario puede ajustar la distribución. Un movimiento con varias aplicaciones; la suma de aplicaciones = importe (verificado por la base).
+  - No se permite sobrepago ni saldo a favor: el importe no puede superar el saldo, ni una aplicación el saldo de su cuota.
+  - Idempotente por clave de registro (un reintento devuelve el mismo movimiento) y seguro ante registros simultáneos: la cuenta se bloquea y la base rechaza excedentes.
+- **Anulación de movimientos:** «Anular por error» exige motivo, conserva el movimiento y sus aplicaciones con quién y cuándo, y deja de contarlo en saldos. Es idempotente. Un movimiento no se edita ni se borra.
+- **Estados por cuenta y por cuota:**
+  - Liquidación: Pendiente / Parcial / Liquidada.
+  - Vencimiento: Condiciones por definir / Al corriente / Vence hoy / Vencida.
+  - Vencido = saldo de las cuotas cuya fecha ya pasó (no incluye las que vencen hoy). Una cuota liquidada nunca está vencida.
+  - «Hoy» se calcula en la zona horaria de la Empresa (`Empresa.zonaHoraria`, opcional, sin pantalla de edición todavía); si no existe o es inválida se usa America/Monterrey.
+- **Relación con B4:**
+  - Una compra con cualquier historial de pagos, incluso anulados, ya no se anula de forma simple (`motivosQueImpidenAnular`). La pantalla lo explica en lugar de mostrar el botón.
+  - Una compra sin movimientos se anula junto con su cuenta por pagar, que queda anulada con el mismo motivo y deja de sumar.
+  - Anulación y pago simultáneos son seguros: ambos bloquean la cuenta en el mismo orden y la base solo acepta anular la compra si su cuenta ya está anulada y nunca tuvo movimientos.
+- **Interfaz:**
+  - Detalle de la OV (solo administración): «Resumen de la orden» (por cobrar, vencido por cobrar, por pagar y vencido por pagar de sus compras confirmadas) y bloque «Cobros del cliente» con condiciones, cuotas, registro e historial.
+  - Página de la compra: bloque «Pagos al proveedor» equivalente.
+  - Listado de Comercialización (solo administración): indicadores Por cobrar, Vencido por cobrar, Por pagar y Vencido por pagar, y la columna «Cobro» con el estado real.
+  - El vendedor no ve cuentas, cuotas, cobros, pagos ni indicadores, tampoco por URL directa.
+- **Sin efectos fuera del módulo:** no se crean ingresos, egresos, gastos ni movimientos de construcción. Cobrado no es utilidad; pagado no es recibido.
+- **Bitácora:** definir o cambiar condiciones, registrar y anular movimientos y anular la cuenta de una compra quedan registrados.
+
+Verificación:
+- Pruebas unitarias (12) e integración (19) de B5, incluido el caso de $12,000.
+- Recorrido en navegador local (17 de noviembre de 2026) con datos [PRUEBA]:
+  - OV de $12,000 a crédito: $4,000 vencida y $8,000 futura.
+  - Abono de $5,000 distribuido 4,000 + 1,000: saldo $7,000, vencido $0, «Parcial · Al corriente».
+  - Anulación por error: saldo $12,000, vencido $4,000, calendario fijo.
+  - Compra a contado con pago parcial y anulación del pago: la compra sigue sin poder anularse.
+  - El vendedor no ve nada de cobranza.
+
+Decisiones provisionales de B5 (confirmar):
+- P5: un movimiento se aplica a una sola OV o compra; no hay pagos agrupados entre documentos, anticipos, saldo a favor, notas de crédito ni ajustes.
+- La reprogramación del calendario de una cuenta con movimientos no está disponible (queda pendiente definir cómo reasignar aplicaciones con historial).
+- Cobros y pagos sin IVA desglosado ni conciliación bancaria; el comprobante es opcional.
+
 ### Defecto funcional pendiente antes de publicar (fuera de Comercialización)
 
 **Ciclo de redirecciones con una cookie de sesión inválida.**
@@ -508,10 +566,11 @@ Limitaciones de B4 (decisiones provisionales, P14):
 - **Alcance:** es código anterior a Comercialización y también puede ocurrir en producción.
 - **Clasificación:** defecto funcional, no ajuste visual. No se corrigió en B4; requiere una corrección acotada de autenticación (por ejemplo, borrar la cookie al detectar una sesión inválida) antes de publicar.
 
-### Pendientes para B5 y posteriores
+### Pendientes para B6 y posteriores
 
 - Confirmar las decisiones provisionales P11, P12, P13 y P14.
-- B5: cobros al cliente (solo Administrador y Director), pagos a proveedores, créditos, cuotas y vencimientos (P5). Al implementarlos, los pagos deben bloquear la anulación simple de una compra (`motivosQueImpidenAnular`).
+- Confirmar P5 y las decisiones provisionales de B5 (reprogramación con pagos, saldo a favor, pagos agrupados, ajustes).
+- Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
 - B6: recepciones y entregas, y avisos (P6). Las recepciones también deben bloquear la anulación simple.
 - P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes.
 - Estados Rechazada/Cancelada de una cotización: no definidos.

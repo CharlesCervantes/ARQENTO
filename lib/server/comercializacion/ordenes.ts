@@ -10,6 +10,7 @@ import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructu
 import { esAdministradorComercial } from "@/lib/server/permisos";
 import { requerirUsoComercial } from "@/lib/server/comercializacion/acceso";
 import { ENTIDAD_COTIZACION, alcance } from "@/lib/server/comercializacion/cotizaciones";
+import { crearCuentaTx } from "@/lib/server/comercializacion/cuentas";
 import { MAX_BYTES_POR_DOCUMENTO, nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
 
@@ -164,6 +165,9 @@ export async function registrarAceptacionCotizacion(
         where: { id: cotizacionId },
         data: { estatus: "ACEPTADA", version: cot.version + 1, actualizadoPorId: usuario.id },
       });
+      // B5: la cuenta por cobrar nace con la OV, en la misma transacción
+      // (condiciones por definir; no registra dinero).
+      await crearCuentaTx(tx, { empresaId, usuarioId: usuario.id, ordenVentaId: ov.id, total: cot.total });
       await registrarAuditoriaTx(tx, {
         empresaId,
         usuarioId: usuario.id,
