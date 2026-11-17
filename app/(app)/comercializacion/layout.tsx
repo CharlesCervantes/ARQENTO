@@ -24,7 +24,7 @@ export default async function ComercializacionLayout({ children }: { children: R
   }
 
   const tabs = [
-    { href: "/comercializacion", label: "Cotizaciones y órdenes" },
+    { href: "/comercializacion", label: "Cotizaciones y órdenes", activaEn: ["/comercializacion/cotizaciones/"] },
     { href: "/comercializacion/productos", label: "Productos" },
     ...(esAdministradorComercial(usuario) ? [{ href: "/comercializacion/vendedores", label: "Vendedores" }] : []),
   ];

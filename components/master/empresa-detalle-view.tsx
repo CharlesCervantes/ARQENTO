@@ -209,6 +209,12 @@ const ESTADO_ETIQUETA: Record<EstadoModulo, string> = {
   deshabilitado_especifico: "Deshabilitado específicamente",
 };
 
+const OPCION_DE_ESTADO: Record<EstadoModulo, "heredado" | "habilitado" | "deshabilitado"> = {
+  heredado: "heredado",
+  habilitado_adicional: "habilitado",
+  deshabilitado_especifico: "deshabilitado",
+};
+
 function TabModulos({ empresa }: { empresa: DetalleEmpresaMaster }) {
   return (
     <Card className="divide-y divide-[var(--border)] p-0">
@@ -216,10 +222,19 @@ function TabModulos({ empresa }: { empresa: DetalleEmpresaMaster }) {
         <div key={m.id} className="flex items-center justify-between px-5 py-4">
           <div>
             <p className="text-sm font-medium text-[var(--foreground)]">{m.nombre}</p>
-            <p className={`text-xs ${ESTADO_ESTILO[m.estado]}`}>{ESTADO_ETIQUETA[m.estado]}</p>
+            {/* "Heredado" no implica incluido: un módulo fuera del Plan sin
+                override (p. ej. Comercialización) hereda "no disponible".
+                Antes siempre decía "Incluido en Plan" (corregido en la
+                verificación de Comercialización, noviembre 2026). */}
+            <p className={`text-xs ${ESTADO_ESTILO[m.estado]}`}>
+              {m.estado === "heredado" && !m.efectivo ? "No incluido en el Plan" : ESTADO_ETIQUETA[m.estado]}
+            </p>
           </div>
           <select
-            defaultValue={m.estado}
+            // El estado del servidor ("habilitado_adicional"…) no es el valor
+            // de la opción ("habilitado"…): sin este mapeo el selector
+            // mostraba "Heredar del Plan" con un override activo.
+            defaultValue={OPCION_DE_ESTADO[m.estado]}
             onChange={(ev) =>
               actualizarModuloEmpresaAction(
                 empresa.id,

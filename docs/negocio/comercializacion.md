@@ -356,6 +356,28 @@ Cálculos (servidor; el navegador solo muestra una vista previa con las mismas f
 
 Fuera de B2: emitir/PDF, aceptación, conversión a OC, compras, créditos, entregas, resultado, importación de catálogo y navegación móvil.
 
+### Verificación en navegador de B1 y B2 (17 de noviembre de 2026)
+
+Recorrido real en Chrome (automatizado con Playwright, sin cambios en las dependencias del repositorio) contra el servidor de desarrollo del worktree y su base local dedicada, con los usuarios del seed local. Datos de prueba identificados con el prefijo `PRB-` / `[PRUEBA]`; no son datos reales. Capturas sin credenciales; los correos se ocultan antes de capturar.
+
+Verificado:
+1. Master habilita Comercialización por Empresa; antes figura como «No incluido en el Plan».
+2. Administrador da de alta productos (Gravado 16 %, Tasa 0 %, Exento), con historial; valida precio 0 y código duplicado sin distinguir mayúsculas; marca al Supervisor como vendedor (persiste al recargar y queda en bitácora).
+3. Administrador crea cliente y obra desde el formulario, cotización con cantidades 2.375 / 10 / 0.125 / 1.5, precio ajustado ($260.00 contra $245.50 de catálogo) y vendedor asignado. Folio COT-000001.
+4. Al salir y reabrir coinciden datos y totales: subtotal $3,428.19; IVA 16 % sobre $2,893.19 = $462.91; base tasa 0 % $355.00; base exenta $180.00; total $3,891.10.
+5. El vendedor ve solo su cotización, cambia cantidades (3.5 y 12.5) y guarda; el precio autorizado de $260.00 se conserva. Nuevo total $4,806.21.
+6. El vendedor no ve la cotización de administración (404 por URL directa) ni la pantalla de Vendedores. No hay campos de precio ni selector de vendedor. Ningún costo aparece en el HTML ni en la carga enviada al navegador, en Productos ni en la cotización.
+7. Dos pestañas sobre el mismo borrador: la segunda recibe el aviso de conflicto, no sobrescribe, y «Recargar» muestra la versión vigente.
+8. Buscador con y sin resultados; validaciones de mínimos, vigencia, precio con 3 decimales y cantidad inválida; un cliente repetido reutiliza el existente; doble clic en «Guardar borrador» crea una sola cotización. Sin contenido cortado ni desplazamiento horizontal a 1440, 1280 y 1024 px.
+
+Errores encontrados y corregidos durante la verificación:
+- **Formulario de producto (B1):** tras un error de validación se vaciaban Código, Descripción, Unidad y Costo (React 19 reinicia los campos no controlados de un `<form action>`). Ahora son campos controlados y se conservan.
+- **Mensajes del formulario de cotización (B2):** el error o conflicto aparecía debajo del botón, fuera de la vista. Ahora aparece arriba del botón, como alerta, y la página se desplaza hasta él.
+- **Pestaña activa (B2):** en el detalle de una cotización ninguna pestaña aparecía activa; ahora se marca «Cotizaciones y órdenes».
+- **Portal Master, Módulos (previo a Comercialización):** un módulo fuera del Plan sin override se mostraba como «Incluido en Plan», y el selector mostraba «Heredar del Plan» aunque hubiera un override activo. Ahora dice «No incluido en el Plan» y el selector refleja el override real.
+
+No verificado en navegador: vista móvil (fuera de alcance hasta B6).
+
 ### Pendientes para B3
 
 - **P1:** quién genera el folio de la OC de cliente (Arqento, el cliente o ambos) y con qué prefijo; `OC-` ya lo usan las compras a proveedor.

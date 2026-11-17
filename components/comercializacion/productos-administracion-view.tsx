@@ -355,6 +355,14 @@ function FormularioProducto({ producto, onListo }: { producto?: ProductoAdminist
     if (state?.guardado) onListo();
   }
 
+  // Todos los campos CONTROLADOS: React 19 limpia los campos no controlados
+  // de un <form action> después de cada envío, también cuando el servidor
+  // responde con un error de validación — el usuario perdía lo capturado
+  // (encontrado en la verificación en navegador de B1/B2).
+  const [codigo, setCodigo] = useState(producto?.codigo ?? "");
+  const [descripcion, setDescripcion] = useState(producto?.descripcion ?? "");
+  const [unidad, setUnidad] = useState(producto?.unidad ?? "");
+  const [costo, setCosto] = useState(producto?.costoReferencia ?? "");
   const [precio, setPrecio] = useState(producto?.precioVenta ?? "");
   const [tratamiento, setTratamiento] = useState<TratamientoImpuesto>(producto?.tratamientoImpuesto ?? "GRAVADO");
   const [tasa, setTasa] = useState(producto?.tasaIva ? String(Number(producto.tasaIva)) : String(Number(TASA_IVA_INICIAL)));
@@ -371,15 +379,15 @@ function FormularioProducto({ producto, onListo }: { producto?: ProductoAdminist
     <form action={formAction} className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Campo etiqueta="Código">
-          <Input name="codigo" required maxLength={40} defaultValue={producto?.codigo} autoComplete="off" />
+          <Input name="codigo" required maxLength={40} value={codigo} onChange={(e) => setCodigo(e.target.value)} autoComplete="off" />
         </Campo>
         <div className="sm:col-span-2">
           <Campo etiqueta="Descripción">
-            <Input name="descripcion" required maxLength={300} defaultValue={producto?.descripcion} />
+            <Input name="descripcion" required maxLength={300} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
           </Campo>
         </div>
         <Campo etiqueta="Unidad">
-          <Input name="unidad" required maxLength={20} placeholder="pza, m², ton…" defaultValue={producto?.unidad} />
+          <Input name="unidad" required maxLength={20} placeholder="pza, m², ton…" value={unidad} onChange={(e) => setUnidad(e.target.value)} />
         </Campo>
         <Campo etiqueta="Precio de venta sin IVA">
           <Input
@@ -415,7 +423,8 @@ function FormularioProducto({ producto, onListo }: { producto?: ProductoAdminist
             name="costoReferencia"
             inputMode="decimal"
             placeholder="0.00"
-            defaultValue={producto?.costoReferencia ?? ""}
+            value={costo}
+            onChange={(e) => setCosto(e.target.value)}
           />
         </Campo>
       </div>

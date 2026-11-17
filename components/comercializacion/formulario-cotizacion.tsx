@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
@@ -108,6 +108,10 @@ export function FormularioCotizacion({
   const [claveCreacion] = useState(claveCreacionNueva);
   const [error, setError] = useState<string | null>(null);
   const [conflicto, setConflicto] = useState(false);
+  const refError = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) refError.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [error]);
   const [guardando, startGuardar] = useTransition();
 
   const obrasDelCliente = obras.filter((o) => o.clienteId === clienteId);
@@ -392,14 +396,15 @@ export function FormularioCotizacion({
         </Campo>
       </Card>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Button type="button" onClick={guardar} disabled={guardando}>
-          {guardando ? "Guardando…" : "Guardar borrador"}
-        </Button>
-        <span className="text-xs text-[var(--muted)]">Emitir y ver la cotización en PDF estará disponible en la siguiente entrega.</span>
-      </div>
+      {/* El mensaje va ANTES del botón y se desplaza a la vista: al final de
+          un formulario largo quedaba debajo del botón, fuera de pantalla
+          (encontrado en la verificación en navegador de B2). */}
       {error && (
-        <div className="flex flex-wrap items-center gap-3 text-sm text-red-700">
+        <div
+          ref={refError}
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700"
+        >
           <span>{error}</span>
           {conflicto && (
             <button type="button" onClick={() => router.refresh()} className={claseEnlace}>
@@ -408,6 +413,12 @@ export function FormularioCotizacion({
           )}
         </div>
       )}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Button type="button" onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : "Guardar borrador"}
+        </Button>
+        <span className="text-xs text-[var(--muted)]">Emitir y ver la cotización en PDF estará disponible en la siguiente entrega.</span>
+      </div>
     </div>
   );
 }
