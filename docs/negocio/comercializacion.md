@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.4 · 17 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo) y B2 (clientes, obras y cotizaciones en borrador) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.5 · 18 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) y B3 (emisión, PDF, aceptación y orden de venta) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -244,14 +244,16 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 
 | ID | Decisión | Propuesta inicial / impacto |
 |---|---|---|
-| P1 | Qué significa OC y quién genera folio | OC cliente separada de compra proveedor; conservar referencia externa |
+| P1 — resuelto (B3) | Qué significa OC y quién genera folio | Orden de venta con folio interno `OV-000001`, consecutivo propio por Empresa; número de OC del cliente opcional y aparte. Ver §20 B3 |
 | P2 — resuelto | Edición de precios | Solo Administrador; vendedor no modifica precios |
-| P3 — parcial | Vendedor solo ve sus cotizaciones: confirmado | Falta confirmar aceptación y visibilidad/registro de cobros |
+| P3 — resuelto (B3) | Alcance del vendedor, aceptación y cobros | Vendedor solo ve sus cotizaciones. Registran aceptación: Administrador, Director y el vendedor asignado (solo las suyas), con evidencia obligatoria. Solo Administrador y Director ven y registran cobros (a implementar en el bloque financiero). El vendedor ve precios y totales de venta, nunca cobranza, costos ni utilidad |
 | P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
 | P5 | Una transferencia para varias órdenes, anticipos y ajustes | Aplicación simple primero; confirmar casos habituales |
 | P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
 | P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
+| P12 — provisional (B3), confirmar | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
+| P13 — propuesta implementada (B3), confirmar | Reglas de duplicado y de emisión | Ver «Decisiones provisionales de B3» en §20 |
 | P11 — propuesta implementada (B2), confirmar | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
 | P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
 | P8 | Reparto y deuda en primera entrega | Resultado estimado; automatización avanzada después si no es necesaria |
@@ -378,12 +380,72 @@ Errores encontrados y corregidos durante la verificación:
 
 No verificado en navegador: vista móvil (fuera de alcance hasta B6).
 
-### Pendientes para B3
+### B3 — Emisión, PDF, aceptación y orden de venta (implementado, sin desplegar)
 
-- **P1:** quién genera el folio de la OC de cliente (Arqento, el cliente o ambos) y con qué prefijo; `OC-` ya lo usan las compras a proveedor.
-- **P3:** si el vendedor puede registrar la aceptación y si ve o registra cobros.
-- Campos obligatorios para emitir: se propone cliente, obra, vigencia y al menos una partida.
-- Contenido del PDF: §11 indica «vendedor según decisión comercial».
-- Qué hacer con una cotización vencida: §4 indica no convertir ni cobrar automáticamente.
-- Si se requieren datos fiscales del cliente (RFC/razón social) para el PDF.
-- P5, P6, P7 (importación) y P8 siguen pendientes para sus bloques.
+Rama `feature/comercializacion`. Migración `20261118090000_comercializacion_b3_emision_ov` (aditiva). Aplicada solo en la base de desarrollo independiente del worktree y en su base de pruebas dedicada; **no** en la base compartida con `develop` ni en PRD.
+
+Decisiones confirmadas (noviembre 2026):
+1. **Orden de venta (OV):** folio interno `OV-000001` con consecutivo propio por Empresa (`Empresa.ultimoFolioOrdenVenta`). Guarda aparte, opcionalmente, el número de OC que da el cliente. No reutiliza el consecutivo ni las entidades de Compras de construcción (`OrdenCompra`/`Cotizacion`).
+2. **Aceptación:** la registran Administrador, Director y el vendedor asignado (solo sobre sus cotizaciones), con evidencia adjunta obligatoria.
+3. **Cobros:** solo Administrador y Director los ven y registran. Es una regla para el bloque financiero; B3 no implementa cobros. El vendedor ve precios y totales de venta de sus cotizaciones, pero no cobranza, costos ni utilidad. En el listado, la columna «Cobro» solo aparece para administración.
+
+Reglas implementadas:
+- **Estados:** Borrador → Emitida → Aceptada. Rechazada/Cancelada no están definidas todavía.
+- **Emitir** exige cliente, obra del cliente, vendedor elegible en ese momento, descripción, fecha, vigencia (no anterior a hoy) y al menos una partida, sin productos desactivados. Los datos fiscales del cliente no son obligatorios. Usa las reglas exactas de cálculo de B2 y comprueba que los totales guardados coincidan con el recálculo. Emitir guarda antes los cambios del formulario y pide confirmación. No envía correo ni WhatsApp ni significa aceptación. Lo pueden hacer administración y el vendedor asignado.
+- **Copia histórica** (`CotizacionVenta.documentoEmitido`): empresa (nombre, razón social y referencia del logo), cliente (nombre, contacto, teléfono), obra (nombre, ubicación), vendedor (nombre), descripción, fechas, condiciones, observaciones, partidas (código, descripción, unidad, cantidad, precio, importe, impuesto) y totales por tasa. No incluye costos, precio de catálogo ni marcas internas de ajuste. La vista y el PDF de una cotización emitida usan solo esta copia.
+- **Inmutabilidad:** una cotización emitida o aceptada no se edita. La base lo garantiza con dos triggers: las partidas no cambian, y los datos comerciales, la copia y los totales no cambian. Además, solo puede pasar de Emitida a Aceptada, nunca volver a Borrador.
+- **Duplicar** (cotizaciones emitidas o aceptadas): crea un borrador con folio COT nuevo y vínculo al origen (`origenId`); el original queda intacto. Pasa por la misma creación de B2 (permisos de precio y validación de productos) e incluye una clave contra reintentos.
+- **PDF** (`/api/comercializacion/cotizaciones/[id]/pdf`): mismo motor e identidad que los PDFs existentes. Incluye logo o nombre de la empresa, folio COT, fecha, vigencia, cliente, obra, vendedor, descripción, materiales con unidad, cantidad, precio, impuesto e importe, Tasa 0 % y Exento por separado, total, condiciones y observaciones. Pie con folio y «Página X de Y»; las partidas no se parten entre páginas. Un borrador genera una vista previa marcada BORRADOR. Protegido por Empresa y vendedor también por URL directa (404).
+- **Aceptación:** solo sobre una cotización Emitida y vigente. Pide fecha de aceptación (entre la fecha de la cotización y hoy), evidencia y referencia opcional de la OC del cliente. Se guarda quién la registró y cuándo; es un registro interno de evidencia, no una firma electrónica del cliente.
+- **Evidencia:** PDF, JPG o PNG de hasta 10 MB. El tipo se valida por el contenido real del archivo, no por el nombre. Se guarda con la infraestructura de archivos existente bajo `comercializacion/<empresa>/aceptaciones/<cotización>/`. Se descarga solo a través de la aplicación (`/api/comercializacion/ordenes/[id]/evidencia`), con el mismo alcance por Empresa y vendedor.
+- **Atomicidad:** primero se sube la evidencia; después una sola transacción bloquea la cotización, asigna el folio OV, crea la OV con los totales emitidos, marca la cotización como Aceptada y registra la bitácora (cotización y OV). Si algo falla, no queda nada aceptado, no se consume folio y la evidencia recién subida se elimina.
+- **Una sola OV:** doble clic, reintentos y solicitudes simultáneas devuelven la misma OV. La base lo garantiza con índice único por cotización y bloqueo de fila; las evidencias sobrantes de solicitudes repetidas se eliminan.
+- **Sin efectos financieros:** la OV no crea compras, cuotas, cobros, pagos, ingresos, egresos ni entregas, y no toca construcción.
+- **Interfaz:**
+  - Listado único con distintivos Borrador / Emitida (+ Vencida) / Aceptada y filtro por estado.
+  - Una cotización aceptada aparece en una sola fila con el folio OV y su COT debajo.
+  - La búsqueda incluye OV y la OC del cliente.
+  - Detalle: un borrador se edita; una emitida o aceptada se muestra de solo lectura con «Ver PDF», «Registrar aceptación» (si aplica) y «Duplicar». Si está aceptada, se ven la OV, la fecha, la OC del cliente, la evidencia y quién la registró.
+  - Sin secciones nuevas en el menú ni cifras de cobranza o entregas.
+
+Decisiones provisionales de B3 (no confirmadas por el negocio; P12 y P13):
+- **Cotización vencida:** como este documento no define cómo aceptar una cotización emitida vencida, esa aceptación se bloquea; se duplica y se emite una nueva.
+- **Emisión:** se exige vigencia de hoy en adelante y que ningún material esté desactivado.
+- **Duplicado:**
+  - Los productos desactivados se omiten y se avisa cuáles.
+  - El resto toma los datos actuales del catálogo.
+  - Administración conserva el precio aplicado del original (queda como ajuste suyo si difiere del catálogo).
+  - El vendedor recibe el precio vigente de catálogo; no hereda precios ajustados.
+  - El vendedor queda él mismo. Administración conserva al vendedor original si sigue siendo elegible; si no, queda ella misma.
+  - Fecha = hoy; la vigencia se conserva solo si sigue vigente.
+
+Verificado en navegador (Chrome con Playwright, base local dedicada; datos `[PRUEBA]`):
+- **Administrador:**
+  - Al emitir sin obra se muestra el faltante.
+  - Emite y obtiene un PDF de 1 página con el mismo total que en pantalla, Tasa 0 % y Exento por separado, sin costos ni marca BORRADOR.
+  - Registra la aceptación con evidencia PDF y obtiene OV-000001.
+  - Reabre la OV desde el listado (una sola fila OV / COT) y descarga la evidencia.
+  - Al duplicar, el borrador conserva el precio ajustado y su vista previa sale marcada BORRADOR.
+- **Vendedor:**
+  - Ve solo su OV y no ve la columna Cobro.
+  - Descarga su PDF y su evidencia.
+  - La cotización, el PDF y la evidencia de administración responden 404 por URL directa.
+  - Su duplicado toma el precio de catálogo ($245.50 en lugar de $260.00 ajustado).
+  - Emite y acepta su propia cotización; la evidencia inválida se rechaza con mensaje y la PNG se acepta.
+- **Almacenamiento:** las evidencias se guardaron en un almacenamiento S3 local de pruebas; el bucket compartido no se usó.
+- **Errores encontrados y corregidos:**
+  - Actualizaciones de estado durante el render (aceptación de B3 y formulario de producto de B1) que React marcaba como error; ahora ocurren en un efecto.
+  - Filtros del listado que se cortaban; ahora se acomodan en varias líneas sin cortarse a 1440, 1280 y 1024 px.
+
+Limitaciones conocidas:
+- El PDF se arma al descargarlo a partir de la copia histórica (no se guarda el archivo).
+- El logo se toma de la referencia congelada; si ese archivo se borrara del almacenamiento, el PDF usa el nombre de la Empresa de la copia.
+- Las pruebas automáticas renderizan el PDF en un proceso aparte, porque `@react-pdf/renderer` no funciona con la condición `react-server` que usan las pruebas; en la aplicación se genera en un route handler, como los demás PDFs.
+
+### Pendientes para B4 y posteriores
+
+- Confirmar las decisiones provisionales P11, P12 y P13.
+- Bloque financiero (cobros al cliente, solo Administrador y Director), compras a proveedor, créditos y cuotas: P5 sigue pendiente.
+- P6 (avisos), P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes para sus bloques.
+- Estados Rechazada/Cancelada de una cotización: no definidos.
+- Navegación móvil (B6).

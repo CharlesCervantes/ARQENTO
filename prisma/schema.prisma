@@ -104,6 +104,8 @@ model Empresa {
   // (COT-000001), independiente del de OC de Compras. Mismo mecanismo
   // atómico (increment dentro de la transacción que crea la cotización).
   ultimoFolioCotizacionVenta Int @default(0)
+  // Comercialización B3 — consecutivo propio de órdenes de venta (OV-000001).
+  ultimoFolioOrdenVenta      Int @default(0)
 
   dominiosCorreo         DominioCorreo[]
   usuarios               Usuario[]
@@ -135,6 +137,7 @@ model Empresa {
   obrasComerciales        ObraComercial[]
   cotizacionesVenta       CotizacionVenta[]
   partidasCotizacionVenta PartidaCotizacionVenta[]
+  ordenesVenta            OrdenVenta[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -357,6 +360,8 @@ model Usuario {
   cotizacionesVentaActualizadas    CotizacionVenta[]        @relation("CotizacionVentaActualizada")
   cotizacionesVentaVendidas        CotizacionVenta[]        @relation("CotizacionVentaVendedor")
   partidasPrecioAjustado           PartidaCotizacionVenta[] @relation("PartidaPrecioAjustado")
+  cotizacionesVentaEmitidas        CotizacionVenta[]        @relation("CotizacionVentaEmitida")
+  ordenesVentaRegistradas          OrdenVenta[]             @relation("OrdenVentaRegistrada")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -2886,10 +2891,13 @@ model ObraComercial {
   @@map("obras_comerciales")
 }
 
-// B2 solo maneja borradores. Emitida/Aceptada/Rechazada/Cancelada llegan en
-// B3 con sus reglas (agregar un valor de enum es una migración aditiva).
+// BORRADOR (editable) → EMITIDA (copia histórica congelada, ya no se edita)
+// → ACEPTADA (con su OrdenVenta). Rechazada/Cancelada no se han definido
+// todavía (agregar un valor de enum es una migración aditiva).
 enum EstatusCotizacionVenta {
   BORRADOR
+  EMITIDA
+  ACEPTADA
 }
 
 // Cotización de venta. NO es la Cotizacion de Compras (oferta de un
@@ -2947,6 +2955,23 @@ model CotizacionVenta {
   // cotización en lugar de crear otra (índice único por Empresa).
   claveCreacion String?
 
+  // B3 — emisión. `documentoEmitido` es la COPIA HISTÓRICA del documento al
+  // emitir (empresa, cliente, obra, vendedor, partidas, totales, textos):
+  // el PDF de una cotización emitida se arma SOLO con esta copia, nunca con
+  // datos actuales del catálogo, cliente, obra o empresa. Sin costos.
+  emitidaEn        DateTime?
+  emitidaPor       Usuario?  @relation("CotizacionVentaEmitida", fields: [emitidaPorId], references: [id])
+  emitidaPorId     String?
+  documentoEmitido Json?
+
+  // B3 — una cotización emitida no se edita; se corrige con "Duplicar", que
+  // crea un borrador nuevo (folio nuevo) vinculado a su origen.
+  origen     CotizacionVenta?  @relation("CotizacionVentaDuplicada", fields: [origenId], references: [id])
+  origenId   String?
+  duplicadas CotizacionVenta[] @relation("CotizacionVentaDuplicada")
+
+  ordenVenta OrdenVenta?
+
   partidas PartidaCotizacionVenta[]
 
   createdAt DateTime @default(now())
@@ -2959,6 +2984,51 @@ model CotizacionVenta {
   @@index([empresaId, vendedorId])
   @@index([empresaId, clienteId])
   @@map("cotizaciones_venta")
+}
+
+// Orden de venta (B3) — la aceptación del cliente sobre UNA cotización
+// emitida. Folio interno OV-000001 con consecutivo propio por Empresa
+// (Empresa.ultimoFolioOrdenVenta); el número de OC que proporcione el cliente
+// es un dato aparte y opcional. NO es OrdenCompra de Compras de construcción.
+// Exactamente una por cotización (cotizacionId @unique). Sus datos
+// comerciales son los de la copia emitida de la cotización. Todavía no crea
+// compras, cuotas, cobros/pagos ni entregas.
+model OrdenVenta {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  folio       String
+  numeroFolio Int
+
+  cotizacion   CotizacionVenta @relation(fields: [cotizacionId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cotizacionId String
+
+  // Datos de la aceptación del cliente (registro interno de evidencia, no
+  // firma electrónica del cliente).
+  fechaAceptacion     DateTime @db.Date
+  referenciaOcCliente String?
+  evidenciaRef        String
+  evidenciaNombre     String
+  evidenciaTipo       String
+  evidenciaBytes      Int
+
+  registradaPor   Usuario  @relation("OrdenVentaRegistrada", fields: [registradaPorId], references: [id])
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  // Copia de los totales emitidos (para listar sin leer el documento).
+  subtotal Decimal @db.Decimal(14, 2)
+  iva      Decimal @db.Decimal(14, 2)
+  total    Decimal @db.Decimal(14, 2)
+
+  // Exactamente una orden por cotización (cotizacionId es único por sí solo,
+  // ya que el id de la cotización es global).
+  @@unique([cotizacionId, empresaId])
+  @@unique([empresaId, numeroFolio])
+  @@unique([empresaId, folio])
+  @@index([empresaId])
+  @@map("ordenes_venta")
 }
 
 // Partida de una cotización. Copia histórica de los datos comerciales del

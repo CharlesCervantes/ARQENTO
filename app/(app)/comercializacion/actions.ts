@@ -19,6 +19,8 @@ import {
   actualizarCotizacionVenta,
   crearCotizacionVenta,
 } from "@/lib/server/comercializacion/cotizaciones";
+import { duplicarCotizacionVenta, emitirCotizacionVenta } from "@/lib/server/comercializacion/emision";
+import { registrarAceptacionCotizacion } from "@/lib/server/comercializacion/ordenes";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
 // Empresa, validación, bitácora) vive en lib/server/comercializacion/*. Los
@@ -169,5 +171,64 @@ export async function guardarCotizacionAction(entrada: {
     return { id: r.id, folio: r.folio };
   } catch (error) {
     return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// B3 — emisión, duplicado y aceptación (orden de venta)
+// ---------------------------------------------------------------------------
+
+export async function emitirCotizacionAction(entrada: { id: string; version: number }): Promise<{ error?: string; conflicto?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    await emitirCotizacionVenta(usuario, entrada?.id, entrada?.version);
+    revalidatePath(`/comercializacion/cotizaciones/${entrada.id}`);
+  } catch (error) {
+    return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
+  }
+  revalidatePath("/comercializacion");
+  revalidatePath(`/comercializacion/cotizaciones/${entrada.id}`);
+  return {};
+}
+
+export async function duplicarCotizacionAction(entrada: {
+  id: string;
+  claveCreacion: string;
+}): Promise<{ error?: string; id?: string; folio?: string; omitidos?: string[] }> {
+  const usuario = await requireSession();
+  try {
+    const r = await duplicarCotizacionVenta(usuario, entrada?.id, entrada?.claveCreacion);
+    revalidatePath("/comercializacion");
+    return { id: r.id, folio: r.folio, omitidos: r.omitidos };
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+}
+
+export type AceptacionState = { error?: string; folio?: string } | undefined;
+
+export async function registrarAceptacionAction(
+  cotizacionId: string,
+  _state: AceptacionState,
+  formData: FormData
+): Promise<AceptacionState> {
+  const usuario = await requireSession();
+  try {
+    const evidencia = formData.get("evidencia");
+    const archivo =
+      evidencia instanceof File && evidencia.size > 0
+        ? { nombre: evidencia.name, bytes: new Uint8Array(await evidencia.arrayBuffer()) }
+        : null;
+    const r = await registrarAceptacionCotizacion(
+      usuario,
+      cotizacionId,
+      { fechaAceptacion: formData.get("fechaAceptacion"), referenciaOcCliente: formData.get("referenciaOcCliente") ?? "" },
+      archivo
+    );
+    revalidatePath("/comercializacion");
+    revalidatePath(`/comercializacion/cotizaciones/${cotizacionId}`);
+    return { folio: r.folio };
+  } catch (error) {
+    return { error: mensajeError(error) };
   }
 }

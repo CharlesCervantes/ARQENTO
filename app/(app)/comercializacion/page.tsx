@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, Thead, Th, Tr, Td } from "@/components/ui/table";
 import { SinAccesoComercial } from "@/components/comercializacion/sin-acceso";
+import { EstatusCotizacionBadge } from "@/components/comercializacion/cotizacion-emitida";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 
@@ -19,6 +20,8 @@ import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 
 const claseSelect =
   "w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15";
+
+const claseFiltro = "w-auto min-w-[12rem] max-w-[18rem] flex-[1_1_12rem]";
 
 const texto = (v: string | string[] | undefined) => (typeof v === "string" && v.length <= 100 ? v : undefined);
 
@@ -34,6 +37,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
     clienteId: texto(sp.cliente),
     obraId: texto(sp.obra),
     vendedorId: esAdmin ? texto(sp.vendedor) : undefined,
+    estatus: texto(sp.estado),
   };
 
   const [cotizaciones, { clientes, obras }, vendedores] = await Promise.all([
@@ -42,7 +46,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
     listarVendedoresConCotizaciones(usuario),
   ]);
   const obrasFiltro = filtros.clienteId ? obras.filter((o) => o.clienteId === filtros.clienteId) : obras;
-  const hayFiltros = Boolean(filtros.busqueda || filtros.clienteId || filtros.obraId || filtros.vendedorId);
+  const hayFiltros = Boolean(filtros.busqueda || filtros.clienteId || filtros.obraId || filtros.vendedorId || filtros.estatus);
 
   return (
     <div className="space-y-6">
@@ -51,8 +55,8 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
           <h1 className="text-2xl font-semibold text-[var(--foreground)]">Cotizaciones y órdenes</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {esAdmin
-              ? "Cotizaciones de venta de tu empresa. Las órdenes de compra de cliente se habilitarán en la siguiente entrega."
-              : "Tus cotizaciones de venta. Las órdenes de compra de cliente se habilitarán en la siguiente entrega."}
+              ? "Cotizaciones de venta de tu empresa y las órdenes de venta (OV) que resultan de su aceptación."
+              : "Tus cotizaciones de venta y las órdenes de venta (OV) que resultan de su aceptación."}
           </p>
         </div>
         <Link
@@ -63,9 +67,18 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
         </Link>
       </div>
 
-      <form method="get" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
-        <Input name="q" type="search" placeholder="Buscar folio, descripción, cliente u obra" defaultValue={filtros.busqueda} aria-label="Buscar" />
-        <select name="cliente" defaultValue={filtros.clienteId ?? ""} className={claseSelect} aria-label="Cliente">
+      {/* Filtros que se acomodan en varias líneas: con anchos mínimos, nunca se
+          cortan los textos de los selectores (verificación en navegador, B3). */}
+      <form method="get" className="flex flex-wrap items-center gap-3">
+        <Input
+          name="q"
+          type="search"
+          placeholder="Buscar COT, OV, OC del cliente, cliente u obra"
+          defaultValue={filtros.busqueda}
+          aria-label="Buscar"
+          className="min-w-[18rem] flex-[2_1_20rem]"
+        />
+        <select name="cliente" defaultValue={filtros.clienteId ?? ""} className={`${claseSelect} ${claseFiltro}`} aria-label="Cliente">
           <option value="">Todos los clientes</option>
           {clientes.map((c) => (
             <option key={c.id} value={c.id}>
@@ -73,7 +86,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
             </option>
           ))}
         </select>
-        <select name="obra" defaultValue={filtros.obraId ?? ""} className={claseSelect} aria-label="Obra">
+        <select name="obra" defaultValue={filtros.obraId ?? ""} className={`${claseSelect} ${claseFiltro}`} aria-label="Obra">
           <option value="">Todas las obras</option>
           {obrasFiltro.map((o) => (
             <option key={o.id} value={o.id}>
@@ -81,8 +94,14 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
             </option>
           ))}
         </select>
+        <select name="estado" defaultValue={filtros.estatus ?? ""} className={`${claseSelect} ${claseFiltro}`} aria-label="Estado">
+          <option value="">Todos los estados</option>
+          <option value="BORRADOR">Borrador</option>
+          <option value="EMITIDA">Emitida</option>
+          <option value="ACEPTADA">Aceptada (OV)</option>
+        </select>
         {esAdmin ? (
-          <select name="vendedor" defaultValue={filtros.vendedorId ?? ""} className={claseSelect} aria-label="Vendedor">
+          <select name="vendedor" defaultValue={filtros.vendedorId ?? ""} className={`${claseSelect} ${claseFiltro}`} aria-label="Vendedor">
             <option value="">Todos los vendedores</option>
             {vendedores.map((v) => (
               <option key={v.id} value={v.id}>
@@ -90,9 +109,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
               </option>
             ))}
           </select>
-        ) : (
-          <span className="hidden lg:block" />
-        )}
+        ) : null}
         <div className="flex items-center gap-3">
           <button
             type="submit"
@@ -122,7 +139,8 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
               <Th>Vendedor</Th>
               <Th className="text-right">Total</Th>
               <Th>Estado</Th>
-              <Th>Cobro</Th>
+              {/* Cobranza: solo Administrador/Director (decisión confirmada, B3). */}
+              {esAdmin && <Th>Cobro</Th>}
               <Th>Entrega</Th>
             </tr>
           </Thead>
@@ -130,10 +148,14 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
             {cotizaciones.map((c) => (
               <Tr key={c.id}>
                 <Td className="whitespace-nowrap">
+                  {/* Una operación = una fila: la OV aceptada conserva visible su COT. */}
                   <Link href={`/comercializacion/cotizaciones/${c.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                    {c.folio}
+                    {c.ordenFolio ?? c.folio}
                   </Link>
-                  <div className="text-xs text-[var(--muted)]">{formatearFechaCalendario(c.fecha)}</div>
+                  <div className="text-xs text-[var(--muted)]">
+                    {c.ordenFolio ? `${c.folio} · ` : ""}
+                    {formatearFechaCalendario(c.fecha)}
+                  </div>
                 </Td>
                 <Td>{c.descripcion ?? <span className="text-[var(--muted)]">Sin descripción</span>}</Td>
                 <Td>
@@ -144,11 +166,19 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
                 <Td className="text-right tabular-nums whitespace-nowrap">
                   {c.partidas > 0 ? formatearImporte(c.total) : <span className="text-[var(--muted)]">—</span>}
                 </Td>
-                <Td>
-                  <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] font-medium text-[var(--muted)]">Borrador</span>
+                <Td className="whitespace-nowrap">
+                  <EstatusCotizacionBadge estatus={c.estatus} vencida={c.vencida} />
                 </Td>
-                <Td className="whitespace-nowrap text-[var(--muted)]">No aplica</Td>
-                <Td className="whitespace-nowrap text-[var(--muted)]">No aplica</Td>
+                {/* Mientras sea cotización, cobro y entrega no aplican. En una OV
+                    todavía no existen (B4+): se muestra "—", nunca una cifra. */}
+                {esAdmin && (
+                  <Td className="whitespace-nowrap text-[var(--muted)]" title={c.ordenFolio ? "Se registrará en un bloque posterior" : undefined}>
+                    {c.ordenFolio ? "—" : "No aplica"}
+                  </Td>
+                )}
+                <Td className="whitespace-nowrap text-[var(--muted)]" title={c.ordenFolio ? "Se registrará en un bloque posterior" : undefined}>
+                  {c.ordenFolio ? "—" : "No aplica"}
+                </Td>
               </Tr>
             ))}
           </tbody>

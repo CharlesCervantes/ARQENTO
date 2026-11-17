@@ -349,11 +349,13 @@ function HistorialProducto({ productoId }: { productoId: string }) {
 function FormularioProducto({ producto, onListo }: { producto?: ProductoAdministracion; onListo: () => void }) {
   const action = producto ? editarProductoAction.bind(null, producto.id) : crearProductoAction;
   const [state, formAction, pending] = useActionState<ProductoFormState, FormData>(action, undefined);
-  const [stateAnterior, setStateAnterior] = useState(state);
-  if (state !== stateAnterior) {
-    setStateAnterior(state);
+  // Cerrar el formulario al guardar, en un efecto: llamar onListo() durante el
+  // render actualizaba el estado del padre mientras se dibujaba este
+  // componente y React lo marcaba como error (verificación en navegador, B3).
+  // (onListo desmonta este formulario, así que el efecto no se repite.)
+  useEffect(() => {
     if (state?.guardado) onListo();
-  }
+  }, [state, onListo]);
 
   // Todos los campos CONTROLADOS: React 19 limpia los campos no controlados
   // de un <form action> después de cada envío, también cuando el servidor

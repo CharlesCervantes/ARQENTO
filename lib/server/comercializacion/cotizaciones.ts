@@ -16,7 +16,8 @@ import {
   type TotalesCotizacion,
   type TratamientoImpuesto,
 } from "@/lib/comercializacion/importes";
-import { dateAFecha, fechaADate, normalizarFecha } from "@/lib/comercializacion/fechas";
+import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
+import { leerDocumentoEmitido, type DocumentoCotizacion } from "@/lib/comercializacion/documento";
 
 // Cotizaciones de venta en BORRADOR — B2 (noviembre 2026).
 // docs/negocio/comercializacion.md §5.2, §6, §20. Reglas centrales:
@@ -53,7 +54,7 @@ export class ConflictoEdicionError extends ValidacionError {
 const formatoFolio = (n: number) => `${PREFIJO_FOLIO}${String(n).padStart(6, "0")}`;
 
 /** Filtro de alcance: TODA lectura/escritura de cotizaciones pasa por aquí. */
-function alcance(usuario: UsuarioSesion, empresaId: string): Prisma.CotizacionVentaWhereInput {
+export function alcance(usuario: UsuarioSesion, empresaId: string): Prisma.CotizacionVentaWhereInput {
   return esAdministradorComercial(usuario) ? { empresaId } : { empresaId, vendedorId: usuario.id };
 }
 
@@ -371,7 +372,9 @@ const esquemaClave = z.string().trim().min(8).max(100).nullish();
 export async function crearCotizacionVenta(
   usuario: UsuarioSesion,
   datosCrudos: unknown,
-  claveCreacionCruda?: unknown
+  claveCreacionCruda?: unknown,
+  // Solo uso interno del servidor (Duplicar, B3): nunca llega del navegador.
+  opciones: { origenId?: string } = {}
 ): Promise<{ id: string; folio: string; reintento: boolean }> {
   const empresaId = requerirUsoComercial(usuario);
   const datos = validarDatosCotizacion(datosCrudos);
@@ -427,6 +430,7 @@ export async function crearCotizacionVenta(
           iva: totales.iva,
           total: totales.total,
           claveCreacion,
+          origenId: opciones.origenId ?? null,
         },
         select: { id: true },
       });
@@ -460,6 +464,7 @@ export async function crearCotizacionVenta(
         valorNuevo: {
           folio,
           estatus: "BORRADOR",
+          ...(opciones.origenId ? { origenId: opciones.origenId } : {}),
           vendedorId,
           clienteId: datos.clienteId,
           obraId: datos.obraId,
@@ -661,12 +666,19 @@ export async function actualizarCotizacionVenta(
 // Lectura
 // ---------------------------------------------------------------------------
 
-export type FiltrosCotizaciones = { busqueda?: string; clienteId?: string; obraId?: string; vendedorId?: string };
+export type EstatusCotizacion = "BORRADOR" | "EMITIDA" | "ACEPTADA";
+const ESTATUS: readonly EstatusCotizacion[] = ["BORRADOR", "EMITIDA", "ACEPTADA"];
+
+export type FiltrosCotizaciones = { busqueda?: string; clienteId?: string; obraId?: string; vendedorId?: string; estatus?: string };
 
 export type FilaCotizacion = {
   id: string;
   folio: string;
-  estatus: "BORRADOR";
+  estatus: EstatusCotizacion;
+  // Una cotización aceptada se muestra como su orden (OV) — una sola fila
+  // por operación, con la referencia COT visible.
+  ordenFolio: string | null;
+  vencida: boolean;
   descripcion: string | null;
   clienteNombre: string | null;
   obraNombre: string | null;
@@ -677,13 +689,20 @@ export type FilaCotizacion = {
   partidas: number;
 };
 
+/** Vencida = emitida (no aceptada) con vigencia anterior a hoy (America/Monterrey). */
+export function estaVencida(estatus: EstatusCotizacion, vigenciaHasta: string | null, hoy: string = hoyNegocio()): boolean {
+  return estatus === "EMITIDA" && vigenciaHasta !== null && vigenciaHasta < hoy;
+}
+
 export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: FiltrosCotizaciones = {}): Promise<FilaCotizacion[]> {
   const empresaId = requerirUsoComercial(usuario);
   const busqueda = filtros.busqueda?.trim().slice(0, 100);
+  const estatus = ESTATUS.find((e) => e === filtros.estatus);
   const where: Prisma.CotizacionVentaWhereInput = {
     ...alcance(usuario, empresaId),
     ...(filtros.clienteId ? { clienteId: filtros.clienteId } : {}),
     ...(filtros.obraId ? { obraId: filtros.obraId } : {}),
+    ...(estatus ? { estatus } : {}),
     // Un vendedor no puede ampliar su alcance con este filtro: alcance() ya
     // fijó vendedorId y aquí solo se aplica para administración.
     ...(filtros.vendedorId && esAdministradorComercial(usuario) ? { vendedorId: filtros.vendedorId } : {}),
@@ -691,6 +710,8 @@ export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: F
       ? {
           OR: [
             { folio: { contains: busqueda, mode: "insensitive" } },
+            { ordenVenta: { folio: { contains: busqueda, mode: "insensitive" } } },
+            { ordenVenta: { referenciaOcCliente: { contains: busqueda, mode: "insensitive" } } },
             { descripcion: { contains: busqueda, mode: "insensitive" } },
             { cliente: { nombre: { contains: busqueda, mode: "insensitive" } } },
             { obra: { nombre: { contains: busqueda, mode: "insensitive" } } },
@@ -713,22 +734,29 @@ export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: F
       cliente: { select: { nombre: true } },
       obra: { select: { nombre: true } },
       vendedor: { select: { nombre: true } },
+      ordenVenta: { select: { folio: true } },
       _count: { select: { partidas: true } },
     },
   });
-  return filas.map((c) => ({
-    id: c.id,
-    folio: c.folio,
-    estatus: c.estatus,
-    descripcion: c.descripcion,
-    clienteNombre: c.cliente?.nombre ?? null,
-    obraNombre: c.obra?.nombre ?? null,
-    vendedorNombre: c.vendedor.nombre,
-    fecha: dateAFecha(c.fecha),
-    vigenciaHasta: c.vigenciaHasta ? dateAFecha(c.vigenciaHasta) : null,
-    total: c.total.toFixed(2),
-    partidas: c._count.partidas,
-  }));
+  const hoy = hoyNegocio();
+  return filas.map((c) => {
+    const vigenciaHasta = c.vigenciaHasta ? dateAFecha(c.vigenciaHasta) : null;
+    return {
+      id: c.id,
+      folio: c.folio,
+      estatus: c.estatus,
+      ordenFolio: c.ordenVenta?.folio ?? null,
+      vencida: estaVencida(c.estatus, vigenciaHasta, hoy),
+      descripcion: c.descripcion,
+      clienteNombre: c.cliente?.nombre ?? null,
+      obraNombre: c.obra?.nombre ?? null,
+      vendedorNombre: c.vendedor.nombre,
+      fecha: dateAFecha(c.fecha),
+      vigenciaHasta,
+      total: c.total.toFixed(2),
+      partidas: c._count.partidas,
+    };
+  });
 }
 
 /** Vendedores con cotizaciones en la Empresa — opciones del filtro de administración. */
@@ -758,10 +786,20 @@ export type PartidaDetalle = {
   productoActivo: boolean;
 };
 
+export type OrdenVentaResumen = {
+  id: string;
+  folio: string;
+  fechaAceptacion: string;
+  referenciaOcCliente: string | null;
+  evidenciaNombre: string;
+  registradaPorNombre: string;
+  registradaEn: string;
+};
+
 export type CotizacionDetalle = {
   id: string;
   folio: string;
-  estatus: "BORRADOR";
+  estatus: EstatusCotizacion;
   version: number;
   clienteId: string | null;
   obraId: string | null;
@@ -775,6 +813,11 @@ export type CotizacionDetalle = {
   partidas: PartidaDetalle[];
   totales: TotalesCotizacion;
   actualizadoEn: string;
+  // B3
+  vencida: boolean;
+  emision: { emitidaEn: string; emitidaPorNombre: string; documento: DocumentoCotizacion } | null;
+  orden: OrdenVentaResumen | null;
+  origen: { id: string; folio: string } | null;
 };
 
 export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionId: string): Promise<CotizacionDetalle> {
@@ -795,6 +838,21 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
       condiciones: true,
       observaciones: true,
       updatedAt: true,
+      emitidaEn: true,
+      documentoEmitido: true,
+      emitidaPor: { select: { nombre: true } },
+      origen: { select: { id: true, folio: true } },
+      ordenVenta: {
+        select: {
+          id: true,
+          folio: true,
+          fechaAceptacion: true,
+          referenciaOcCliente: true,
+          evidenciaNombre: true,
+          createdAt: true,
+          registradaPor: { select: { nombre: true } },
+        },
+      },
       vendedor: { select: { id: true, nombre: true } },
       creadoPor: { select: { nombre: true } },
       partidas: {
@@ -822,6 +880,7 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
     importe: p.importe.toFixed(2),
     productoActivo: p.producto.activo,
   }));
+  const vigenciaHasta = c.vigenciaHasta ? dateAFecha(c.vigenciaHasta) : null;
 
   return {
     id: c.id,
@@ -834,11 +893,32 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
     vendedor: c.vendedor,
     creadoPorNombre: c.creadoPor.nombre,
     fecha: dateAFecha(c.fecha),
-    vigenciaHasta: c.vigenciaHasta ? dateAFecha(c.vigenciaHasta) : null,
+    vigenciaHasta,
     condiciones: c.condiciones,
     observaciones: c.observaciones,
     partidas,
     totales: calcularTotalesCotizacion(partidas),
     actualizadoEn: c.updatedAt.toISOString(),
+    vencida: estaVencida(c.estatus, vigenciaHasta),
+    emision:
+      c.emitidaEn && c.documentoEmitido
+        ? {
+            emitidaEn: c.emitidaEn.toISOString(),
+            emitidaPorNombre: c.emitidaPor?.nombre ?? "—",
+            documento: leerDocumentoEmitido(c.documentoEmitido),
+          }
+        : null,
+    orden: c.ordenVenta
+      ? {
+          id: c.ordenVenta.id,
+          folio: c.ordenVenta.folio,
+          fechaAceptacion: dateAFecha(c.ordenVenta.fechaAceptacion),
+          referenciaOcCliente: c.ordenVenta.referenciaOcCliente,
+          evidenciaNombre: c.ordenVenta.evidenciaNombre,
+          registradaPorNombre: c.ordenVenta.registradaPor.nombre,
+          registradaEn: c.ordenVenta.createdAt.toISOString(),
+        }
+      : null,
+    origen: c.origen,
   };
 }

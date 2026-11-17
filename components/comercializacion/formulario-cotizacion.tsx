@@ -20,7 +20,12 @@ import {
 import type { ProductoParaVenta } from "@/lib/server/comercializacion/productos";
 import type { OpcionCliente, OpcionObra } from "@/lib/server/comercializacion/clientes";
 import type { CotizacionDetalle, OpcionVendedor } from "@/lib/server/comercializacion/cotizaciones";
-import { crearClienteAction, crearObraAction, guardarCotizacionAction } from "@/app/(app)/comercializacion/actions";
+import {
+  crearClienteAction,
+  crearObraAction,
+  emitirCotizacionAction,
+  guardarCotizacionAction,
+} from "@/app/(app)/comercializacion/actions";
 import { coincideBusqueda, etiquetaImpuesto } from "./productos-comun";
 
 // Formulario único de cotización (nueva y borrador existente) — §5.2. Los
@@ -113,6 +118,7 @@ export function FormularioCotizacion({
     if (error) refError.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [error]);
   const [guardando, startGuardar] = useTransition();
+  const [confirmandoEmision, setConfirmandoEmision] = useState(false);
 
   const obrasDelCliente = obras.filter((o) => o.clienteId === clienteId);
   const nombreVendedor = vendedores.find((v) => v.id === vendedorId)?.nombre ?? usuarioActual.nombre;
@@ -167,10 +173,8 @@ export function FormularioCotizacion({
     setLineas((ls) => ls.map((l) => (l.clave === clave ? { ...l, ...cambio } : l)));
   }
 
-  function guardar() {
-    setError(null);
-    setConflicto(false);
-    const datos = {
+  function datosDelFormulario() {
+    return {
       clienteId: clienteId || null,
       obraId: obraId || null,
       descripcion,
@@ -188,6 +192,36 @@ export function FormularioCotizacion({
         ...(esAdmin ? { precioUnitario: l.precioUnitario } : {}),
       })),
     };
+  }
+
+  // Emitir = guardar lo capturado (si hay cambios) y emitir esa versión. El
+  // servidor valida los requisitos y congela la copia histórica.
+  function emitir() {
+    if (!cotizacion) return;
+    setError(null);
+    setConflicto(false);
+    startGuardar(async () => {
+      const g = await guardarCotizacionAction({ id: cotizacion.id, version: cotizacion.version, datos: datosDelFormulario() });
+      if (g.error) {
+        setError(g.error);
+        setConflicto(Boolean(g.conflicto));
+        setConfirmandoEmision(false);
+        return;
+      }
+      const e = await emitirCotizacionAction({ id: cotizacion.id, version: g.version ?? cotizacion.version });
+      setConfirmandoEmision(false);
+      if (e.error) {
+        setError(e.error);
+        setConflicto(Boolean(e.conflicto));
+      }
+      router.refresh();
+    });
+  }
+
+  function guardar() {
+    setError(null);
+    setConflicto(false);
+    const datos = datosDelFormulario();
     startGuardar(async () => {
       const r = await guardarCotizacionAction(
         cotizacion ? { id: cotizacion.id, version: cotizacion.version, datos } : { claveCreacion, datos }
@@ -220,6 +254,18 @@ export function FormularioCotizacion({
               ? `Borrador · capturó ${cotizacion.creadoPorNombre}. Cobro y entrega: no aplica mientras sea cotización.`
               : "Se guarda como borrador. Puedes completarla después."}
           </p>
+          {cotizacion?.origen && (
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              Duplicada de {esAdmin ? (
+                <Link href={`/comercializacion/cotizaciones/${cotizacion.origen.id}`} className={claseEnlace}>
+                  {cotizacion.origen.folio}
+                </Link>
+              ) : (
+                cotizacion.origen.folio
+              )}
+              . Los precios se tomaron del catálogo vigente{esAdmin ? " o del original" : ""}.
+            </p>
+          )}
         </div>
         {cotizacion && (
           <span className="w-fit rounded-full bg-black/[0.06] px-2.5 py-1 text-xs font-medium text-[var(--muted)]">Borrador</span>
@@ -413,11 +459,43 @@ export function FormularioCotizacion({
           )}
         </div>
       )}
+      {confirmandoEmision && cotizacion && (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 text-sm">
+          <p className="font-medium text-[var(--foreground)]">¿Emitir la cotización {cotizacion.folio}?</p>
+          <p className="mt-1 text-[var(--muted)]">
+            Se guardan los cambios y el documento queda congelado: ya no podrás editarlo (para corregirlo se duplica con un folio
+            nuevo). Emitir no lo envía al cliente ni significa que lo aceptó. Requiere cliente, obra, descripción, vigencia y al
+            menos un material.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button type="button" onClick={emitir} disabled={guardando}>
+              {guardando ? "Emitiendo…" : "Confirmar emisión"}
+            </Button>
+            <button type="button" onClick={() => setConfirmandoEmision(false)} className={claseSecundaria} disabled={guardando}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Button type="button" onClick={guardar} disabled={guardando}>
           {guardando ? "Guardando…" : "Guardar borrador"}
         </Button>
-        <span className="text-xs text-[var(--muted)]">Emitir y ver la cotización en PDF estará disponible en la siguiente entrega.</span>
+        {cotizacion && (
+          <>
+            <Button type="button" variant="outline" onClick={() => setConfirmandoEmision(true)} disabled={guardando || confirmandoEmision}>
+              Emitir cotización
+            </Button>
+            <a
+              href={`/api/comercializacion/cotizaciones/${cotizacion.id}/pdf`}
+              target="_blank"
+              rel="noopener"
+              className={claseEnlace}
+            >
+              Vista previa PDF (borrador guardado)
+            </a>
+          </>
+        )}
       </div>
     </div>
   );
