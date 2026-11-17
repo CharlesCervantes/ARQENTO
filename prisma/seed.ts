@@ -40,6 +40,12 @@ const MODULOS = [
   { clave: "compras", nombre: "Compras" },
 ];
 
+// Módulos que existen en el catálogo pero NUNCA se agregan al Plan
+// "Completo" desde el seed: se habilitan explícitamente por Empresa desde
+// Portal Master (ver 20261116120000_comercializacion_b1_catalogo). Así una
+// base nueva no concede Comercialización a Conkuali por accidente.
+const MODULOS_FUERA_DE_PLAN = [{ clave: "comercializacion", nombre: "Comercialización" }];
+
 function leerEmail(varEnv: string): string | undefined {
   const valor = process.env[varEnv];
   return valor ? valor.trim().toLowerCase() : undefined;
@@ -84,6 +90,10 @@ async function main() {
     update: {},
     create: { nombre: "Completo" },
   });
+
+  for (const m of MODULOS_FUERA_DE_PLAN) {
+    await db.modulo.upsert({ where: { clave: m.clave }, update: {}, create: m });
+  }
 
   // Reconcilia los módulos del plan también cuando el Plan ya existía —
   // el upsert de arriba, con `update: {}`, no agregaría un módulo nuevo

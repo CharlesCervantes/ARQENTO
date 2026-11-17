@@ -9,4 +9,5 @@ export const RUTA_MODULO: Record<string, { href: string | null; label: string }>
   gastos: { href: "/gastos", label: "Gastos" },
   contabilidad: { href: "/contabilidad", label: "Contabilidad" },
   compras: { href: "/compras", label: "Compras" },
+  comercializacion: { href: "/comercializacion", label: "Comercialización" },
 };

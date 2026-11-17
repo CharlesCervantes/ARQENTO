@@ -13,6 +13,7 @@ import {
   LogOut,
   Receipt,
   ShoppingCart,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 import { EstatusProyectoBadge } from "@/components/control-de-obra/estatus-proyecto-badge";
@@ -75,6 +76,7 @@ const ICONO_MODULO: Record<string, LucideIcon> = {
   gastos: Receipt,
   contabilidad: Calculator,
   compras: ShoppingCart,
+  comercializacion: Store,
 };
 
 function iniciales(nombre: string): string {

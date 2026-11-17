@@ -50,6 +50,7 @@ const PERMISO_MODULO: Record<string, (usuario: UsuarioSesion) => boolean> = {
   catalogos: puedeAdministrarCatalogos,
   contabilidad: puedeVerContabilidad,
   compras: puedeAutorizarOrdenesCompra,
+  comercializacion: puedeUsarComercializacion,
 };
 
 // Único punto de construcción de "qué módulos ve este usuario en la nav" —
@@ -467,4 +468,77 @@ export function puedeEliminarCatalogo(usuario: UsuarioSesion): boolean {
  */
 export function puedeLiquidarPagos(usuario: UsuarioSesion): boolean {
   return puedeCerrarSemana(usuario);
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B1 (noviembre 2026). Ver docs/negocio/comercializacion.md.
+// Todas exigen que la Empresa tenga el módulo `comercializacion` (Plan u
+// override de Portal Master) — sin él, ninguna pasa, en pantalla ni en
+// servidor. Ninguna toca ni reutiliza las funciones de construcción de
+// arriba: el Supervisor conserva exactamente sus permisos de obra.
+// ---------------------------------------------------------------------------
+
+export const MODULO_COMERCIALIZACION = "comercializacion";
+
+/**
+ * Facultades administrativas de Comercialización (catálogo, precios,
+ * costos, vendedores) — Administrador y Director de su propia Empresa,
+ * siguiendo la jerarquía existente. Nunca Master: rol de plataforma que solo
+ * habilita el módulo desde Portal Master, sin operar dentro de una Empresa.
+ */
+export function esAdministradorComercial(usuario: UsuarioSesion): boolean {
+  return (
+    (usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR") &&
+    Boolean(usuario.empresa) &&
+    empresaTieneModulo(usuario, MODULO_COMERCIALIZACION)
+  );
+}
+
+/**
+ * Función "Vendedor": rol SUPERVISOR + marca Usuario.vendedorComercial. No es
+ * un rol global ni concede nada fuera del módulo. Un Supervisor sin la marca
+ * no entra a Comercialización; la marca en otro rol no tiene efecto.
+ */
+export function esVendedorComercial(usuario: UsuarioSesion): boolean {
+  return (
+    usuario.rol === "SUPERVISOR" &&
+    usuario.vendedorComercial === true &&
+    Boolean(usuario.empresa) &&
+    empresaTieneModulo(usuario, MODULO_COMERCIALIZACION)
+  );
+}
+
+/** Entrar al módulo (menú, pantallas, consultas de su alcance). */
+export function puedeUsarComercializacion(usuario: UsuarioSesion): boolean {
+  return esAdministradorComercial(usuario) || esVendedorComercial(usuario);
+}
+
+/** Alta, edición, desactivación y reactivación de productos del catálogo. */
+export function puedeAdministrarCatalogoComercial(usuario: UsuarioSesion): boolean {
+  return esAdministradorComercial(usuario);
+}
+
+/**
+ * Costos de referencia, historial de cambios y datos privados del
+ * catálogo — nunca para el vendedor (no se seleccionan en sus consultas).
+ */
+export function puedeVerCostosComerciales(usuario: UsuarioSesion): boolean {
+  return esAdministradorComercial(usuario);
+}
+
+/**
+ * Modificar el precio de venta (en catálogo hoy; en una cotización a partir
+ * de B2). Confirmado P2: solo administración, nunca el vendedor.
+ */
+export function puedeModificarPrecioComercial(usuario: UsuarioSesion): boolean {
+  return esAdministradorComercial(usuario);
+}
+
+/**
+ * Activar/desactivar la marca de vendedor a Supervisores de SU Empresa. No
+ * permite cambiar rol, Empresa ni ningún otro permiso (el servicio solo
+ * escribe Usuario.vendedorComercial).
+ */
+export function puedeAsignarVendedoresComerciales(usuario: UsuarioSesion): boolean {
+  return esAdministradorComercial(usuario);
 }

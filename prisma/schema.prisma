@@ -126,6 +126,7 @@ model Empresa {
   consumoInteligencia    RegistroConsumoInteligencia[]
   documentosEgreso       DocumentoEgreso[]
   capacidadesInteligencia EmpresaCapacidadInteligencia[]
+  productosComerciales    ProductoComercial[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -330,6 +331,18 @@ model Usuario {
   // el cambio de contraseña. Default `false` — ningún usuario existente
   // queda bloqueado al migrar.
   debeCambiarPassword Boolean @default(false)
+
+
+  // Comercialización, B1 (noviembre 2026) — función "Vendedor" dentro del
+  // módulo, SIN rol global nuevo: solo tiene efecto para rol SUPERVISOR de
+  // una Empresa con el módulo `comercializacion` habilitado (ver
+  // esVendedorComercial en lib/server/permisos.ts). No cambia ningún permiso
+  // de construcción del Supervisor. La activa/desactiva un Administrador/
+  // Director de SU Empresa. Default false: nadie queda marcado al migrar.
+  vendedorComercial Boolean @default(false)
+
+  productosComercialesCreados      ProductoComercial[] @relation("ProductoComercialCreado")
+  productosComercialesActualizados ProductoComercial[] @relation("ProductoComercialActualizado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -2738,4 +2751,62 @@ model DocumentoEgreso {
   @@index([egresoId])
   @@index([trabajoProcesamientoId])
   @@map("documentos_egreso")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo Comercialización — B1: catálogo de productos (noviembre 2026).
+// Ver docs/negocio/comercializacion.md. Deliberadamente SIN relación con
+// Cotizacion/OrdenCompra/Requisicion de Compras (esas son compras a
+// proveedor dentro del ciclo semanal de obra, otra función de negocio).
+// ---------------------------------------------------------------------------
+
+// Tratamiento de impuesto por producto. TASA_CERO (IVA 0 %) y EXENTO (no
+// causa IVA) son fiscalmente distintos aunque ambos sumen $0 de IVA — nunca
+// se colapsan en uno solo. Solo GRAVADO usa ProductoComercial.tasaIva.
+enum TratamientoImpuestoComercial {
+  GRAVADO
+  TASA_CERO
+  EXENTO
+}
+
+// Producto del catálogo comercial de una Empresa. Precios SIEMPRE sin IVA.
+// Un producto nunca se borra: se desactiva (activo = false) conservando su
+// historial (bitácora RegistroAuditoria, entidad "ProductoComercial").
+// El código es único por Empresa sin distinguir mayúsculas — índice único
+// por expresión lower(codigo) en la migración, no representable en este DSL.
+model ProductoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  codigo      String
+  descripcion String
+  unidad      String
+
+  // Precio de venta autorizado, sin IVA. Solo Administrador/Director lo
+  // modifican (el vendedor lo consulta, nunca lo edita).
+  precioVenta Decimal @db.Decimal(14, 2)
+
+  // PRIVADO: costo de referencia opcional (no es costo confirmado de
+  // compra). Nunca se selecciona en consultas hechas para un vendedor.
+  costoReferencia Decimal? @db.Decimal(14, 2)
+
+  tratamientoImpuesto TratamientoImpuestoComercial @default(GRAVADO)
+  // Porcentaje (16.00 = 16 %). Obligatorio con GRAVADO y null en los demás
+  // tratamientos (CHECK en la migración). 16 es solo el valor inicial del
+  // formulario, editable por producto — nunca una regla fija del sistema.
+  tasaIva             Decimal?                     @db.Decimal(5, 2)
+
+  activo Boolean @default(true)
+
+  creadoPor        Usuario  @relation("ProductoComercialCreado", fields: [creadoPorId], references: [id])
+  creadoPorId      String
+  actualizadoPor   Usuario? @relation("ProductoComercialActualizado", fields: [actualizadoPorId], references: [id])
+  actualizadoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([empresaId, activo])
+  @@map("productos_comerciales")
 }

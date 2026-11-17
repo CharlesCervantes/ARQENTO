@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.2 · 16 de noviembre de 2026
-Estado: base funcional para revisión e implementación incremental.
+Versión: 0.3 · 16 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo) implementado en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -250,7 +250,9 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
 | P5 | Una transferencia para varias órdenes, anticipos y ajustes | Aplicación simple primero; confirmar casos habituales |
 | P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
-| P7 | Origen y carga inicial de catálogo | Archivo/columnas/responsable y volumen pendientes |
+| P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
+| P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
+| P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
 | P8 | Reparto y deuda en primera entrega | Resultado estimado; automatización avanzada después si no es necesaria |
 
 Estas decisiones no detienen la revisión del repositorio ni la preparación de partes independientes. No publicar reglas financieras o permisos ambiguos como definitivos.
@@ -285,8 +287,34 @@ Prompt de arranque sugerido:
 - Tres propuestas visuales de listado, alta y detalle aceptadas como referencia de estilo; actualizar Nueva operación → Nueva cotización, agregar vendedor y catálogo, y adaptar crédito/permisos.
 - Caso documental DUALIA revisado previamente: https://drive.google.com/drive/folders/1lw_5ec1m33FvQ1sOK0KKxuo_Dj5KdLgV . Es ejemplo, no configuración obligatoria para cada empresa.
 
-Estado de implementación al emitir este documento: no verificado. Este archivo está preparado para incorporación; no se ha agregado a un repositorio remoto ni se ha creado una rama de código.
+Estado de implementación al emitir la versión 0.2: no verificado. A partir de la versión 0.3 el estado real se lleva en §20.
 
 ## 19. Cambios de versión 0.2
 
 Decisiones confirmadas por el usuario: precios editables solo por Administrador, vendedor limitado a sus cotizaciones, crédito para cliente y proveedor con varias fechas y notificaciones exclusivamente dentro de Arqento. WhatsApp se evaluará después. Se actualizaron formulario, permisos, modelo de cuotas, avisos, pruebas y pendientes para evitar contradicciones con la versión 0.1.
+
+## 20. Estado real de implementación
+
+### B1 — Módulo, permisos y catálogo de productos (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. Migración `20261116120000_comercializacion_b1_catalogo` (aditiva). Aplicada solo en la base de desarrollo y en la base local de pruebas; **no aplicada en PRD**.
+
+Decisiones confirmadas para B1 (noviembre 2026):
+- **Administración:** Administrador y Director tienen las facultades administrativas de Comercialización, siguiendo la jerarquía existente. Master solo habilita el módulo por Empresa desde Portal Master; no opera dentro del módulo.
+- **Vendedor:** rol Supervisor existente + marca `Usuario.vendedorComercial`, falsa por defecto. Sin rol global nuevo y sin cambios en los permisos de construcción del Supervisor. Un Supervisor sin la marca no entra al módulo; la marca no tiene efecto en otros roles.
+- **Asignación de la marca:** Administrador/Director la activan o retiran solo a Supervisores de su propia Empresa (otorgarla exige cuenta activa; retirarla siempre se permite). La acción no cambia rol, Empresa, estado de la cuenta ni otros permisos. Queda en bitácora.
+- **Catálogo:** precios sin IVA. Tratamiento de impuesto por producto: Gravado (tasa editable; 16 % es solo el valor inicial del formulario), Tasa 0 % y Exento, distintos entre sí. Código único por Empresa sin distinguir mayúsculas. Costo de referencia opcional y privado. Alta, edición, desactivación y reactivación; los productos no se borran.
+- **Vendedor en catálogo:** consulta solo productos activos con su precio de venta; no recibe costos, historial ni datos privados (el servidor no los selecciona).
+- **Importes:** aritmética exacta en centavos (sin punto flotante), redondeo half-up al centavo; el servidor normaliza y valida todo importe y la base lo refuerza con restricciones CHECK.
+- **Historial:** alta, cambios de precio/costo/impuesto/datos, desactivación (con motivo opcional) y reactivación se registran en la bitácora general con valor anterior y nuevo; visible solo a administración.
+- **Proveedor sugerido:** no se incluyó en B1 (no aporta valor sin compras y expondría datos de proveedor). Se evaluará en B4.
+
+Qué puede hacer cada usuario al terminar B1:
+- Master: habilitar Comercialización a una Empresa (Portal Master → Empresas → Módulos). No se habilita automáticamente para ninguna Empresa.
+- Administrador/Director: ver el módulo, administrar Productos y asignar la función Vendedor.
+- Vendedor: ver el módulo y consultar Productos activos con precios de venta.
+- «Nueva cotización» aparece deshabilitado con el aviso de que se habilitará en la siguiente entrega.
+
+Fuera de B1 (sin cambios de estado): cotizaciones, OC de cliente, compras, créditos/cuotas, avisos, entregas, resultado, importación masiva del catálogo y navegación móvil.
+
+Pendientes que bloquean B2/B3: P1 (folio y prefijo de la OC de cliente; el prefijo `OC-` ya lo usan las compras a proveedor), P3 (quién registra la aceptación y visibilidad/registro de cobros del vendedor). P5, P6, P7 (importación) y P8 siguen pendientes para sus bloques.

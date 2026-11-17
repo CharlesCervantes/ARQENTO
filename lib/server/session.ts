@@ -65,6 +65,10 @@ async function cargarUsuarioPorToken(token: string) {
           empresaId: true,
           vistaPrivadaActiva: true,
           debeCambiarPassword: true,
+          // Comercialización — leído fresco en cada request (igual que el
+          // resto de la sesión): desmarcar a un vendedor surte efecto en su
+          // siguiente petición, sin esperar a que vuelva a iniciar sesión.
+          vendedorComercial: true,
           empresa: {
             select: {
               id: true,
