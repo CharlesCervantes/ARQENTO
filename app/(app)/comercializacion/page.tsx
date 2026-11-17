@@ -12,13 +12,15 @@ import { EstatusCotizacionBadge } from "@/components/comercializacion/cotizacion
 import { estadoCobroDeOrdenes, indicadoresCuentasEmpresa } from "@/lib/server/comercializacion/cuentas";
 import { ETIQUETA_LIQUIDACION, ETIQUETA_SITUACION } from "@/lib/comercializacion/cuentas";
 import { db } from "@/lib/server/db";
+import { estadoEntregaDeOrdenes } from "@/lib/server/comercializacion/entregas";
+import { ETIQUETA_ESTADO_ENTREGA } from "@/lib/comercializacion/entregas";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 
 // Listado único "Cotizaciones y órdenes" (§5.1). B2 muestra cotizaciones
 // reales en borrador. Cobro y entrega dicen "No aplica" mientras sea
-// cotización; no se muestran saldos, utilidades ni entregas (no existen
-// todavía y no se inventan cifras). Filtros por GET, aplicados en servidor
+// cotización. Cobro (B5) solo para administración; entrega (B6A) para
+// administración y el vendedor de sus OV. No se inventan cifras. Filtros por GET, aplicados en servidor
 // dentro del alcance del usuario.
 
 const claseSelect =
@@ -48,10 +50,15 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
     listarClientesYObras(usuario),
     listarVendedoresConCotizaciones(usuario),
   ]);
+  // OV visibles en el listado (ya filtradas por el alcance del usuario).
+  const ordenIds = await db.ordenVenta.findMany({
+    where: { cotizacionId: { in: cotizaciones.filter((c) => c.ordenFolio).map((c) => c.id) } },
+    select: { id: true, cotizacionId: true },
+  });
+  // B6A — estado de entrega: administración y vendedor (solo sus OV).
+  const entregasPorOrden = await estadoEntregaDeOrdenes(usuario, ordenIds.map((o) => o.id));
+  const entregaPorCotizacion = new Map(ordenIds.map((o) => [o.cotizacionId, entregasPorOrden.get(o.id)]));
   // B5 — cobranza e indicadores: solo administración (el vendedor no los recibe).
-  const ordenIds = esAdmin
-    ? (await db.ordenVenta.findMany({ where: { cotizacionId: { in: cotizaciones.filter((c) => c.ordenFolio).map((c) => c.id) } }, select: { id: true, cotizacionId: true } }))
-    : [];
   const cobros: Awaited<ReturnType<typeof estadoCobroDeOrdenes>> = esAdmin ? await estadoCobroDeOrdenes(usuario, ordenIds.map((o) => o.id)) : new Map();
   const cobroPorCotizacion = new Map(ordenIds.map((o) => [o.cotizacionId, cobros.get(o.id)]));
   const indicadores = esAdmin ? await indicadoresCuentasEmpresa(usuario) : null;
@@ -214,8 +221,20 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
                     })()}
                   </Td>
                 )}
-                <Td className="whitespace-nowrap text-[var(--muted)]" title={c.ordenFolio ? "Se registrará en un bloque posterior" : undefined}>
-                  {c.ordenFolio ? "—" : "No aplica"}
+                <Td className="whitespace-nowrap text-[var(--muted)]">
+                  {(() => {
+                    if (!c.ordenFolio) return "No aplica";
+                    const e = entregaPorCotizacion.get(c.id);
+                    if (!e) return "—";
+                    return (
+                      <span className={e.estado === "COMPLETA" ? "text-emerald-700" : e.estado === "PARCIAL" ? "text-amber-800" : ""}>
+                        {ETIQUETA_ESTADO_ENTREGA[e.estado]}
+                        <span className="block text-xs text-[var(--muted)]">
+                          {e.completas} de {e.total} partidas
+                        </span>
+                      </span>
+                    );
+                  })()}
                 </Td>
               </Tr>
             ))}

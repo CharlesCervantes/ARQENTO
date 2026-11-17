@@ -12,6 +12,7 @@ import { FormularioCotizacion } from "@/components/comercializacion/formulario-c
 import { CotizacionEmitidaView } from "@/components/comercializacion/cotizacion-emitida";
 import { resumenComprasOrden } from "@/lib/server/comercializacion/compras";
 import { detalleCuentaDeOrden, resumenFinancieroOrden } from "@/lib/server/comercializacion/cuentas";
+import { resumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 
 // Detalle único: un BORRADOR se consulta y edita en el formulario; una
 // cotización EMITIDA/ACEPTADA se muestra de solo lectura desde su copia
@@ -42,7 +43,11 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
     const [compras, cuenta, financiero] = ovId
       ? await Promise.all([resumenComprasOrden(usuario, ovId), detalleCuentaDeOrden(usuario, ovId), resumenFinancieroOrden(usuario, ovId)])
       : [null, null, null];
-    return <CotizacionEmitidaView cotizacion={cotizacion} esAdmin={esAdmin} hoy={hoy} compras={compras} cuenta={cuenta} financiero={financiero} />;
+    // B6A: entregas — administración y el vendedor asignado (alcance en el servicio).
+    const entregas = cotizacion.orden ? await resumenEntregasOrden(usuario, cotizacion.orden.id) : null;
+    return (
+      <CotizacionEmitidaView cotizacion={cotizacion} esAdmin={esAdmin} hoy={hoy} compras={compras} cuenta={cuenta} financiero={financiero} entregas={entregas} />
+    );
   }
 
   const [{ clientes, obras }, productos, vendedores] = await Promise.all([

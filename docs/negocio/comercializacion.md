@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.7 · 17 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores) y B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.8 · 17 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos) y B6A (entregas parciales al cliente con evidencias) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -192,7 +192,7 @@ WhatsApp queda fuera de esta entrega y como posible fase siguiente, sin promesa 
 - Una entrega registra fecha, cantidades por partida, receptor, observaciones, fotos y remisión.
 - Calcular pendientes por producto/unidad; evitar sobreentregas accidentales. No sumar piezas, toneladas y metros en un porcentaje engañoso.
 - Estados: Pendiente, Parcial y Completa. Completa solo cuando todas las partidas aplicables estén cubiertas.
-- Recepción del proveedor y entrega al cliente son hechos distintos, aunque el envío sea directo a obra. Confirmar si necesitan capturar ambos por separado; no duplicar cantidades.
+- Recepción del proveedor y entrega al cliente son hechos distintos, aunque el envío sea directo a obra. Confirmar si necesitan capturar ambos por separado; no duplicar cantidades. B6A implementa solo la entrega al cliente contra la OV (ver §20 B6A); la recepción por compra sigue pendiente.
 - Preservar correcciones de entregas en historial. Devoluciones y cambios con movimientos necesitan regla acordada; no editar una entrega antigua para ocultarlos.
 - Documentos clasificados por función: cotización, autorización/OC cliente, compra/factura proveedor, comprobante de cobro/pago, remisión y fotos. Controlar visibilidad por rol.
 - PDF cliente: marca de la empresa, folio, versión, fecha, vendedor según decisión comercial, cliente/obra, materiales, precios de venta, impuestos, total y condiciones. Nunca costos, margen o reparto.
@@ -560,6 +560,71 @@ Decisiones provisionales de B5 (confirmar):
 - La reprogramación del calendario de una cuenta con movimientos no está disponible (queda pendiente definir cómo reasignar aplicaciones con historial).
 - Cobros y pagos sin IVA desglosado ni conciliación bancaria; el comprobante es opcional.
 
+### B6A — Entregas parciales al cliente y evidencias (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. Migración `20261121090000_comercializacion_b6a_entregas` (aditiva). Se aplicó solo en la base de desarrollo independiente del worktree y en su base de pruebas dedicada; **no** en la base compartida con `develop` ni en PRD.
+
+Qué hace:
+- **Entregas por OV:** una OV aceptada admite varias entregas parciales, numeradas dentro de la OV (Entrega 1, 2, …). Funciona con entrega directa del proveedor a la obra: no exige una recepción en almacén ni elegir una compra.
+- **Datos de una entrega:**
+  - Fecha real de entrega (no futura; se admiten fechas pasadas).
+  - Una o varias partidas de la OV con su cantidad entregada (positiva, hasta 3 decimales, en la unidad de venta).
+  - Quién recibe y observaciones, opcionales.
+  - Evidencias: fotografías JPG/PNG y/o remisión PDF.
+  - Autor y fecha de registro, independientes de la fecha real de entrega.
+- **Evidencias:**
+  - Obligatorias: al menos una por entrega (servicio y base).
+  - Tipo real validado por contenido (misma validación que los demás documentos).
+  - Límites explícitos: hasta 10 archivos y 9 MB en total por entrega.
+  - Si un archivo es inválido, no se registra nada.
+  - Se guardan en `comercializacion/<empresa>/entregas/<OV>/` con tabla, ruta de descarga y permisos propios, separadas de los documentos de compra y de los comprobantes de cobro/pago. La PDF se clasifica como remisión y la imagen como fotografía.
+- **Cantidades y estado:**
+  - Pendiente por entregar = vendido − entregas vigentes (no anuladas), por partida.
+  - No se entrega por encima de lo pendiente, ni partidas de otra OV o Empresa, y cada partida aparece una sola vez por entrega.
+  - El registro bloquea la OV, así que dos registros simultáneos no superan juntos lo vendido; la base lo vuelve a comprobar.
+  - Estado de la OV: Pendiente (nada entregado), Parcial (algo entregado y quedan pendientes) o Completa (todas las partidas). No se suman unidades distintas: se muestra el avance por partida y «N de M partidas completas».
+- **Correcciones:**
+  - Una entrega no se edita ni se borra (servicio y base).
+  - Administración la anula con motivo: se conservan el registro y sus evidencias, sus cantidades dejan de contar y se recalculan pendientes y estado; después se registra la entrega correcta.
+  - La anulación es atómica e idempotente.
+  - No es una devolución física.
+- **Idempotencia y archivos:**
+  - Registrar con la misma clave (doble clic, reintento o solicitudes simultáneas) devuelve la misma entrega.
+  - Si la operación falla, no queda ninguna cantidad aplicada y se eliminan los archivos recién subidos. Nunca se borran evidencias de una entrega válida.
+  - La base solo admite partidas y evidencias en la misma transacción que crea la entrega.
+- **Permisos (revalidados en cada petición):**
+  - Administrador y Director consultan, registran y anulan entregas de su Empresa.
+  - El vendedor consulta y registra entregas solo de sus OV asignadas, y descarga sus evidencias. No anula, ni recibe costos, compras, proveedores, cobros o pagos.
+  - Fuera del alcance (otra Empresa u OV ajena) la respuesta es «no encontrado», también por URL directa de la página o de la evidencia.
+- **Sin efectos:** registrar o anular una entrega no modifica precios, compras, cuentas, cobros, pagos, vencimientos ni construcción. Una venta puede estar entregada y pendiente de cobro.
+- **Interfaz:**
+  - Bloque «Entregas y documentos» en el detalle de la OV (administración y vendedor asignado), con tabla por material (vendido, entregado y pendiente), historial con fecha, cantidades y evidencias, «Registrar entrega» y «Anular por error» solo para administración.
+  - La columna «Entrega» del listado muestra el estado real y las partidas completas; las cotizaciones sin aceptar muestran «No aplica».
+  - Sin sección nueva en el menú.
+
+**Relación con compras (B4) — expresamente:**
+- B6A acredita **entrega al cliente**; **no** acredita la recepción de una compra (COC) específica.
+- No se vinculan entregas con compras, ni se marcan compras como recibidas o entregadas.
+- Una entrega real no se bloquea porque la captura administrativa de la compra esté pendiente.
+- La recepción por COC y su bloqueo de la anulación simple de una compra (`motivosQueImpidenAnular`) **siguen pendientes**. El control de recepciones de B4 **no** está terminado.
+- La estructura (partidas de entrega ligadas a la partida vendida) permite agregar después el vínculo con compras o recepciones sin rehacer las entregas.
+
+Verificación:
+- 7 pruebas unitarias y 11 de integración. Incluyen el caso de 100 postes y 2.375 m, excedente rechazado, completa, anulación y recuperación; registros simultáneos; reintentos; fracciones exactas; archivos válidos e inválidos; aislamiento entre empresas y vendedores; vendedor sin anulación; saldo por cobrar intacto con la OV entregada; y ninguna modificación a compras ni construcción.
+- Recorrido en navegador local (17 de noviembre de 2026) con datos [PRUEBA]:
+  - OV de 100 postes y 2.375 m. Entrega 1 de 60 y 1.250 con foto y remisión: Parcial, pendientes 40 y 1.125. Descarga de evidencias.
+  - Excedente de 41 rechazado (aviso en pantalla y mensaje del servidor).
+  - Entrega 2 del vendedor por lo pendiente: Completa.
+  - El vendedor recibe 404 en una OV ajena y en su evidencia, y no ve la acción de anular.
+  - Anulación de la Entrega 1 por administración: Parcial, pendientes 60 y 1.250, y la evidencia sigue disponible.
+
+Limitaciones y decisiones provisionales de B6A (confirmar):
+- **Límite de tamaño:** 9 MB en total por entrega. El `proxy.ts` de la aplicación solo conserva 10 MB del cuerpo de cada solicitud: por encima de eso, la solicitud falla antes de llegar al servicio. Se comprobó en local con un comprobante de B5 de 10.5 MB, que devolvió 500. Afecta también a los comprobantes de B5 (hasta 10 MB) y a cargas existentes de otros módulos. Ampliar el límite (`experimental.proxyClientMaxBodySize`) es un cambio global de configuración y queda pendiente de aprobación.
+- Las evidencias solo se adjuntan al registrar la entrega; no se agregan después (para completar, se anula y se registra de nuevo).
+- No se valida que la fecha de entrega sea posterior a la aceptación de la OV (no hay regla acordada).
+- Sin devoluciones físicas ni cambios de material.
+- Sin indicador «Entregas pendientes» en la cabecera del listado (§5.1); el estado se ve por fila.
+
 ### Defecto funcional pendiente antes de publicar (fuera de Comercialización)
 
 **Ciclo de redirecciones con una cookie de sesión inválida.**
@@ -573,7 +638,10 @@ Decisiones provisionales de B5 (confirmar):
 - Confirmar las decisiones provisionales P11, P12, P13 y P14.
 - Confirmar P5 y las decisiones provisionales de B5 (reprogramación con pagos, saldo a favor, pagos agrupados, ajustes).
 - Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
-- B6: recepciones y entregas, y avisos (P6). Las recepciones también deben bloquear la anulación simple.
+- B6B: recordatorios internos (P6).
+- Recepciones por compra (COC) y su bloqueo de la anulación simple de una compra; el control de recepciones de B4 no está terminado.
+- Decidir si se amplía el límite de 10 MB por solicitud del proxy (afecta evidencias de entrega, comprobantes de B5 y cargas de otros módulos).
+- Indicador «Entregas pendientes» en el listado de administración (§5.1).
 - P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes.
 - Estados Rechazada/Cancelada de una cotización: no definidos.
 - Corrección del ciclo de redirecciones por cookie inválida (ver arriba).

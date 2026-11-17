@@ -8,6 +8,8 @@ import type { ResumenComprasOrden } from "@/lib/server/comercializacion/compras"
 import { ComprasOrden } from "./compras-orden";
 import type { DetalleCuenta, ResumenSaldos } from "@/lib/server/comercializacion/cuentas";
 import { CuentaComercialView } from "./cuenta-comercial";
+import type { ResumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
+import { EntregasOrden } from "./entregas-orden";
 import { formatearImporte as fmt } from "@/lib/comercializacion/importes";
 
 // Vista de una cotización EMITIDA o ACEPTADA (B3). Solo lectura y armada con
@@ -49,6 +51,7 @@ export function CotizacionEmitidaView({
   compras,
   cuenta,
   financiero,
+  entregas,
 }: {
   cotizacion: CotizacionDetalle;
   esAdmin: boolean;
@@ -58,6 +61,8 @@ export function CotizacionEmitidaView({
   // B5 — solo administración; para el vendedor son null.
   cuenta?: DetalleCuenta | null;
   financiero?: { porCobrar: ResumenSaldos; porPagar: ResumenSaldos; comprasConCuenta: number } | null;
+  // B6A — administración y vendedor asignado; sin costos, compras ni cobranza.
+  entregas?: ResumenEntregasOrden | null;
 }) {
   const doc = cotizacion.emision!.documento;
   const orden = cotizacion.orden;
@@ -111,8 +116,7 @@ export function CotizacionEmitidaView({
             </Dato>
           </dl>
           <p className="text-xs text-[var(--muted)]">
-            Registro interno de la evidencia de aceptación; no es una firma electrónica del cliente. Compras, cobros y entregas
-            se registrarán en bloques posteriores.
+            Registro interno de la evidencia de aceptación; no es una firma electrónica del cliente.
           </p>
         </Card>
       )}
@@ -132,6 +136,7 @@ export function CotizacionEmitidaView({
           </p>
         </Card>
       )}
+      {orden && entregas && <EntregasOrden resumen={entregas} />}
       {orden && esAdmin && cuenta && <CuentaComercialView cuenta={cuenta} />}
       {orden && esAdmin && compras && <ComprasOrden resumen={compras} />}
 

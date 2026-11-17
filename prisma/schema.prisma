@@ -150,6 +150,9 @@ model Empresa {
   cuotasCuentaComercial   CuotaCuentaComercial[]
   movimientosComerciales  MovimientoComercial[]
   aplicacionesMovimiento  AplicacionMovimientoComercial[]
+  entregasComerciales     EntregaComercial[]
+  partidasEntrega         PartidaEntregaComercial[]
+  evidenciasEntrega       EvidenciaEntregaComercial[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -381,6 +384,8 @@ model Usuario {
   cuentasComercialesAnuladas        CuentaComercial[]        @relation("CuentaComercialAnulada")
   movimientosComercialesRegistrados MovimientoComercial[]    @relation("MovimientoComercialRegistrado")
   movimientosComercialesAnulados    MovimientoComercial[]    @relation("MovimientoComercialAnulado")
+  entregasComercialesRegistradas    EntregaComercial[]       @relation("EntregaComercialRegistrada")
+  entregasComercialesAnuladas       EntregaComercial[]       @relation("EntregaComercialAnulada")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -3049,8 +3054,9 @@ model OrdenVenta {
 
   // Exactamente una orden por cotización (cotizacionId es único por sí solo,
   // ya que el id de la cotización es global).
-  compras CompraComercial[]
-  cuenta  CuentaComercial?
+  compras  CompraComercial[]
+  cuenta   CuentaComercial?
+  entregas EntregaComercial[]
 
   @@unique([cotizacionId, empresaId])
   @@unique([id, empresaId])
@@ -3097,7 +3103,8 @@ model PartidaCotizacionVenta {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  partidasCompra PartidaCompraComercial[]
+  partidasCompra  PartidaCompraComercial[]
+  partidasEntrega PartidaEntregaComercial[]
 
   @@unique([id, empresaId])
   @@index([cotizacionId])
@@ -3388,4 +3395,104 @@ model AplicacionMovimientoComercial {
   @@unique([movimientoId, cuotaId])
   @@index([cuotaId])
   @@map("aplicaciones_movimiento_comercial")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B6A: entregas parciales al cliente/obra con evidencias
+// (noviembre 2026). Ver docs/negocio/comercializacion.md §20 (B6A).
+// Una entrega acredita material ENTREGADO AL CLIENTE contra la OV; NO
+// acredita la recepción de una compra (COC) específica ni crea inventario.
+// Se registra confirmada (con al menos una evidencia) y nunca se edita ni se
+// borra: una captura errónea se ANULA con motivo (solo administración).
+// ---------------------------------------------------------------------------
+
+enum EstatusEntregaComercial {
+  CONFIRMADA
+  ANULADA
+}
+
+enum ClaseEvidenciaEntrega {
+  FOTOGRAFIA // JPG/PNG
+  REMISION // PDF
+}
+
+model EntregaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  ordenVenta   OrdenVenta @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String
+  // Consecutivo dentro de la OV (Entrega 1, 2, …), asignado con la OV bloqueada.
+  numero       Int
+
+  estatus       EstatusEntregaComercial @default(CONFIRMADA)
+  // Fecha REAL de la entrega (no futura); independiente de la de registro.
+  fechaEntrega  DateTime                @db.Date
+  recibidoPor   String?
+  observaciones String?
+
+  // Idempotencia: un reintento o doble clic con la misma clave devuelve la misma entrega.
+  claveRegistro String
+
+  registradaPor   Usuario  @relation("EntregaComercialRegistrada", fields: [registradaPorId], references: [id])
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  anuladaEn       DateTime?
+  anuladaPor      Usuario?  @relation("EntregaComercialAnulada", fields: [anuladaPorId], references: [id])
+  anuladaPorId    String?
+  motivoAnulacion String?
+
+  partidas   PartidaEntregaComercial[]
+  evidencias EvidenciaEntregaComercial[]
+
+  @@unique([id, empresaId])
+  @@unique([ordenVentaId, numero])
+  @@unique([empresaId, claveRegistro])
+  @@index([empresaId, ordenVentaId])
+  @@map("entregas_comerciales")
+}
+
+// Cantidad entregada de una partida VENDIDA de la misma OV (unidad de venta,
+// hasta 3 decimales). Una partida aparece una sola vez por entrega.
+model PartidaEntregaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  entrega   EntregaComercial @relation(fields: [entregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  entregaId String
+
+  partidaVenta   PartidaCotizacionVenta @relation(fields: [partidaVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaVentaId String
+
+  cantidad Decimal @db.Decimal(14, 3)
+
+  @@unique([entregaId, partidaVentaId])
+  @@index([empresaId, partidaVentaId])
+  @@map("partidas_entrega_comercial")
+}
+
+// Evidencia de entrega (fotografía o remisión). Separada de los documentos de
+// compra y de los comprobantes financieros: ruta, tabla y permisos propios.
+model EvidenciaEntregaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  entrega   EntregaComercial @relation(fields: [entregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  entregaId String
+  orden     Int
+
+  clase  ClaseEvidenciaEntrega
+  ref    String
+  nombre String
+  tipo   String
+  bytes  Int
+
+  createdAt DateTime @default(now())
+
+  @@index([entregaId])
+  @@map("evidencias_entrega_comercial")
 }

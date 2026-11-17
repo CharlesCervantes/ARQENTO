@@ -31,6 +31,7 @@ import {
   guardarBorradorCompra,
 } from "@/lib/server/comercializacion/compras";
 import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
+import { anularEntregaComercial, registrarEntregaComercial } from "@/lib/server/comercializacion/entregas";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
 // Empresa, validación, bitácora) vive en lib/server/comercializacion/*. Los
@@ -369,6 +370,56 @@ export async function anularMovimientoAction(entrada: { movimientoId: string; mo
   const usuario = await requireSession();
   try {
     await anularMovimientoCuenta(usuario, entrada?.movimientoId, entrada?.motivo);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// B6A — Entregas al cliente
+// ---------------------------------------------------------------------------
+
+export type EntregaState = { error?: string; ok?: boolean } | undefined;
+
+export async function registrarEntregaAction(ordenVentaId: string, _state: EntregaState, formData: FormData): Promise<EntregaState> {
+  const usuario = await requireSession();
+  try {
+    const leer = (k: string) => {
+      const v = formData.get(k);
+      return typeof v === "string" ? v : undefined;
+    };
+    let partidas: unknown = [];
+    try {
+      partidas = JSON.parse(leer("partidas") ?? "[]");
+    } catch {
+      return { error: "Cantidades inválidas. Recarga la página." };
+    }
+    const archivos = await Promise.all(
+      formData
+        .getAll("evidencias")
+        .filter((a): a is File => a instanceof File && a.size > 0)
+        .map(async (a) => ({ nombre: a.name, bytes: new Uint8Array(await a.arrayBuffer()) }))
+    );
+    await registrarEntregaComercial(
+      usuario,
+      ordenVentaId,
+      { fechaEntrega: leer("fechaEntrega"), recibidoPor: leer("recibidoPor"), observaciones: leer("observaciones"), partidas },
+      archivos,
+      leer("clave")
+    );
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return { ok: true };
+}
+
+export async function anularEntregaAction(entrada: { entregaId: string; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await anularEntregaComercial(usuario, entrada?.entregaId, entrada?.motivo);
   } catch (error) {
     return { error: mensajeError(error) };
   }
