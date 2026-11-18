@@ -24,7 +24,8 @@ import {
   type TratamientoImpuesto,
 } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
-import { MAX_BYTES_POR_DOCUMENTO, nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { MAX_BYTES_POR_CARGA, MB_POR_CARGA, formatearTamano } from "@/lib/comercializacion/cargas";
 
 // Compras a proveedores de una orden de venta — B4 (noviembre 2026).
 // docs/negocio/comercializacion.md §20 (B4). Reglas:
@@ -666,7 +667,7 @@ export async function adjuntarDocumentoCompra(
 ): Promise<void> {
   const empresaId = requerirAdministracionComercial(usuario);
   if (!archivo || !archivo.bytes || archivo.bytes.length === 0) throw new ValidacionError("Selecciona el documento del proveedor (PDF, JPG o PNG).");
-  if (archivo.bytes.length > MAX_BYTES_POR_DOCUMENTO) throw new ValidacionError(`El documento excede el máximo de ${MAX_BYTES_POR_DOCUMENTO / (1024 * 1024)} MB.`);
+  if (archivo.bytes.length > MAX_BYTES_POR_CARGA) throw new ValidacionError(`El documento pesa ${formatearTamano(archivo.bytes.length)}; el máximo es ${MB_POR_CARGA} MB. No se guardó el documento.`);
   const tipo = tipoArchivoDetectado(archivo.bytes);
   if (!tipo) throw new ValidacionError("El documento debe ser un PDF, JPG o PNG.");
   const previa = await db.compraComercial.findFirst({ where: { id: compraId, empresaId }, select: { id: true, estatus: true } });

@@ -21,7 +21,8 @@ import {
   type EstadoCuenta,
   type MetodoPago,
 } from "@/lib/comercializacion/cuentas";
-import { MAX_BYTES_POR_DOCUMENTO, nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { MAX_BYTES_POR_CARGA, MB_POR_CARGA, formatearTamano } from "@/lib/comercializacion/cargas";
 
 // Cuentas por cobrar (OV) y por pagar (compra) — B5 (noviembre 2026).
 // docs/negocio/comercializacion.md §20 (B5). SOLO Administrador/Director.
@@ -378,7 +379,7 @@ export async function registrarMovimientoCuenta(
   let tipo: string | null = null;
   let nombre: string | null = null;
   if (archivo && archivo.bytes && archivo.bytes.length > 0) {
-    if (archivo.bytes.length > MAX_BYTES_POR_DOCUMENTO) throw new ValidacionError(`El comprobante excede el máximo de ${MAX_BYTES_POR_DOCUMENTO / (1024 * 1024)} MB.`);
+    if (archivo.bytes.length > MAX_BYTES_POR_CARGA) throw new ValidacionError(`El comprobante pesa ${formatearTamano(archivo.bytes.length)}; el máximo es ${MB_POR_CARGA} MB. No se registró el movimiento.`);
     const t = tipoArchivoDetectado(archivo.bytes);
     if (!t) throw new ValidacionError("El comprobante debe ser un PDF, JPG o PNG.");
     tipo = t;

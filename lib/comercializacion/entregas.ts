@@ -4,11 +4,12 @@ import { aMilesimas } from "@/lib/comercializacion/importes";
 // milésimas exactas (BigInt). Nunca suma cantidades de unidades distintas:
 // el avance es por partida y el estado general solo cuenta partidas.
 
-/** Límites explícitos de evidencias por entrega. El total por registro se
- * mantiene bajo el límite actual de 10 MB que el proxy de la aplicación
- * aplica a cada solicitud (ver docs/negocio/comercializacion.md §20 B6A). */
-export const MAX_EVIDENCIAS_POR_ENTREGA = 10;
-export const MAX_BYTES_EVIDENCIAS_POR_ENTREGA = 9 * 1024 * 1024; // 9 MB en total (y por archivo)
+/** Límites explícitos de evidencias. Cada carga (el registro o una
+ * incorporación posterior) admite hasta MAX_EVIDENCIAS_POR_CARGA archivos y
+ * MAX_BYTES_POR_CARGA (lib/comercializacion/cargas.ts). Una entrega acumula
+ * máximo MAX_EVIDENCIAS_POR_ENTREGA evidencias en total (también en la base). */
+export const MAX_EVIDENCIAS_POR_CARGA = 10;
+export const MAX_EVIDENCIAS_POR_ENTREGA = 20;
 
 export type EstadoEntrega = "PENDIENTE" | "PARCIAL" | "COMPLETA";
 

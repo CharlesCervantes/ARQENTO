@@ -14,8 +14,9 @@ import { alcance } from "@/lib/server/comercializacion/cotizaciones";
 import { hoyDeEmpresa } from "@/lib/server/comercializacion/cuentas";
 import { aMilesimas, formatearCantidad, normalizarCantidad } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, normalizarFecha } from "@/lib/comercializacion/fechas";
+import { revisarCarga } from "@/lib/comercializacion/cargas";
 import {
-  MAX_BYTES_EVIDENCIAS_POR_ENTREGA,
+  MAX_EVIDENCIAS_POR_CARGA,
   MAX_EVIDENCIAS_POR_ENTREGA,
   avancePartida,
   estadoEntrega,
@@ -122,7 +123,11 @@ export type EntregaDetalle = {
   registradaEn: string;
   anulada: { en: string; porNombre: string | null; motivo: string } | null;
   partidas: { codigo: string; descripcion: string; unidad: string; cantidad: string }[];
-  evidencias: { id: string; nombre: string; clase: "FOTOGRAFIA" | "REMISION"; bytes: number }[];
+  // `agregada`: evidencia incorporada después del registro (autor y fecha de
+  // esa carga); null = registrada junto con la entrega.
+  evidencias: { id: string; nombre: string; clase: "FOTOGRAFIA" | "REMISION"; bytes: number; agregada: { porNombre: string; en: string } | null }[];
+  /** Cuántas evidencias más admite (0 si está anulada o llegó al máximo acumulado). */
+  evidenciasDisponibles: number;
 };
 
 export type ResumenEntregasOrden = {
@@ -162,7 +167,10 @@ export async function resumenEntregasOrden(usuario: UsuarioSesion, ordenVentaId:
           select: { cantidad: true, partidaVenta: { select: { codigo: true, descripcion: true, unidad: true, orden: true } } },
           orderBy: { partidaVenta: { orden: "asc" } },
         },
-        evidencias: { select: { id: true, nombre: true, clase: true, bytes: true }, orderBy: { orden: "asc" } },
+        evidencias: {
+          select: { id: true, nombre: true, clase: true, bytes: true, carga: { select: { createdAt: true, registradaPor: { select: { nombre: true } } } } },
+          orderBy: { orden: "asc" },
+        },
       },
     }),
     hoyDeEmpresa(db, empresaId),
@@ -193,7 +201,14 @@ export async function resumenEntregasOrden(usuario: UsuarioSesion, ordenVentaId:
         unidad: p.partidaVenta.unidad,
         cantidad: p.cantidad.toFixed(3),
       })),
-      evidencias: e.evidencias,
+      evidencias: e.evidencias.map((ev) => ({
+        id: ev.id,
+        nombre: ev.nombre,
+        clase: ev.clase,
+        bytes: ev.bytes,
+        agregada: ev.carga ? { porNombre: ev.carga.registradaPor.nombre, en: ev.carga.createdAt.toISOString() } : null,
+      })),
+      evidenciasDisponibles: e.estatus === "CONFIRMADA" ? Math.max(0, MAX_EVIDENCIAS_POR_ENTREGA - e.evidencias.length) : 0,
     })),
   };
 }
@@ -273,22 +288,45 @@ const esquemaEntrega = z.object({
 
 type EvidenciaValidada = { nombre: string; tipo: "application/pdf" | "image/jpeg" | "image/png"; bytes: Uint8Array };
 
-/** Valida TODAS las evidencias antes de subir nada: una inválida rechaza el registro completo. */
-export function validarEvidenciasEntrega(archivos: ArchivoEvidenciaEntrega[] | null | undefined): EvidenciaValidada[] {
+/**
+ * Valida TODAS las evidencias de una carga antes de subir nada: una inválida
+ * rechaza la carga completa. Límites por carga: MAX_EVIDENCIAS_POR_CARGA
+ * archivos y MAX_BYTES_POR_CARGA en total (lib/comercializacion/cargas.ts).
+ */
+export function validarEvidenciasEntrega(archivos: ArchivoEvidenciaEntrega[] | null | undefined, consecuencia = "No se registró la entrega."): EvidenciaValidada[] {
   const lista = (archivos ?? []).filter((a) => a && a.bytes && a.bytes.length > 0);
   if (lista.length === 0) throw new ValidacionError("Adjunta al menos una evidencia de la entrega (fotografía JPG/PNG o remisión PDF).");
-  if (lista.length > MAX_EVIDENCIAS_POR_ENTREGA) throw new ValidacionError(`Adjunta máximo ${MAX_EVIDENCIAS_POR_ENTREGA} evidencias por entrega.`);
-  const mb = MAX_BYTES_EVIDENCIAS_POR_ENTREGA / (1024 * 1024);
-  const total = lista.reduce((s, a) => s + a.bytes.length, 0);
-  if (total > MAX_BYTES_EVIDENCIAS_POR_ENTREGA) throw new ValidacionError(`Las evidencias suman más de ${mb} MB. Reduce el tamaño o la cantidad de archivos.`);
+  const exceso = revisarCarga(
+    lista.map((a) => a.bytes.length),
+    { maxArchivos: MAX_EVIDENCIAS_POR_CARGA }
+  );
+  if (exceso) throw new ValidacionError(`${exceso} ${consecuencia}`);
   const ahora = new Date();
   return lista.map((a) => {
     // Tipo REAL por contenido, nunca por el nombre ni por lo que declara el navegador.
     const tipo = tipoArchivoDetectado(a.bytes);
-    if (!tipo) throw new ValidacionError(`«${(a.nombre ?? "archivo").slice(0, 80)}» no es una fotografía JPG/PNG ni un PDF válido. No se registró la entrega.`);
+    if (!tipo) throw new ValidacionError(`«${(a.nombre ?? "archivo").slice(0, 80)}» no es una fotografía JPG/PNG ni un PDF válido. ${consecuencia}`);
     return { nombre: nombreSeguroDeArchivo(a.nombre, tipo, ahora), tipo, bytes: a.bytes };
   });
 }
+
+/** Sube las evidencias validadas; si una falla, elimina las ya subidas y relanza. */
+async function subirEvidencias(empresaId: string, ordenVentaId: string, evidencias: EvidenciaValidada[]): Promise<string[]> {
+  const refs: string[] = [];
+  try {
+    for (const ev of evidencias) {
+      const ref = `comercializacion/${empresaId}/entregas/${ordenVentaId}/${randomBytes(6).toString("base64url").replace(/[^A-Za-z0-9_-]/g, "")}-${ev.nombre}`;
+      await subirBytes(ref, ev.bytes, ev.tipo);
+      refs.push(ref);
+    }
+    return refs;
+  } catch (error) {
+    await eliminarSinFallar(refs);
+    throw error;
+  }
+}
+
+const claseDe = (tipo: EvidenciaValidada["tipo"]) => (tipo === "application/pdf" ? ("REMISION" as const) : ("FOTOGRAFIA" as const));
 
 export type ResultadoEntrega = { entregaId: string; numero: number; existente: boolean };
 
@@ -332,17 +370,7 @@ export async function registrarEntregaComercial(
   // 1) Evidencias al almacenamiento (fuera de la transacción). 2) Todo lo
   // demás es UNA transacción: si falla, se eliminan los archivos recién
   // subidos y no queda ninguna cantidad aplicada.
-  const refs: string[] = [];
-  try {
-    for (const ev of evidencias) {
-      const ref = `comercializacion/${empresaId}/entregas/${ov.id}/${randomBytes(6).toString("base64url").replace(/[^A-Za-z0-9_-]/g, "")}-${ev.nombre}`;
-      await subirBytes(ref, ev.bytes, ev.tipo);
-      refs.push(ref);
-    }
-  } catch (error) {
-    await eliminarSinFallar(refs);
-    throw error;
-  }
+  const refs = await subirEvidencias(empresaId, ov.id, evidencias);
 
   try {
     return await db.$transaction(async (tx) => {
@@ -389,7 +417,7 @@ export async function registrarEntregaComercial(
           empresaId,
           entregaId: entrega.id,
           orden: i,
-          clase: ev.tipo === "application/pdf" ? ("REMISION" as const) : ("FOTOGRAFIA" as const),
+          clase: claseDe(ev.tipo),
           ref: refs[i],
           nombre: ev.nombre,
           tipo: ev.tipo,
@@ -416,6 +444,113 @@ export async function registrarEntregaComercial(
   } catch (error) {
     await eliminarSinFallar(refs);
     // Reintento simultáneo con la misma clave: devuelve la entrega ganadora.
+    if (esUnica(error)) {
+      const ganadora = await previa().catch(() => null);
+      if (ganadora) return ganadora;
+    }
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Agregar evidencias a una entrega vigente (cierre de B6)
+// ---------------------------------------------------------------------------
+
+export type ResultadoCargaEvidencias = { cargaId: string; agregadas: number; existente: boolean };
+
+/**
+ * Agrega fotografías o remisiones a una entrega CONFIRMADA sin anularla ni
+ * cambiar cantidades, fecha, avance o saldos. Solo agrega (no reemplaza ni
+ * elimina). Mismo alcance que registrar: administración en su Empresa; el
+ * vendedor solo en sus OV asignadas. Idempotente por clave. Si la entrega se
+ * anula al mismo tiempo, gana quien bloquea primero (OV y luego la entrega,
+ * mismo orden que la anulación): si la anulación ya ocurrió, se rechaza y se
+ * eliminan los archivos recién subidos.
+ */
+export async function agregarEvidenciasEntrega(
+  usuario: UsuarioSesion,
+  entregaId: unknown,
+  archivos: ArchivoEvidenciaEntrega[] | null | undefined,
+  claveCruda: unknown
+): Promise<ResultadoCargaEvidencias> {
+  const empresaId = requerirUsoComercial(usuario);
+  const clave = z.string({ error: "Clave de carga inválida. Recarga la página." }).trim().min(8).max(100).parse(claveCruda);
+  if (typeof entregaId !== "string" || !entregaId) throw new RegistroNoEncontradoError("La entrega");
+  // Alcance: la entrega debe pertenecer a una OV visible para el usuario.
+  const base = await db.entregaComercial.findFirst({
+    where: { id: entregaId, empresaId, ordenVenta: { empresaId, cotizacion: alcance(usuario, empresaId) } },
+    select: { id: true, ordenVentaId: true, numero: true, ordenVenta: { select: { folio: true } } },
+  });
+  if (!base) throw new RegistroNoEncontradoError("La entrega");
+
+  const previa = async (): Promise<ResultadoCargaEvidencias | null> => {
+    const c = await db.cargaEvidenciaEntrega.findFirst({ where: { empresaId, clave }, select: { id: true, entregaId: true, _count: { select: { evidencias: true } } } });
+    if (!c) return null;
+    if (c.entregaId !== entregaId) throw new ValidacionError("Clave de carga inválida. Recarga la página.");
+    return { cargaId: c.id, agregadas: c._count.evidencias, existente: true };
+  };
+  const repetida = await previa();
+  if (repetida) return repetida;
+
+  const evidencias = validarEvidenciasEntrega(archivos, "No se agregó ninguna evidencia.");
+  const refs = await subirEvidencias(empresaId, base.ordenVentaId, evidencias);
+
+  try {
+    return await db.$transaction(async (tx) => {
+      // Mismo orden de bloqueo que registrar y anular: OV y después la entrega.
+      const veTodaLaEmpresa = esAdministradorComercial(usuario);
+      const ovs = await tx.$queryRaw<{ id: string }[]>`
+        SELECT ov.id FROM ordenes_venta ov
+        JOIN cotizaciones_venta c ON c.id = ov."cotizacionId"
+        WHERE ov.id = ${base.ordenVentaId} AND ov."empresaId" = ${empresaId}
+          AND (${veTodaLaEmpresa}::boolean OR c."vendedorId" = ${usuario.id})
+        FOR UPDATE OF ov`;
+      if (ovs.length === 0) throw new RegistroNoEncontradoError("La entrega");
+      const [e] = await tx.$queryRaw<{ estatus: string }[]>`
+        SELECT estatus::text AS estatus FROM entregas_comerciales WHERE id = ${entregaId} AND "empresaId" = ${empresaId} FOR UPDATE`;
+      if (!e) throw new RegistroNoEncontradoError("La entrega");
+      if (e.estatus !== "CONFIRMADA") throw new ValidacionError("La entrega está anulada: no se le agregan evidencias. No se agregó ninguna evidencia.");
+      const actuales = await tx.evidenciaEntregaComercial.aggregate({ where: { entregaId }, _count: { _all: true }, _max: { orden: true } });
+      const disponibles = MAX_EVIDENCIAS_POR_ENTREGA - actuales._count._all;
+      if (evidencias.length > disponibles) {
+        throw new ValidacionError(
+          disponibles <= 0
+            ? `La entrega ya tiene el máximo de ${MAX_EVIDENCIAS_POR_ENTREGA} evidencias.`
+            : `La entrega admite ${disponibles} evidencia${disponibles === 1 ? "" : "s"} más (máximo ${MAX_EVIDENCIAS_POR_ENTREGA} en total). No se agregó ninguna evidencia.`
+        );
+      }
+      const carga = await tx.cargaEvidenciaEntrega.create({ data: { empresaId, entregaId, clave, registradaPorId: usuario.id }, select: { id: true } });
+      const desde = (actuales._max.orden ?? -1) + 1;
+      await tx.evidenciaEntregaComercial.createMany({
+        data: evidencias.map((ev, i) => ({
+          empresaId,
+          entregaId,
+          cargaId: carga.id,
+          orden: desde + i,
+          clase: claseDe(ev.tipo),
+          ref: refs[i],
+          nombre: ev.nombre,
+          tipo: ev.tipo,
+          bytes: ev.bytes.length,
+        })),
+      });
+      await registrarAuditoriaTx(tx, {
+        empresaId,
+        usuarioId: usuario.id,
+        entidad: ENTIDAD_ENTREGA,
+        entidadId: entregaId,
+        accion: "EDITAR",
+        valorNuevo: {
+          ordenVenta: base.ordenVenta.folio,
+          numero: base.numero,
+          evidenciasAgregadas: evidencias.map((ev) => ({ nombre: ev.nombre, tipo: ev.tipo, bytes: ev.bytes.length })),
+        },
+      });
+      return { cargaId: carga.id, agregadas: evidencias.length, existente: false };
+    });
+  } catch (error) {
+    // Nunca se borran archivos de cargas válidas: solo los recién subidos de esta.
+    await eliminarSinFallar(refs);
     if (esUnica(error)) {
       const ganadora = await previa().catch(() => null);
       if (ganadora) return ganadora;

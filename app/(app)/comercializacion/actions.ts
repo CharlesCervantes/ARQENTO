@@ -31,7 +31,7 @@ import {
   guardarBorradorCompra,
 } from "@/lib/server/comercializacion/compras";
 import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
-import { anularEntregaComercial, registrarEntregaComercial } from "@/lib/server/comercializacion/entregas";
+import { agregarEvidenciasEntrega, anularEntregaComercial, registrarEntregaComercial } from "@/lib/server/comercializacion/entregas";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
 // Empresa, validación, bitácora) vive en lib/server/comercializacion/*. Los
@@ -416,6 +416,28 @@ export async function registrarEntregaAction(ordenVentaId: string, _state: Entre
   }
   revalidatePath("/comercializacion", "layout");
   return { ok: true };
+}
+
+export type EvidenciasState = { error?: string; ok?: boolean; agregadas?: number } | undefined;
+
+/** Agrega evidencias a una entrega vigente (no cambia cantidades ni estado). */
+export async function agregarEvidenciasAction(entregaId: string, _state: EvidenciasState, formData: FormData): Promise<EvidenciasState> {
+  const usuario = await requireSession();
+  let agregadas = 0;
+  try {
+    const archivos = await Promise.all(
+      formData
+        .getAll("evidencias")
+        .filter((a): a is File => a instanceof File && a.size > 0)
+        .map(async (a) => ({ nombre: a.name, bytes: new Uint8Array(await a.arrayBuffer()) }))
+    );
+    const clave = formData.get("clave");
+    agregadas = (await agregarEvidenciasEntrega(usuario, entregaId, archivos, typeof clave === "string" ? clave : undefined)).agregadas;
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return { ok: true, agregadas };
 }
 
 export async function anularEntregaAction(entrada: { entregaId: string; motivo: string }): Promise<{ error?: string }> {

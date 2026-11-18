@@ -153,6 +153,7 @@ model Empresa {
   entregasComerciales     EntregaComercial[]
   partidasEntrega         PartidaEntregaComercial[]
   evidenciasEntrega       EvidenciaEntregaComercial[]
+  cargasEvidenciaEntrega  CargaEvidenciaEntrega[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -386,6 +387,7 @@ model Usuario {
   movimientosComercialesAnulados    MovimientoComercial[]    @relation("MovimientoComercialAnulado")
   entregasComercialesRegistradas    EntregaComercial[]       @relation("EntregaComercialRegistrada")
   entregasComercialesAnuladas       EntregaComercial[]       @relation("EntregaComercialAnulada")
+  cargasEvidenciaEntrega            CargaEvidenciaEntrega[]  @relation("CargaEvidenciaEntregaRegistrada")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -3446,6 +3448,7 @@ model EntregaComercial {
 
   partidas   PartidaEntregaComercial[]
   evidencias EvidenciaEntregaComercial[]
+  cargas     CargaEvidenciaEntrega[]
 
   @@unique([id, empresaId])
   @@unique([ordenVentaId, numero])
@@ -3491,8 +3494,39 @@ model EvidenciaEntregaComercial {
   tipo   String
   bytes  Int
 
+  // Carga posterior al registro (B6 cierre). Nula = evidencia original,
+  // registrada junto con la entrega (autor y fecha de la entrega).
+  carga   CargaEvidenciaEntrega? @relation(fields: [cargaId], references: [id], onDelete: Restrict)
+  cargaId String?
+
   createdAt DateTime @default(now())
 
   @@index([entregaId])
+  @@index([cargaId])
   @@map("evidencias_entrega_comercial")
+}
+
+// Incorporación de evidencias a una entrega VIGENTE ya registrada (cierre de
+// B6): solo agrega; no reemplaza ni elimina. Registra autor y fecha de cada
+// incorporación; la clave hace idempotentes los reintentos. Las reglas
+// (entrega confirmada, inmutable, al menos una evidencia, máximo acumulado)
+// las vuelve a exigir la base (migración 20261122090000).
+model CargaEvidenciaEntrega {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  entrega   EntregaComercial @relation(fields: [entregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  entregaId String
+
+  clave           String
+  registradaPor   Usuario  @relation("CargaEvidenciaEntregaRegistrada", fields: [registradaPorId], references: [id])
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  evidencias EvidenciaEntregaComercial[]
+
+  @@unique([empresaId, clave])
+  @@index([entregaId])
+  @@map("cargas_evidencia_entrega")
 }

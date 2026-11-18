@@ -11,7 +11,8 @@ import { esAdministradorComercial } from "@/lib/server/permisos";
 import { requerirUsoComercial } from "@/lib/server/comercializacion/acceso";
 import { ENTIDAD_COTIZACION, alcance } from "@/lib/server/comercializacion/cotizaciones";
 import { crearCuentaTx } from "@/lib/server/comercializacion/cuentas";
-import { MAX_BYTES_POR_DOCUMENTO, nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { MAX_BYTES_POR_CARGA, MB_POR_CARGA, formatearTamano } from "@/lib/comercializacion/cargas";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
 
 // Aceptación del cliente y orden de venta (OV) — B3 (noviembre 2026).
@@ -49,8 +50,8 @@ function validarEvidencia(archivo: ArchivoEvidencia | null | undefined) {
   if (!archivo || !archivo.bytes || archivo.bytes.length === 0) {
     throw new ValidacionError("Adjunta la evidencia de aceptación del cliente (PDF, JPG o PNG).");
   }
-  if (archivo.bytes.length > MAX_BYTES_POR_DOCUMENTO) {
-    throw new ValidacionError(`La evidencia excede el máximo de ${MAX_BYTES_POR_DOCUMENTO / (1024 * 1024)} MB.`);
+  if (archivo.bytes.length > MAX_BYTES_POR_CARGA) {
+    throw new ValidacionError(`La evidencia pesa ${formatearTamano(archivo.bytes.length)}; el máximo es ${MB_POR_CARGA} MB. No se registró la aceptación.`);
   }
   // Tipo REAL por contenido, nunca por el nombre ni por lo que declara el navegador.
   const tipo = tipoArchivoDetectado(archivo.bytes);

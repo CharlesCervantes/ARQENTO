@@ -206,9 +206,12 @@ describe("Validaciones de captura", () => {
     await assert.rejects(entregar(o, "1", null, admin, []), /al menos una evidencia/);
     const falso: ArchivoEvidenciaEntrega = { nombre: "foto.jpg", bytes: new TextEncoder().encode("no soy una imagen") };
     await assert.rejects(entregar(o, "1", null, admin, [foto(), falso]), /«foto.jpg» no es una fotografía/);
-    await assert.rejects(entregar(o, "1", null, admin, Array.from({ length: 11 }, (_, i) => foto(`${i}`))), /máximo 10 evidencias/);
-    const grande: ArchivoEvidenciaEntrega = { nombre: "grande.pdf", bytes: new Uint8Array(Buffer.concat([pdfFicticio("g"), Buffer.alloc(9 * 1024 * 1024)])) };
-    await assert.rejects(entregar(o, "1", null, admin, [grande]), /suman más de 9 MB/);
+    await assert.rejects(entregar(o, "1", null, admin, Array.from({ length: 11 }, (_, i) => foto(`${i}`))), /máximo 10 archivos por carga/);
+    const grande: ArchivoEvidenciaEntrega = { nombre: "grande.pdf", bytes: new Uint8Array(Buffer.concat([pdfFicticio("g"), Buffer.alloc(4 * 1024 * 1024)])) };
+    await assert.rejects(entregar(o, "1", null, admin, [grande]), /máximo por carga es 4 MB/);
+    // Suma de varios archivos que individualmente caben.
+    const medio = (s: string): ArchivoEvidenciaEntrega => ({ nombre: `medio-${s}.pdf`, bytes: new Uint8Array(Buffer.concat([pdfFicticio(s), Buffer.alloc(2 * 1024 * 1024)])) });
+    await assert.rejects(entregar(o, "1", null, admin, [medio("a"), medio("b")]), /suman .* MB; el máximo por carga es 4 MB/);
     assert.equal(await db.entregaComercial.count(), 0);
     assert.equal(objetosDeEntregas().length, 0, "nada subido de registros rechazados");
 
@@ -273,7 +276,7 @@ describe("La base garantiza las reglas", () => {
     );
     await assert.rejects(
       db.evidenciaEntregaComercial.create({ data: { empresaId: EMPRESA, entregaId: e.entregaId, orden: 9, clase: "FOTOGRAFIA", ref: "x", nombre: "x.jpg", tipo: "image/jpeg", bytes: 1 } }),
-      /solo se adjuntan al registrar/
+      /mediante una carga/
     );
     const nueva = (cantidad: string, evidencia: boolean) =>
       db.$transaction(async (tx) => {

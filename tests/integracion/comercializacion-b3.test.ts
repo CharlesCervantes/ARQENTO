@@ -336,9 +336,10 @@ describe("Aceptación y orden de venta", () => {
     const id = await emitida(admin);
     await assert.rejects(aceptar(admin, id, {}, null), /Adjunta la evidencia/);
     await assert.rejects(aceptar(admin, id, {}, { nombre: "falso.pdf", bytes: new TextEncoder().encode("no soy un pdf") }), /PDF, JPG o PNG/);
-    const grande = new Uint8Array(10 * 1024 * 1024 + 1);
+    // Límite por carga de Comercialización: 4 MB (lib/comercializacion/cargas.ts).
+    const grande = new Uint8Array(4 * 1024 * 1024 + 1);
     grande.set(pdfFicticio("grande").subarray(0, 8));
-    await assert.rejects(aceptar(admin, id, {}, { nombre: "grande.pdf", bytes: grande }), /excede/);
+    await assert.rejects(aceptar(admin, id, {}, { nombre: "grande.pdf", bytes: grande }), /el máximo es 4 MB/);
     await assert.rejects(aceptar(admin, id, { fechaAceptacion: masDias(1) }), /futura/);
     await assert.rejects(aceptar(admin, id, { fechaAceptacion: "2025-01-01" }), /anterior a la fecha/);
     await assert.rejects(aceptar(admin, id, { referenciaOcCliente: "x".repeat(101) }));

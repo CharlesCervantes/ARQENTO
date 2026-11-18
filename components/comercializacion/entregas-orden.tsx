@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import type { EntregaDetalle, ResumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 import { aMilesimas, formatearCantidad, normalizarCantidad } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
-import { ETIQUETA_ESTADO_ENTREGA, MAX_BYTES_EVIDENCIAS_POR_ENTREGA, MAX_EVIDENCIAS_POR_ENTREGA, type EstadoEntrega } from "@/lib/comercializacion/entregas";
-import { anularEntregaAction, registrarEntregaAction, type EntregaState } from "@/app/(app)/comercializacion/actions";
+import { ETIQUETA_ESTADO_ENTREGA, MAX_EVIDENCIAS_POR_CARGA, MAX_EVIDENCIAS_POR_ENTREGA, type EstadoEntrega } from "@/lib/comercializacion/entregas";
+import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
+import { agregarEvidenciasAction, anularEntregaAction, registrarEntregaAction, type EntregaState, type EvidenciasState } from "@/app/(app)/comercializacion/actions";
+import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 
 // Entregas y documentos de una OV — B6A. Lo ven administración y el vendedor
 // asignado (el servidor aplica el alcance). Solo cantidades y evidencias de
@@ -24,7 +26,7 @@ const formatoFechaHora = new Intl.DateTimeFormat("es-MX", {
   timeZone: "America/Monterrey",
 });
 const clave = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
-const MB = MAX_BYTES_EVIDENCIAS_POR_ENTREGA / (1024 * 1024);
+const AYUDA_EVIDENCIAS = `Hasta ${MAX_EVIDENCIAS_POR_CARGA} archivos y ${MB_POR_CARGA} MB por carga; una entrega acumula máximo ${MAX_EVIDENCIAS_POR_ENTREGA} evidencias.`;
 
 const ESTILO_ESTADO: Record<EstadoEntrega, string> = {
   PENDIENTE: "bg-black/[0.06] text-[var(--muted)]",
@@ -122,12 +124,7 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
   const [state, formAction, pendiente] = useActionState<EntregaState, FormData>(registrarEntregaAction.bind(null, resumen.ordenVentaId), undefined);
   // Tras cada respuesta, React restablece el formulario y el campo de archivos
   // queda vacío: la selección solo vale para la respuesta con la que se hizo.
-  const [seleccion, setSeleccion] = useState<{
-    n: number;
-    bytes: number;
-    respuesta: EntregaState;
-  }>({ n: 0, bytes: 0, respuesta: undefined });
-  const archivos = seleccion.respuesta === state ? seleccion : { n: 0, bytes: 0 };
+  const archivos = useArchivosDeCarga(state, { maxArchivos: MAX_EVIDENCIAS_POR_CARGA });
   const debeReadjuntar = Boolean(state?.error) && archivos.n === 0;
   useEffect(() => {
     if (state?.ok) {
@@ -145,12 +142,7 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
     return { p, valor, normal, invalida, excede };
   });
   const conCantidad = filas.filter((f) => f.normal);
-  const avisoArchivos =
-    archivos.n > MAX_EVIDENCIAS_POR_ENTREGA
-      ? `Máximo ${MAX_EVIDENCIAS_POR_ENTREGA} archivos por entrega.`
-      : archivos.bytes > MAX_BYTES_EVIDENCIAS_POR_ENTREGA
-        ? `Los archivos suman más de ${MB} MB.`
-        : null;
+  const avisoArchivos = archivos.exceso;
   const partidasJson = JSON.stringify(filas.filter((f) => f.valor.trim()).map((f) => ({ partidaVentaId: f.p.partidaVentaId, cantidad: f.valor })));
 
   return (
@@ -232,21 +224,14 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
           multiple
           accept="image/jpeg,image/png,application/pdf"
           required
-          onChange={(ev) => {
-            const fs = Array.from(ev.target.files ?? []);
-            setSeleccion({
-              n: fs.length,
-              bytes: fs.reduce((s, f) => s + f.size, 0),
-              respuesta: state,
-            });
-          }}
+          onChange={archivos.onChange}
           className="block text-sm"
         />
-        <span className="mt-0.5 block text-xs text-[var(--muted)]">
-          Hasta {MAX_EVIDENCIAS_POR_ENTREGA} archivos y {MB} MB en total. Si un archivo no es válido, no se registra la entrega.
-        </span>
-        {avisoArchivos && <span className="mt-0.5 block text-xs text-red-700">{avisoArchivos}</span>}
-        {debeReadjuntar && <span className="mt-0.5 block text-xs text-amber-800">Vuelve a adjuntar las evidencias antes de registrar.</span>}
+        <AvisosArchivos
+          exceso={avisoArchivos}
+          reseleccionar={debeReadjuntar ? "Cantidades y datos se conservaron; vuelve a adjuntar las evidencias antes de registrar." : null}
+          ayuda={`${AYUDA_EVIDENCIAS} Si un archivo no es válido, no se registra la entrega.`}
+        />
       </label>
 
       <p className="text-xs text-[var(--muted)]">
@@ -302,12 +287,14 @@ function Entrega({ e, puedeAnular }: { e: EntregaDetalle; puedeAnular: boolean }
             <a href={`/api/comercializacion/evidencias-entrega/${ev.id}`} target="_blank" rel="noopener" className={claseEnlace}>
               {ev.nombre}
             </a>{" "}
-            ({ev.clase === "REMISION" ? "remisión" : "foto"})
+            ({ev.clase === "REMISION" ? "remisión" : "foto"}
+            {ev.agregada && `, agregada por ${ev.agregada.porNombre} el ${formatoFechaHora.format(new Date(ev.agregada.en))}`})
           </span>
         ))}{" "}
         · registró {e.registradaPorNombre} el {formatoFechaHora.format(new Date(e.registradaEn))}
       </p>
       {e.observaciones && <p className="mt-0.5 text-xs text-[var(--muted)]">{e.observaciones}</p>}
+      {!anulada && <AgregarEvidencias e={e} />}
       {e.anulada && (
         <p className="mt-0.5 text-xs text-red-700">
           Anulada por {e.anulada.porNombre ?? "administración"} el {formatoFechaHora.format(new Date(e.anulada.en))}: {e.anulada.motivo}. Sus cantidades ya no
@@ -348,5 +335,64 @@ function Entrega({ e, puedeAnular }: { e: EntregaDetalle; puedeAnular: boolean }
         </div>
       )}
     </li>
+  );
+}
+
+/** Agregar fotografías o remisiones a una entrega vigente (no cambia cantidades ni estado). */
+function AgregarEvidencias({ e }: { e: EntregaDetalle }) {
+  const router = useRouter();
+  const [state, formAction, pendiente] = useActionState<EvidenciasState, FormData>(agregarEvidenciasAction.bind(null, e.id), undefined);
+  // Se abre «con» la respuesta vigente; una respuesta exitosa posterior lo cierra.
+  const [abiertoCon, setAbiertoCon] = useState<{ respuesta: EvidenciasState } | null>(null);
+  const abierto = abiertoCon !== null && !(state?.ok && state !== abiertoCon.respuesta);
+  // Una clave por apertura: los reintentos de la misma carga no duplican; otra carga es otra operación.
+  const [claveCarga, setClaveCarga] = useState(clave);
+  const archivos = useArchivosDeCarga(state, { maxArchivos: Math.min(MAX_EVIDENCIAS_POR_CARGA, e.evidenciasDisponibles) });
+  useEffect(() => {
+    if (state?.ok) router.refresh();
+  }, [state, router]);
+  const abrir = () => {
+    setClaveCarga(clave());
+    setAbiertoCon({ respuesta: state });
+  };
+  if (e.evidenciasDisponibles <= 0) {
+    return <p className="mt-1 text-xs text-[var(--muted)]">Esta entrega ya tiene el máximo de {MAX_EVIDENCIAS_POR_ENTREGA} evidencias.</p>;
+  }
+  if (!abierto) {
+    return (
+      <div className="mt-1 flex items-center gap-3">
+        <button type="button" onClick={abrir} className={claseEnlace + " text-xs"}>
+          + Agregar evidencia
+        </button>
+        {state?.ok && <span className="text-xs text-emerald-700">Se agregaron {state.agregadas} evidencia(s).</span>}
+      </div>
+    );
+  }
+  return (
+    <form action={formAction} className="mt-2 space-y-2 rounded-lg border border-[var(--border)] p-3">
+      <input type="hidden" name="clave" value={claveCarga} />
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium">Evidencias adicionales: fotografías JPG/PNG o remisión PDF</span>
+        <input type="file" name="evidencias" multiple required accept="image/jpeg,image/png,application/pdf" onChange={archivos.onChange} className="block text-sm" />
+        <AvisosArchivos
+          exceso={archivos.exceso}
+          reseleccionar={state?.error && archivos.debeReseleccionar ? "Vuelve a seleccionar los archivos." : null}
+          ayuda={`Solo agrega: no cambia cantidades, fecha ni estado, y no reemplaza ni borra evidencias. Admite ${e.evidenciasDisponibles} más (hasta ${MAX_EVIDENCIAS_POR_CARGA} y ${MB_POR_CARGA} MB por carga).`}
+        />
+      </label>
+      {state?.error && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {state.error}
+        </p>
+      )}
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="outline" disabled={pendiente || archivos.n === 0 || Boolean(archivos.exceso)}>
+          {pendiente ? "Agregando…" : "Agregar evidencias"}
+        </Button>
+        <button type="button" onClick={() => setAbiertoCon(null)} className={claseSecundaria} disabled={pendiente}>
+          Cancelar
+        </button>
+      </div>
+    </form>
   );
 }

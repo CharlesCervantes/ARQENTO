@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -287,7 +288,13 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
   const [claveRegistro] = useState(clave);
   const [importe, setImporte] = useState("");
   const [ajustes, setAjustes] = useState<Record<string, string> | null>(null);
+  // Campos controlados: se conservan si el servidor rechaza el registro.
+  const [fecha, setFecha] = useState(cuenta.hoy);
+  const [metodo, setMetodo] = useState("TRANSFERENCIA");
+  const [referencia, setReferencia] = useState("");
+  const [observaciones, setObservaciones] = useState("");
   const [state, formAction, pendiente] = useActionState<MovimientoState, FormData>(registrarMovimientoAction.bind(null, cuenta.id), undefined);
+  const comprobante = useArchivosDeCarga(state, { maxArchivos: 1 });
   useEffect(() => {
     if (state?.ok) {
       onListo();
@@ -331,11 +338,11 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
         </label>
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium">Fecha real</span>
-          <Input type="date" name="fecha" defaultValue={cuenta.hoy} max={cuenta.hoy} required />
+          <Input type="date" name="fecha" value={fecha} onChange={(ev) => setFecha(ev.target.value)} max={cuenta.hoy} required />
         </label>
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium">Método</span>
-          <select name="metodo" defaultValue="TRANSFERENCIA" className={claseSelect}>
+          <select name="metodo" value={metodo} onChange={(ev) => setMetodo(ev.target.value)} className={claseSelect}>
             {METODOS_PAGO.map((m) => (
               <option key={m} value={m}>
                 {ETIQUETA_METODO[m]}
@@ -345,11 +352,11 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
         </label>
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium">Referencia (opcional)</span>
-          <Input name="referencia" maxLength={100} placeholder="Folio, SPEI…" />
+          <Input name="referencia" value={referencia} onChange={(ev) => setReferencia(ev.target.value)} maxLength={100} placeholder="Folio, SPEI…" />
         </label>
         <label className="block md:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Observaciones (opcional)</span>
-          <Input name="observaciones" maxLength={1000} />
+          <Input name="observaciones" value={observaciones} onChange={(ev) => setObservaciones(ev.target.value)} maxLength={1000} />
         </label>
         <label className="block md:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Comprobante (opcional, PDF/JPG/PNG)</span>
@@ -357,7 +364,12 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
             type="file"
             name="comprobante"
             accept="application/pdf,image/jpeg,image/png"
+            onChange={comprobante.onChange}
             className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-3 file:py-2 file:text-sm"
+          />
+          <AvisosArchivos
+            exceso={comprobante.exceso}
+            reseleccionar={state?.error && comprobante.debeReseleccionar ? "Los datos se conservaron; vuelve a seleccionar el comprobante (si no, se registrará sin él)." : null}
           />
         </label>
       </div>
@@ -405,7 +417,7 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
         </p>
       )}
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pendiente || !normal || excede}>
+        <Button type="submit" disabled={pendiente || !normal || excede || Boolean(comprobante.exceso)}>
           {pendiente ? "Registrando…" : esCobro ? "Registrar cobro" : "Registrar pago"}
         </Button>
         <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>

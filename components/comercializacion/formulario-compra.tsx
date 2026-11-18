@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
+import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
@@ -566,6 +568,8 @@ function SelectorProveedor({
 function DocumentoProveedor({ compra }: { compra: CompraDetalle }) {
   const router = useRouter();
   const [state, formAction, pendiente] = useActionState<DocumentoCompraState, FormData>(adjuntarDocumentoCompraAction.bind(null, compra.id), undefined);
+  const [referencia, setReferencia] = useState(compra.referenciaProveedor ?? "");
+  const documento = useArchivosDeCarga(state, { maxArchivos: 1 });
   useEffect(() => {
     if (state?.ok) router.refresh();
   }, [state, router]);
@@ -573,7 +577,7 @@ function DocumentoProveedor({ compra }: { compra: CompraDetalle }) {
     <Card className="p-5">
       <h2 className="text-base font-semibold text-[var(--foreground)]">Documento del proveedor</h2>
       <p className="mt-1 text-xs text-[var(--muted)]">
-        Opcional: referencia y archivo del proveedor (cotización, remisión, factura…). PDF, JPG o PNG de hasta 10 MB. Solo administración
+        Opcional: referencia y archivo del proveedor (cotización, remisión, factura…). PDF, JPG o PNG de hasta {MB_POR_CARGA} MB. Solo administración
         puede verlo.
       </p>
       {compra.documento && (
@@ -587,7 +591,7 @@ function DocumentoProveedor({ compra }: { compra: CompraDetalle }) {
       <form action={formAction} className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Referencia del proveedor</span>
-          <Input name="referenciaProveedor" defaultValue={compra.referenciaProveedor ?? ""} maxLength={100} placeholder="Folio de su cotización o factura" />
+          <Input name="referenciaProveedor" value={referencia} onChange={(ev) => setReferencia(ev.target.value)} maxLength={100} placeholder="Folio de su cotización o factura" />
         </label>
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">{compra.documento ? "Reemplazar archivo" : "Archivo"}</span>
@@ -595,10 +599,15 @@ function DocumentoProveedor({ compra }: { compra: CompraDetalle }) {
             type="file"
             name="documento"
             accept="application/pdf,image/jpeg,image/png"
+            onChange={documento.onChange}
             className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-3 file:py-2 file:text-sm"
           />
+          <AvisosArchivos
+            exceso={documento.exceso}
+            reseleccionar={state?.error && documento.debeReseleccionar ? "La referencia se conservó; vuelve a seleccionar el archivo." : null}
+          />
         </label>
-        <Button type="submit" variant="outline" disabled={pendiente}>
+        <Button type="submit" variant="outline" disabled={pendiente || Boolean(documento.exceso)}>
           {pendiente ? "Guardando…" : "Guardar documento"}
         </Button>
         {state?.error && <p className="md:col-span-3 text-sm text-red-700">{state.error}</p>}

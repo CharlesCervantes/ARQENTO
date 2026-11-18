@@ -10,6 +10,8 @@ import {
   registrarAceptacionAction,
   type AceptacionState,
 } from "@/app/(app)/comercializacion/actions";
+import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
+import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 
 // Acciones de una cotización emitida/aceptada (B3): ver PDF, duplicar y —solo
 // si está EMITIDA y vigente— registrar la aceptación con evidencia. El
@@ -46,6 +48,10 @@ export function AccionesCotizacionEmitida({
     registrarAceptacionAction.bind(null, cotizacionId),
     undefined
   );
+  // Campos controlados: se conservan si el servidor rechaza la aceptación.
+  const [fechaAceptacion, setFechaAceptacion] = useState(hoy);
+  const [referenciaOc, setReferenciaOc] = useState("");
+  const evidencia = useArchivosDeCarga(state, { maxArchivos: 1 });
   // Al registrar la aceptación se recarga la vista (ahora muestra la OV). En
   // un efecto, no durante el render: router.refresh() actualiza el Router y
   // React marca error si ocurre mientras se dibuja este componente
@@ -77,17 +83,17 @@ export function AccionesCotizacionEmitida({
         <Card className="p-5">
           <h2 className="text-base font-semibold text-[var(--foreground)]">Registrar aceptación de {folio}</h2>
           <p className="mt-1 text-xs text-[var(--muted)]">
-            Genera la orden de venta (OV). La evidencia es obligatoria: PDF, JPG o PNG de hasta 10 MB (por ejemplo, la OC o el
+            Genera la orden de venta (OV). La evidencia es obligatoria: PDF, JPG o PNG de hasta {MB_POR_CARGA} MB (por ejemplo, la OC o el
             correo del cliente). Es un registro interno, no una firma electrónica.
           </p>
           <form action={formAction} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Fecha de aceptación</span>
-              <Input type="date" name="fechaAceptacion" required defaultValue={hoy} min={fechaMinima} max={hoy} />
+              <Input type="date" name="fechaAceptacion" required value={fechaAceptacion} onChange={(ev) => setFechaAceptacion(ev.target.value)} min={fechaMinima} max={hoy} />
             </label>
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">OC del cliente (opcional)</span>
-              <Input name="referenciaOcCliente" maxLength={100} placeholder="Número de OC del cliente" />
+              <Input name="referenciaOcCliente" value={referenciaOc} onChange={(ev) => setReferenciaOc(ev.target.value)} maxLength={100} placeholder="Número de OC del cliente" />
             </label>
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Evidencia</span>
@@ -96,7 +102,12 @@ export function AccionesCotizacionEmitida({
                 name="evidencia"
                 required
                 accept="application/pdf,image/jpeg,image/png"
+                onChange={evidencia.onChange}
                 className="block w-full text-sm text-[var(--foreground)] file:mr-3 file:rounded-lg file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-3 file:py-2 file:text-sm"
+              />
+              <AvisosArchivos
+                exceso={evidencia.exceso}
+                reseleccionar={state?.error && evidencia.debeReseleccionar ? "Fecha y OC se conservaron; vuelve a seleccionar la evidencia." : null}
               />
             </label>
             {state?.error && (
@@ -105,7 +116,7 @@ export function AccionesCotizacionEmitida({
               </p>
             )}
             <div className="flex flex-wrap items-center gap-3 md:col-span-3">
-              <Button type="submit" disabled={pendiente}>
+              <Button type="submit" disabled={pendiente || Boolean(evidencia.exceso)}>
                 {pendiente ? "Registrando…" : "Registrar aceptación y generar OV"}
               </Button>
               <button type="button" onClick={() => setAceptando(false)} className={claseSecundaria} disabled={pendiente}>

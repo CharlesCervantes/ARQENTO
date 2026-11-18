@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.9 · 17 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) y B6B (recordatorios internos de cobros y pagos) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.10 · 17 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) y el cierre de B6 (evidencias adicionales y límites de carga) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -400,7 +400,7 @@ Reglas implementadas:
 - **Duplicar** (cotizaciones emitidas o aceptadas): crea un borrador con folio COT nuevo y vínculo al origen (`origenId`); el original queda intacto. Pasa por la misma creación de B2 (permisos de precio y validación de productos) e incluye una clave contra reintentos.
 - **PDF** (`/api/comercializacion/cotizaciones/[id]/pdf`): mismo motor e identidad que los PDFs existentes. Incluye logo o nombre de la empresa, folio COT, fecha, vigencia, cliente, obra, vendedor, descripción, materiales con unidad, cantidad, precio, impuesto e importe, Tasa 0 % y Exento por separado, total, condiciones y observaciones. Pie con folio y «Página X de Y»; las partidas no se parten entre páginas. Un borrador genera una vista previa marcada BORRADOR. Protegido por Empresa y vendedor también por URL directa (404).
 - **Aceptación:** solo sobre una cotización Emitida y vigente. Pide fecha de aceptación (entre la fecha de la cotización y hoy), evidencia y referencia opcional de la OC del cliente. Se guarda quién la registró y cuándo; es un registro interno de evidencia, no una firma electrónica del cliente.
-- **Evidencia:** PDF, JPG o PNG de hasta 10 MB. El tipo se valida por el contenido real del archivo, no por el nombre. Se guarda con la infraestructura de archivos existente bajo `comercializacion/<empresa>/aceptaciones/<cotización>/`. Se descarga solo a través de la aplicación (`/api/comercializacion/ordenes/[id]/evidencia`), con el mismo alcance por Empresa y vendedor.
+- **Evidencia:** PDF, JPG o PNG de hasta 10 MB (desde el cierre de B6: 4 MB por carga; ver «Cargas de archivos»). El tipo se valida por el contenido real del archivo, no por el nombre. Se guarda con la infraestructura de archivos existente bajo `comercializacion/<empresa>/aceptaciones/<cotización>/`. Se descarga solo a través de la aplicación (`/api/comercializacion/ordenes/[id]/evidencia`), con el mismo alcance por Empresa y vendedor.
 - **Atomicidad:** primero se sube la evidencia; después una sola transacción bloquea la cotización, asigna el folio OV, crea la OV con los totales emitidos, marca la cotización como Aceptada y registra la bitácora (cotización y OV). Si algo falla, no queda nada aceptado, no se consume folio y la evidencia recién subida se elimina.
 - **Una sola OV:** doble clic, reintentos y solicitudes simultáneas devuelven la misma OV. La base lo garantiza con índice único por cotización y bloqueo de fila; las evidencias sobrantes de solicitudes repetidas se eliminan.
 - **Sin efectos financieros:** la OV no crea compras, cuotas, cobros, pagos, ingresos, egresos ni entregas, y no toca construcción.
@@ -487,7 +487,7 @@ Reglas implementadas:
   - Crear con la misma clave devuelve el mismo borrador (sin folio duplicado).
   - Confirmar o anular dos veces devuelve el mismo resultado (una sola entrada de bitácora).
   - Guardar con una versión vieja es un conflicto que no sobrescribe.
-- **Documento del proveedor:** referencia opcional y archivo PDF/JPG/PNG de hasta 10 MB, validado por contenido. Usa la infraestructura de archivos existente (`comercializacion/<empresa>/compras/<compra>/`) y se descarga solo por la aplicación, solo administración. Reemplazar el archivo conserva el anterior en el almacenamiento y queda en bitácora.
+- **Documento del proveedor:** referencia opcional y archivo PDF/JPG/PNG de hasta 10 MB (desde el cierre de B6: 4 MB por carga), validado por contenido. Usa la infraestructura de archivos existente (`comercializacion/<empresa>/compras/<compra>/`) y se descarga solo por la aplicación, solo administración. Reemplazar el archivo conserva el anterior en el almacenamiento y queda en bitácora.
 - **Sin efectos:** no se modifican cantidades ni precios de la OV. No se crean OC de construcción, semanas, movimientos semanales, gastos, egresos ni ingresos.
 - **Interfaz:**
   - Bloque «Compras a proveedores» en el detalle de la OV, solo para administración: vendido, comprado, pendiente y en borradores por material; lista de compras con proveedor, folio, fecha, importe y estado; botón «Nueva compra».
@@ -523,7 +523,7 @@ Qué hace:
   - Mientras la cuenta no tenga movimientos, las condiciones pueden reemplazarse: las cuotas anteriores se marcan sustituidas (no se borran) y se muestran como calendario anterior.
   - En cuanto existe un movimiento, aunque después se anule, el calendario queda fijo (servicio y base).
 - **Cobros y pagos (solo Administrador y Director):**
-  - Datos: importe, fecha real (no futura), método (transferencia, depósito, efectivo, cheque, tarjeta u otro), referencia, observaciones y comprobante opcional (PDF/JPG/PNG ≤ 10 MB, validado por contenido, en `comercializacion/<empresa>/movimientos/<cuenta>/`, descargable solo por administración).
+  - Datos: importe, fecha real (no futura), método (transferencia, depósito, efectivo, cheque, tarjeta u otro), referencia, observaciones y comprobante opcional (PDF/JPG/PNG ≤ 10 MB; desde el cierre de B6, ≤ 4 MB por carga; validado por contenido, en `comercializacion/<empresa>/movimientos/<cuenta>/`, descargable solo por administración).
   - Requiere condiciones definidas.
   - Propone aplicar a la cuota más antigua primero; el usuario puede ajustar la distribución. Un movimiento con varias aplicaciones; la suma de aplicaciones = importe (verificado por la base).
   - No se permite sobrepago ni saldo a favor: el importe no puede superar el saldo, ni una aplicación el saldo de su cuota.
@@ -577,7 +577,7 @@ Qué hace:
 - **Evidencias:**
   - Obligatorias: al menos una por entrega (servicio y base).
   - Tipo real validado por contenido (misma validación que los demás documentos).
-  - Límites explícitos: hasta 10 archivos y 9 MB en total por entrega.
+  - Límites explícitos: hasta 10 archivos y 9 MB en total por entrega (desde el cierre de B6: 10 archivos y 4 MB por carga, y máximo 20 evidencias acumuladas por entrega).
   - Si un archivo es inválido, no se registra nada.
   - Se guardan en `comercializacion/<empresa>/entregas/<OV>/` con tabla, ruta de descarga y permisos propios, separadas de los documentos de compra y de los comprobantes de cobro/pago. La PDF se clasifica como remisión y la imagen como fotografía.
 - **Cantidades y estado:**
@@ -621,8 +621,8 @@ Verificación:
   - Anulación de la Entrega 1 por administración: Parcial, pendientes 60 y 1.250, y la evidencia sigue disponible.
 
 Limitaciones y decisiones provisionales de B6A (confirmar):
-- **Límite de tamaño:** 9 MB en total por entrega. El `proxy.ts` de la aplicación solo conserva 10 MB del cuerpo de cada solicitud: por encima de eso, la solicitud falla antes de llegar al servicio. Se comprobó en local con un comprobante de B5 de 10.5 MB, que devolvió 500. Afecta también a los comprobantes de B5 (hasta 10 MB) y a cargas existentes de otros módulos. Ampliar el límite (`experimental.proxyClientMaxBodySize`) es un cambio global de configuración y queda pendiente de aprobación.
-- Las evidencias solo se adjuntan al registrar la entrega; no se agregan después (para completar, se anula y se registra de nuevo).
+- **Límite de tamaño (sustituido en el cierre de B6 por 4 MB por carga; ver «Cargas de archivos»):** 9 MB en total por entrega. El `proxy.ts` de la aplicación solo conserva 10 MB del cuerpo de cada solicitud: por encima de eso, la solicitud falla antes de llegar al servicio. Se comprobó en local con un comprobante de B5 de 10.5 MB, que devolvió 500. Afecta también a los comprobantes de B5 (hasta 10 MB) y a cargas existentes de otros módulos. Ampliar el límite (`experimental.proxyClientMaxBodySize`) es un cambio global de configuración y queda pendiente de aprobación.
+- ~~Las evidencias solo se adjuntan al registrar la entrega.~~ Resuelto en el cierre de B6: se pueden agregar evidencias a una entrega vigente.
 - No se valida que la fecha de entrega sea posterior a la aceptación de la OV (no hay regla acordada).
 - Sin devoluciones físicas ni cambios de material.
 - Indicador «Entregas pendientes» en la cabecera del listado: agregado en B6B.
@@ -685,13 +685,116 @@ Decisiones provisionales de B6B (confirmar):
 - Los avisos solo se ven en el listado de Comercialización. No hay campana global, avisos en el Inicio, correo ni WhatsApp.
 - Orden dentro de «Condiciones por definir»: por folio (no tienen fecha).
 
-### Defecto funcional pendiente antes de publicar (fuera de Comercialización)
+### Cierre de B6 — Evidencias adicionales, sesión inválida y cargas de archivos (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. Migración `20261122090000_comercializacion_evidencias_adicionales` (aditiva). Se aplicó solo en la base de desarrollo independiente del worktree (local, puerto 54330) y en su base de pruebas dedicada (local, puerto 54331); **no** en la base compartida con `develop`, Neon ni PRD.
+
+**1. Agregar evidencia a una entrega existente**
+- En el historial de entregas, «+ Agregar evidencia» adjunta fotografías JPG/PNG o remisiones PDF a una entrega **vigente**, sin anularla.
+- **Solo agrega:** no reemplaza ni elimina evidencias, y no cambia cantidades, fecha de entrega, estado de avance, cuentas ni saldos.
+- **Autor y fecha:** cada incorporación es una «carga» con autor y fecha propios. En el historial, la evidencia muestra «agregada por … el …»; las originales conservan los datos del registro de la entrega. Queda en bitácora.
+- **Permisos (revalidados en servidor en cada petición):**
+  - Administrador y Director: entregas de su Empresa.
+  - Vendedor: solo entregas de sus OV asignadas.
+  - Sin módulo, sin función Vendedor, en otra Empresa o en una OV ajena: «no encontrado» o sin permiso. Descargas con el mismo alcance.
+  - La asignación de vendedor de una OV no cambia una vez emitida la cotización (la base lo impide), así que «actualmente asignada» coincide con la asignación original.
+- **Entrega anulada:** no admite evidencias (servicio y base); la acción no se muestra.
+- **Límites:**
+  - Hasta 10 archivos y 4 MB por carga.
+  - Máximo acumulado: 20 evidencias por entrega, contando las del registro (servicio y base). La pantalla muestra cuántas admite todavía.
+  - Al llegar a 20 ya no se ofrece la acción.
+- **Reintentos:** idempotentes por clave. Doble clic, reintento o solicitudes simultáneas devuelven la misma carga, sin duplicar filas ni archivos.
+- **Fallos:**
+  - Si un archivo es inválido, no se agrega ninguno.
+  - Si la operación falla, se eliminan solo los archivos recién subidos; nunca los de cargas válidas ni los del registro.
+- **Anulación simultánea:** la carga y la anulación bloquean la OV y después la entrega, en el mismo orden.
+  - Si la carga confirma primero, se conserva y después la entrega queda anulada con sus evidencias.
+  - Si la anulación confirma primero, la carga se rechaza y sus archivos se eliminan.
+  - La base vuelve a comprobar que la entrega siga confirmada.
+- **Base de datos:**
+  - Una carga solo se crea sobre una entrega confirmada y debe tener al menos una evidencia.
+  - Cargas y evidencias no se modifican ni se borran.
+  - Una evidencia posterior al registro solo entra mediante su carga, en la misma transacción.
+
+**2. Ciclo de redirecciones por sesión inválida (autenticación compartida; commit separado)**
+- **Reproducido:** con una cookie `conkuali_session` inventada, `/dashboard`, `/login` y `/comercializacion` terminaban en `ERR_TOO_MANY_REDIRECTS` (19 redirecciones).
+- **Causa:** `proxy.ts` enviaba `/login` → `/dashboard` por la sola presencia de la cookie, y la verificación real de `/dashboard` devolvía a `/login`.
+- **Corrección mínima:**
+  - `proxy.ts` ya no redirige `/login` por la cookie.
+  - `app/login/layout.tsx` verifica la sesión real (la misma verificación de la aplicación: sesión vigente, usuario activo y Empresa activa) y solo entonces envía a `/dashboard`, un destino fijo e interno.
+  - No se debilitó ninguna validación ni se agregó un acceso alternativo. La cookie inválida se reemplaza al iniciar sesión y se borra al cerrarla.
+- **Verificado en navegador local:**
+  - Sin cookie, cookie inventada, sesión vencida, sesión revocada y usuario desactivado ([PRUEBA], eliminado después): todos llegan al login, con una sola redirección o ninguna.
+  - Sesión válida de Administrador y Supervisor (vendedor): `/login` lleva a `/dashboard`.
+  - Master: lleva a `/master`.
+  - Director local: lleva a `/nueva-password`, porque tiene pendiente cambiar la contraseña temporal (comportamiento existente).
+  - Cerrar sesión borra la cookie, y un nuevo inicio de sesión funciona.
+
+**3. Cargas de archivos**
+
+Recorrido actual: navegador → Server Action (una solicitud multipart con todos los campos y archivos) → servidor de la aplicación (valida tipo real, permisos y Empresa) → almacenamiento R2 (`PutObjectCommand` desde el servidor). Las descargas pasan por rutas de la aplicación con el mismo alcance.
+
+Límites efectivos:
+
+| Capa | Límite | Fuente | Probado |
+|---|---|---|---|
+| Vercel Functions (destino de despliegue configurado) | 4.5 MB por cuerpo de solicitud y de respuesta no transmitida en flujo; si se excede, 413 `FUNCTION_PAYLOAD_TOO_LARGE` | https://vercel.com/docs/functions/limitations («Request body size»), consultada el 17 nov 2026 | No: requiere un entorno de despliegue aislado |
+| `proxy.ts` de Next 16.3 (`experimental.proxyClientMaxBodySize`, 10 MB por omisión) | Por encima trunca el cuerpo y la acción falla | `node_modules/next/dist/docs/.../proxyClientMaxBodySize.md` | Sí, en local: 10.5 MB → 500 (B6A) |
+| `serverActions.bodySizeLimit` (`next.config.ts`) | 55 MB | Configuración del repositorio | No es el límite efectivo |
+| Código anterior de Comercialización | 10 MB por archivo (9 MB por entrega) | — | Superaba lo que admite Vercel |
+
+Corrección en Comercialización (sin cambios globales ni en otros módulos):
+- **Límite único:** `lib/comercializacion/cargas.ts` define 4 MB por carga, como suma de archivos de una solicitud. Deja margen bajo los 4.5 MB para los demás campos y la envoltura multipart. No se amplió `proxyClientMaxBodySize`.
+- **Dónde aplica:**
+  - Aceptación de cotización: 1 archivo.
+  - Documento del proveedor: 1 archivo.
+  - Comprobante de cobro o pago: 1 archivo, opcional.
+  - Registro de entrega: hasta 10 archivos.
+  - Evidencias adicionales: hasta 10 archivos.
+- **En el navegador, antes de enviar:** se revisan el tamaño individual, la suma y la cantidad de archivos. Una carga excesiva muestra un mensaje comprensible («Un archivo pesa 5.0 MB; el máximo por carga es 4 MB…»), deshabilita el envío y no manda nada.
+- **Lo capturado se conserva:**
+  - Los campos de esos formularios ahora son controlados, así que también sobreviven a un rechazo del servidor.
+  - Tras un rechazo, el formulario indica que hay que volver a seleccionar los archivos. El navegador no permite conservarlos.
+  - En el comprobante opcional, se avisa que si no se vuelve a seleccionar se registrará sin él.
+- **En el servidor:** se vuelven a validar el tamaño individual y agregado, el tipo real por contenido, los permisos y la Empresa. Un registro con evidencia obligatoria (aceptación o entrega) nunca se confirma sin ella.
+- **Probado localmente:**
+  - Pruebas de integración: rechazo con 4.1 MB y aceptación con 3.9 MB en cada carga.
+  - Recorrido en navegador: un PDF de 5 MB rechazado en evidencias adicionales, registro de entrega y comprobante, conservando cantidad, «recibe», observaciones, importe y referencia.
+- **Pendiente de verificar en un despliegue aislado (no PRD):**
+  - Que 4 MB más los campos pasen por Vercel.
+  - Que una solicitud forzada de más de 4.5 MB reciba 413 y no deje datos.
+  - Que las **descargas** de archivos de más de 4.5 MB funcionen. Hoy las rutas devuelven el archivo completo en una respuesta no transmitida en flujo. Con el nuevo límite ningún archivo nuevo de Comercialización pasa de 4 MB, pero archivos anteriores de hasta 10 MB podrían no descargarse en Vercel.
+- **Si se requieren archivos mayores (propuesta, no implementada):** carga directa protegida a R2 con URL prefirmada de corta duración.
+  1. Una acción autenticada valida permisos, Empresa, tipo declarado y tamaño, y devuelve una URL `PUT` firmada para una clave temporal (`comercializacion/<empresa>/pendientes/<id>`) que caduca en unos minutos.
+  2. El navegador sube directo a R2.
+  3. La acción de registro recibe solo la clave, verifica en servidor que exista, su tamaño y su tipo real (leyendo los primeros bytes), y la mueve o referencia dentro de la misma operación idempotente.
+  4. Las claves temporales no confirmadas se eliminan periódicamente.
+  5. Para descargas: redirigir a una URL GET prefirmada (ya existe `obtenerUrlTemporal`) o transmitir en flujo.
+  - Requiere configurar CORS en el bucket y probar en un entorno aislado. Afecta también a otros módulos si se adopta de forma general.
+
+Verificación del cierre de B6:
+- **Pruebas:**
+  - 8 pruebas de integración nuevas: evidencias adicionales (efectos nulos, permisos, anulada, reintentos y simultáneas, anulación simultánea en 4 rondas, archivos y máximo acumulado, reglas de la base) y límites de carga en las cuatro cargas.
+  - 4 unitarias nuevas de límites de carga.
+  - 3 unitarias nuevas del proxy.
+  - Se ajustaron 3 pruebas existentes (B3 y B6A) a los nuevos límites y al nuevo mensaje de la base.
+- **Recorrido en navegador local (17 de noviembre de 2026, OV-000011 [PRUEBA]):**
+  - Administración agrega foto y remisión a la Entrega 2, y el vendedor agrega una foto. Las cantidades (60 y 1.25 pendientes) y el bloque de cobros no cambian.
+  - Descargas: evidencia anterior 200 (JPG) y nueva 200 (PDF).
+  - La Entrega 1 anulada no ofrece agregar.
+  - El vendedor recibe 404 en una OV de administración y en su evidencia.
+  - Cargas excesivas rechazadas conservando la captura.
+  - Sin errores en consola.
+  - No hay otra Empresa con usuarios en la base local, así que el bloqueo entre empresas se verificó solo con pruebas de integración.
+
+### Defecto funcional de sesión (fuera de Comercialización) — corregido
 
 **Ciclo de redirecciones con una cookie de sesión inválida.**
 - **Qué pasa:** si el navegador conserva la cookie `conkuali_session`, pero la sesión ya no existe en la base (sesión borrada, usuario o empresa desactivados, o cookie de otro entorno en el mismo host), `/dashboard` redirige a `/login` y `proxy.ts` (que solo revisa que exista la cookie) devuelve a `/dashboard`, en un ciclo sin fin.
 - **Dónde se vio:** en la prueba local, por compartir el host `localhost` con el entorno de `develop`.
 - **Alcance:** es código anterior a Comercialización y también puede ocurrir en producción.
-- **Clasificación:** defecto funcional, no ajuste visual. No se corrigió en B4; requiere una corrección acotada de autenticación (por ejemplo, borrar la cookie al detectar una sesión inválida) antes de publicar.
+- **Clasificación:** defecto funcional, no ajuste visual.
+- **Estado:** corregido en el cierre de B6, en un commit separado de autenticación (ver «Cierre de B6», punto 2). Pendiente: comprobarlo en un despliegue aislado antes de publicar.
 
 ### Pendientes para B6 y posteriores
 
@@ -699,11 +802,68 @@ Decisiones provisionales de B6B (confirmar):
 - Confirmar P5 y las decisiones provisionales de B5 (reprogramación con pagos, saldo a favor, pagos agrupados, ajustes).
 - Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
 - Confirmar el umbral de avisos «Próximos» (P6, 3 días provisional) y si el vendedor debe recibir algún aviso.
-- Agregar evidencia a una entrega existente sin anularla.
-- Validaciones y mensajes de error de cargas cercanas al límite de tamaño.
+- Verificar en un despliegue aislado (no PRD) las cargas cerca del límite, el 413 de Vercel, las descargas de archivos anteriores de más de 4.5 MB y la corrección de sesión.
+- Decidir si se necesitan archivos de más de 4 MB (carga directa protegida a R2; propuesta en «Cargas de archivos»).
 - Recepciones por compra (COC) y su bloqueo de la anulación simple de una compra; el control de recepciones de B4 no está terminado.
-- Decidir si se amplía el límite de 10 MB por solicitud del proxy (afecta evidencias de entrega, comprobantes de B5 y cargas de otros módulos).
+- Otros módulos siguen aceptando hasta 10 MB por archivo (y 55 MB por solicitud en la carga de documentos de Contabilidad), por encima de lo que admite Vercel. Se dejó sin cambiar; requiere decisión aparte.
 - P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes.
 - Estados Rechazada/Cancelada de una cotización: no definidos.
-- Corrección del ciclo de redirecciones por cookie inválida (ver arriba).
 - Ajustes visuales y navegación móvil.
+- Resultado interno, gastos adicionales, cancelación de OV, rechazo de cotizaciones, anulación de compras surtidas y reprogramación con movimientos: ver el inventario de §21.
+
+## 21. Inventario del alcance pendiente (17 de noviembre de 2026)
+
+Revisión del documento contra la implementación. Las recomendaciones son **propuestas**; ninguna fila convierte una propuesta en acuerdo confirmado.
+
+| Función o decisión | Estado real | Qué falta | Tipo | Recomendación para la primera salida y consecuencia |
+|---|---|---|---|---|
+| Recepciones por compra (COC) y su relación con entregas directas a obra | Pendiente | Registrar qué compra surtió qué cantidad, o acordar que la entrega directa al cliente (B6A) basta como registro físico. B6A no vincula entregas con compras | Decisión del usuario | Salir sin recepción por COC y usar solo la entrega al cliente. Consecuencia: no se sabe qué proveedor surtió cada entrega ni se detectan compras surtidas a medias |
+| Anulación de compras que ya surtieron material | Parcial | Hoy solo se bloquea si la compra tuvo pagos (B5). Sin recepciones, una compra surtida pero sin pagos se puede anular y su cuenta por pagar desaparece | Decisión del usuario | Mantenerla como está y documentar que administración verifica antes de anular. Consecuencia: depende de una revisión manual |
+| Resultado de la operación (venta − costos) | Pendiente | El bloque «Resultado interno» (§5.3, §12) no existe. Falta acordar base (con o sin IVA), costo confirmado contra costo de referencia y cómo mostrar un resultado incompleto | Decisión del usuario | Para salir pronto, un resultado estimado simple: venta sin IVA − compras confirmadas sin IVA, marcado «incompleto» si una partida no tiene compra. O posponerlo. Consecuencia: sin él, el margen se calcula fuera del sistema |
+| Gastos adicionales de la operación (fletes, maniobras, comisiones) | Pendiente | No hay registro de gastos de la OV fuera de compras de material | Decisión del usuario | Posponer, o capturarlos como compra a un proveedor. Consecuencia: el resultado no los incluiría |
+| Reparto entre socios (referencia 50/50, P8) | Pendiente | Socios, porcentajes, importes previsto, autorizado y pagado | Decisión del usuario | Fuera de la primera salida. Consecuencia: el reparto se lleva fuera del sistema |
+| Amortización o abono a deuda y reservas (§12) | Pendiente; sigue en el documento como opcional | Movimientos y saldos separados de deuda, reserva y reparto; base del descuento | Decisión del usuario | Posponer, manteniendo la separación conceptual. Consecuencia: ninguna sobre cobros y pagos actuales |
+| Rechazo o cancelación de cotizaciones | Pendiente | Estados Rechazada y Cancelada (§4), con motivo; hoy una cotización que no prospera queda Borrador o Emitida, y vencida por fecha | Decisión del usuario | Agregar «Cancelada con motivo» para borradores y emitidas si se necesita limpiar el listado. Consecuencia sin ella: el listado acumula cotizaciones muertas |
+| Cancelación de una OV | Pendiente | No existe. Hay que definir qué pasa con su cuenta, sus compras, entregas, cobros y pagos | Decisión del usuario | No incluirla en la primera salida; una OV registrada por error se corrige con soporte técnico. Consecuencia: riesgo operativo bajo pero real |
+| Importación del catálogo (P7) | Parcial: alta manual (B1) | Archivo del negocio (columnas, responsable, volumen), validación de duplicados y resumen de errores | Decisión del usuario (archivo) | Si el catálogo es de decenas de productos, alta manual. Consecuencia: tiempo de captura inicial |
+| Reprogramación de cuotas con movimientos | Pendiente | B5 solo reemplaza el calendario si la cuenta nunca tuvo movimientos. §8 pide cambiar vencimientos con permiso, motivo e historial | Decisión del usuario (regla) y después corrección técnica | Recomiendo una versión mínima antes de salir: cambiar la **fecha** de cuotas con saldo, sin mover aplicaciones, con motivo y conservando la fecha original. Consecuencia sin ella: una prórroga pactada deja la cuota como vencida en «Por atender» |
+| Pantalla de zona horaria de la Empresa | Pendiente | Hoy se usa America/Monterrey si no está definida | Corrección técnica | Salir con el valor predeterminado si todas las empresas están en esa zona |
+| Navegación móvil y ajustes visuales | Pendiente | Revisión en celular; §14.15 pide adjuntos desde móvil | Corrección técnica y de diseño | Antes de salir, al menos registrar entregas y agregar evidencia desde un celular real. Consecuencia sin ella: uso en obra no comprobado |
+| Archivos de más de 4 MB | Pendiente | Carga directa protegida a R2 (propuesta en §20, «Cargas de archivos») | Decisión del usuario | Salir con 4 MB por carga si las fotos y remisiones habituales caben. Consecuencia: fotos grandes se reducen antes de subirlas |
+| Verificación en despliegue aislado | Pendiente | Cargas cerca del límite, 413 de Vercel, descargas grandes y corrección de sesión | Corrección técnica | Hacerla antes de publicar, nunca en PRD |
+| P5 — cobros y pagos agrupados, anticipos y ajustes | Provisional (B5) | Confirmación | Decisión del usuario | Ver regla abajo. Consecuencia: una transferencia que paga varias OV se captura como varios movimientos |
+| P6 — avisos | Canal confirmado; umbral provisional (B6B) | Confirmar umbral y si el vendedor recibe avisos | Decisión del usuario | Mantener 3 días y solo administración |
+| P11 — vendedores elegibles y mínimos del borrador | Propuesta implementada (B2) | Confirmación | Decisión del usuario | Mantener |
+| P12 — cotizaciones vencidas | Provisional (B3) | Confirmación | Decisión del usuario | Mantener. Consecuencia: aceptar una vencida exige duplicar y emitir de nuevo |
+| P13 — reglas de duplicado y emisión | Propuesta implementada (B3) | Confirmación | Decisión del usuario | Mantener |
+| P14 — límites de compras | Provisional (B4) | Confirmación (excedentes y mermas, conversiones de unidad, costo cero) | Decisión del usuario | Mantener. Consecuencia: mermas o bonificaciones no se pueden capturar |
+| WhatsApp, correo y notificaciones externas | Fuera de esta versión (§10) | — | Decisión del usuario | Fuera de la primera salida |
+
+Reglas completas de las decisiones pendientes (como están implementadas, sin confirmar salvo donde se indica):
+- **P5 (provisional):**
+  - Un cobro o pago se aplica a una sola OV o a una sola compra y se reparte entre las cuotas de esa cuenta: propuesta automática de la más antigua a la más reciente, ajustable por administración. La suma de aplicaciones es igual al importe.
+  - Se admite el anticipo dentro del documento: una cuota de anticipo, dinero registrado antes de su vencimiento y aplicación a cuotas futuras de la misma cuenta.
+  - No se admiten saldo a favor, sobrepago, movimientos repartidos entre varios documentos, anticipos sin documento, notas de crédito ni ajustes.
+  - Una corrección se hace anulando el movimiento con motivo.
+- **P6:**
+  - Confirmado: avisos solo dentro de Arqento, sin correo, WhatsApp ni notificaciones externas.
+  - Provisional: «Próximos» cubre de mañana a 3 días naturales; los avisos se calculan al consultar, por cuota con saldo; solo Administrador y Director los ven; el vendedor no recibe avisos financieros.
+- **P11 (propuesta implementada):**
+  - Vendedores elegibles: Supervisor activo con la función Vendedor, o Administrador o Director activo.
+  - El vendedor siempre queda asignado a sí mismo; administración asigna a un elegible de su Empresa.
+  - Un borrador recibe folio, vendedor y fecha automáticos y exige al menos uno de: cliente, descripción o un material.
+- **P12 (provisional):** no se registra la aceptación de una cotización emitida cuya vigencia ya pasó; se duplica y se emite una nueva.
+- **P13 (propuesta implementada):**
+  - Emitir exige vigencia de hoy en adelante y que ningún material esté desactivado.
+  - Duplicar:
+    - Omite productos desactivados y avisa cuáles; toma los datos actuales del catálogo.
+    - Administración conserva el precio aplicado del original; el vendedor recibe el precio vigente de catálogo.
+    - El vendedor queda él mismo. Administración conserva al vendedor original si sigue siendo elegible y, si no, queda ella.
+    - Fecha = hoy; la vigencia se conserva solo si sigue vigente.
+- **P14 (provisional):**
+  - Una compra no supera lo vendido (sin excedentes ni mermas) y se captura en la unidad de la partida de venta, sin conversiones.
+  - Cada partida de venta aparece a lo más una vez por compra, y el costo unitario debe ser mayor que 0.
+  - No hay PDF de compra: se adjunta el documento del proveedor.
+  - Una compra confirmada no se corrige: se anula y se captura de nuevo.
+
+Ningún pendiente se eliminó del alcance en esta revisión. Se resolvieron y se retiraron de la lista de pendientes: agregar evidencia a una entrega existente, los límites de carga de Comercialización y el ciclo de redirecciones con cookie inválida.
