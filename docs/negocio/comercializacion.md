@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.8 · 17 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos) y B6A (entregas parciales al cliente con evidencias) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
+Versión: 0.9 · 17 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) y B6B (recordatorios internos de cobros y pagos) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -185,6 +185,8 @@ Propuesta de alcance inicial:
 - Administrador recibe información de pagos a proveedores. El vendedor solo avisos autorizados de su ámbito.
 - Avisos calculados al consultar la pantalla funcionan sin scheduler, pero no llegan fuera de Arqento.
 
+B6B implementa estos avisos dentro del listado (bloque «Por atender», solo administración). El vendedor no recibe avisos financieros en esta versión. Ver §20 B6B.
+
 WhatsApp queda fuera de esta entrega y como posible fase siguiente, sin promesa de implementación la próxima semana. No construir ahora infraestructura de envíos externos ni bloquear el módulo por esa integración. Una futura fase requerirá destinatarios autorizados, proveedor de mensajería, costos, programación y deduplicación por cuota. Los avisos internos se actualizan al abonar, liquidar, revertir o reprogramar una cuota. No crear automatizaciones personales de ChatGPT para sustituirlos.
 
 ## 11. Entregas y documentos
@@ -249,7 +251,7 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P3 — resuelto (B3) | Alcance del vendedor, aceptación y cobros | Vendedor solo ve sus cotizaciones. Registran aceptación: Administrador, Director y el vendedor asignado (solo las suyas), con evidencia obligatoria. Solo Administrador y Director ven y registran cobros (a implementar en el bloque financiero). El vendedor ve precios y totales de venta, nunca cobranza, costos ni utilidad |
 | P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
 | P5 — provisional (B5), confirmar | Una transferencia para varias órdenes, anticipos y ajustes | Implementado: un movimiento = una obligación, distribuido entre sus cuotas. Sí se admite el anticipo dentro de una OV o compra (primera cuota de anticipo, dinero antes del vencimiento, aplicación a cuotas futuras de la misma cuenta). Excluidos: anticipos sin documento, saldo a favor, sobrepago, movimientos repartidos entre varios documentos y ajustes. Ver §20 B5 |
-| P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
+| P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Implementado con umbral **provisional** de 3 días naturales (B6B, valor centralizado `DIAS_AVISO_PROXIMO`); falta confirmar el umbral. Ver §20 B6B |
 | P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
 | P12 — provisional (B3), confirmar | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
@@ -623,7 +625,65 @@ Limitaciones y decisiones provisionales de B6A (confirmar):
 - Las evidencias solo se adjuntan al registrar la entrega; no se agregan después (para completar, se anula y se registra de nuevo).
 - No se valida que la fecha de entrega sea posterior a la aceptación de la OV (no hay regla acordada).
 - Sin devoluciones físicas ni cambios de material.
-- Sin indicador «Entregas pendientes» en la cabecera del listado (§5.1); el estado se ve por fila.
+- Indicador «Entregas pendientes» en la cabecera del listado: agregado en B6B.
+
+### B6B — Recordatorios internos de cobros y pagos (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. **Sin migración:** los avisos se calculan al consultar y no tienen tabla, cron ni envíos.
+
+Qué hace:
+- **Fuente única:** los avisos salen de las cuentas, cuotas y aplicaciones reales de B5 (el mismo cálculo de saldos que la pantalla de cobros y los indicadores). No hay otra fuente de saldos ni avisos guardados, así que recargar o entrar con varios usuarios no genera duplicados.
+- **Categorías** (por cuota con saldo positivo de una cuenta vigente, una sola categoría por cuota):
+  - Vencidos: vencimiento anterior a hoy.
+  - Vencen hoy: vencimiento igual a hoy.
+  - Próximos: de mañana a hoy + 3 días naturales, inclusive.
+  - Condiciones por definir: cuenta vigente con saldo y sin calendario. Una entrada por cuenta, sin fecha; no se clasifica como vencida.
+  - Las cuotas que vencen después del día 3 no generan aviso.
+- **Exclusiones:** cuentas anuladas (incluida la de una compra anulada) y cuotas liquidadas. Las cuotas sustituidas por un cambio de calendario no cuentan.
+- **Importe:** el saldo pendiente de la cuota (no su importe original ni el saldo de la cuenta). En «Condiciones por definir», el saldo de la cuenta.
+- **Fechas:** «hoy» en la zona horaria de la Empresa, con las mismas reglas de B5 (America/Monterrey si no está definida), comparando fechas de calendario sin conversiones UTC.
+- **Actualización:**
+  - Un abono baja el importe; liquidar la cuota quita su aviso; anular el movimiento lo vuelve a mostrar.
+  - Anular una compra sin pagos quita los avisos de su cuenta.
+  - Cambiar un calendario (permitido por B5 solo sin movimientos) reemplaza los avisos anteriores.
+  - Se recalcula al abrir la página, al regresar a ella (también con el botón Atrás o al volver a la pestaña) y después de cobros, pagos, cambios de condiciones, compras y entregas.
+  - Si la página sigue abierta al cambiar el día en la zona de la Empresa, vuelve a pedir la consulta al servidor, que es quien clasifica.
+- **Sin acciones de «resolver»:** el aviso no tiene «Marcar como pagado» ni «Descartar»; se resuelve registrando el cobro o pago real en el documento.
+- **Permisos:** solo Administrador y Director de la Empresa, con el módulo habilitado. El servidor no calcula nada para el vendedor, ni conteos, ni importes, ni clientes o proveedores, aunque abra la URL con parámetros. Los permisos y avisos de construcción no cambian.
+- **Interfaz** (listado de Comercialización, solo administración, sin sección nueva en el menú ni campana global):
+  - Bloque «Por atender» con cuatro pestañas: Vencidos, Vencen hoy, Próximos 3 días y Condiciones por definir.
+  - Cada pestaña muestra «Por cobrar» y «Por pagar» por separado, con número de cuotas (o de cuentas, en Condiciones por definir) e importe. Nunca se compensan.
+  - Cada fila: tipo (cobro o pago), cliente o proveedor, folio OV o COC, número de cuota, vencimiento, saldo pendiente y enlace «Ir a cobros» o «Ir a pagos» al bloque financiero del documento.
+  - Orden por fecha ascendente: vencidos desde el más antiguo, hoy y próximos desde el más cercano.
+  - 10 filas y «Ver más» (de 10 en 10, hasta 500). Conteos y totales corresponden a la categoría completa, no a las filas visibles.
+- **Indicador «Entregas pendientes»** (cabecera del listado, solo administración): número de OV aceptadas con al menos una partida pendiente de entregar, contadas una vez por OV, con las reglas de B6A. Excluye cotizaciones sin aceptar y OV completas; anular una entrega lo actualiza. No suma unidades distintas y está separado de los importes.
+- **Sin efectos:** consultar los avisos no escribe nada (ni saldos, ni bitácora, ni construcción).
+
+Verificación:
+- 7 pruebas unitarias y 10 de integración con fecha controlada (parámetro de la consulta; sin cambiar el reloj ni los datos). Cubren:
+  - Cuota vencida, de hoy, de mañana, a 3 días y a 4 días.
+  - Medianoche en la zona de la Empresa y zona configurada distinta.
+  - Abono parcial, liquidación y anulación del movimiento.
+  - Cuenta sin calendario, compra anulada y reprogramación.
+  - Varias cuotas de una cuenta, paginación con totales completos y parámetros inválidos.
+  - Separación entre por cobrar y por pagar.
+  - Aislamiento entre empresas, bloqueo del vendedor y del usuario sin módulo.
+  - Entregas pendientes: parcial, completa y anulación.
+  - Consultas repetidas y simultáneas sin cambios en saldos, bitácora ni construcción.
+- Recorrido en navegador local (17 de noviembre de 2026) con datos [PRUEBA] (OV-000012 a crédito: $4,000 vencida el 13 nov, $3,000 el 19 nov y $5,000 a 30 días):
+  - Con calendario, la cuota 1 aparece en Vencidos ($4,000), la cuota 2 en Próximos ($3,000) y la cuota 3 en ninguna categoría.
+  - «Ir a cobros» abre la OV en su bloque de cobros.
+  - Un abono de $1,500 y regreso con Atrás: el aviso muestra $2,500.
+  - Liquidar con $2,500 quita el aviso. Anular ese cobro lo devuelve con $2,500.
+  - «Ver más» con 11 cuentas sin condiciones (incluida la nueva OV-000013 a $12,000): 10 visibles, después 11, con los totales sin cambio.
+  - El vendedor no recibe el bloque, ni conteos, ni importes, tampoco forzando los parámetros en la URL.
+  - Sin errores en consola.
+
+Decisiones provisionales de B6B (confirmar):
+- Umbral de «Próximos»: 3 días naturales (P6; propuesta, no confirmada por el negocio). Se cambia en un solo lugar.
+- El vendedor no recibe avisos financieros. §10 menciona «avisos autorizados de su ámbito», pero no hay ninguno definido.
+- Los avisos solo se ven en el listado de Comercialización. No hay campana global, avisos en el Inicio, correo ni WhatsApp.
+- Orden dentro de «Condiciones por definir»: por folio (no tienen fecha).
 
 ### Defecto funcional pendiente antes de publicar (fuera de Comercialización)
 
@@ -638,11 +698,12 @@ Limitaciones y decisiones provisionales de B6A (confirmar):
 - Confirmar las decisiones provisionales P11, P12, P13 y P14.
 - Confirmar P5 y las decisiones provisionales de B5 (reprogramación con pagos, saldo a favor, pagos agrupados, ajustes).
 - Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
-- B6B: recordatorios internos (P6).
+- Confirmar el umbral de avisos «Próximos» (P6, 3 días provisional) y si el vendedor debe recibir algún aviso.
+- Agregar evidencia a una entrega existente sin anularla.
+- Validaciones y mensajes de error de cargas cercanas al límite de tamaño.
 - Recepciones por compra (COC) y su bloqueo de la anulación simple de una compra; el control de recepciones de B4 no está terminado.
 - Decidir si se amplía el límite de 10 MB por solicitud del proxy (afecta evidencias de entrega, comprobantes de B5 y cargas de otros módulos).
-- Indicador «Entregas pendientes» en el listado de administración (§5.1).
 - P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes.
 - Estados Rechazada/Cancelada de una cotización: no definidos.
 - Corrección del ciclo de redirecciones por cookie inválida (ver arriba).
-- Navegación móvil (B6).
+- Ajustes visuales y navegación móvil.

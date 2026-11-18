@@ -112,7 +112,7 @@ export async function compraTuvoPagosTx(tx: Tx, compraId: string): Promise<boole
 // Lectura y estado
 // ---------------------------------------------------------------------------
 
-const INCLUIR_CUENTA = {
+export const INCLUIR_CUENTA = {
   ordenVenta: { select: { id: true, folio: true, cotizacionId: true } },
   compra: { select: { id: true, folio: true, estatus: true } },
   cuotas: {
@@ -150,7 +150,7 @@ const INCLUIR_CUENTA = {
 
 type CuentaCargada = Prisma.CuentaComercialGetPayload<{ include: typeof INCLUIR_CUENTA }>;
 
-function estadoDe(c: CuentaCargada, hoy: string): EstadoCuenta {
+export function estadoDe(c: CuentaCargada, hoy: string): EstadoCuenta {
   const vigentes = c.cuotas.filter((q) => q.vigente);
   const cuotas = vigentes.map((q) => ({
     id: q.id,

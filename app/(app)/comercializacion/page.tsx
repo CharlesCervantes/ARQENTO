@@ -12,7 +12,9 @@ import { EstatusCotizacionBadge } from "@/components/comercializacion/cotizacion
 import { estadoCobroDeOrdenes, indicadoresCuentasEmpresa } from "@/lib/server/comercializacion/cuentas";
 import { ETIQUETA_LIQUIDACION, ETIQUETA_SITUACION } from "@/lib/comercializacion/cuentas";
 import { db } from "@/lib/server/db";
-import { estadoEntregaDeOrdenes } from "@/lib/server/comercializacion/entregas";
+import { contarOrdenesConEntregaPendiente, estadoEntregaDeOrdenes } from "@/lib/server/comercializacion/entregas";
+import { recordatoriosComerciales } from "@/lib/server/comercializacion/recordatorios";
+import { PorAtender } from "@/components/comercializacion/por-atender";
 import { ETIQUETA_ESTADO_ENTREGA } from "@/lib/comercializacion/entregas";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
@@ -62,6 +64,13 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
   const cobros: Awaited<ReturnType<typeof estadoCobroDeOrdenes>> = esAdmin ? await estadoCobroDeOrdenes(usuario, ordenIds.map((o) => o.id)) : new Map();
   const cobroPorCotizacion = new Map(ordenIds.map((o) => [o.cotizacionId, cobros.get(o.id)]));
   const indicadores = esAdmin ? await indicadoresCuentasEmpresa(usuario) : null;
+  // B6B — «Por atender» y «Entregas pendientes»: SOLO administración. Para el
+  // vendedor no se calcula nada (ni conteos ni importes), aunque mande los
+  // parámetros por URL.
+  const [avisos, entregasPendientes] = esAdmin
+    ? await Promise.all([recordatoriosComerciales(usuario, { categoria: texto(sp.avisos), visibles: texto(sp.ver) }), contarOrdenesConEntregaPendiente(usuario)])
+    : [null, null];
+  const parametros = Object.fromEntries(Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].length <= 100));
   const obrasFiltro = filtros.clienteId ? obras.filter((o) => o.clienteId === filtros.clienteId) : obras;
   const hayFiltros = Boolean(filtros.busqueda || filtros.clienteId || filtros.obraId || filtros.vendedorId || filtros.estatus);
 
@@ -85,7 +94,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
       </div>
 
       {indicadores && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {[
             ["Por cobrar", indicadores.porCobrar.saldo, false],
             ["Vencido por cobrar", indicadores.porCobrar.vencido, true],
@@ -97,8 +106,18 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
               <p className={`mt-1 text-lg font-semibold tabular-nums ${alerta && valor !== "0.00" ? "text-red-700" : ""}`}>{formatearImporte(String(valor))}</p>
             </Card>
           ))}
+          {/* B6B — indicador operativo, separado de los importes. */}
+          <Card className="p-4">
+            <p className="text-xs text-[var(--muted)]">Entregas pendientes</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums" data-indicador="entregas-pendientes">
+              {entregasPendientes}
+            </p>
+            <p className="text-xs text-[var(--muted)]">OV con cantidades por entregar</p>
+          </Card>
         </div>
       )}
+
+      {avisos && <PorAtender datos={avisos} parametros={parametros} />}
 
       {/* Filtros que se acomodan en varias líneas: con anchos mínimos, nunca se
           cortan los textos de los selectores (verificación en navegador, B3). */}

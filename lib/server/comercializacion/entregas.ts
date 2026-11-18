@@ -225,6 +225,31 @@ export async function estadoEntregaDeOrdenes(usuario: UsuarioSesion, ordenIds: s
   );
 }
 
+/**
+ * Indicador «Entregas pendientes» (B6B, solo administración): número de OV
+ * aceptadas de la Empresa con al menos una partida pendiente de entregar,
+ * una vez por OV, con las reglas de B6A (entregas anuladas no cuentan). No
+ * suma cantidades de unidades distintas.
+ */
+export async function contarOrdenesConEntregaPendiente(usuario: UsuarioSesion): Promise<number> {
+  const empresaId = requerirAdministracionComercial(usuario);
+  const ordenes = await db.ordenVenta.findMany({
+    where: { empresaId },
+    select: {
+      cotizacion: {
+        select: {
+          partidas: {
+            select: { cantidad: true, partidasEntrega: { where: { entrega: { estatus: "CONFIRMADA" } }, select: { cantidad: true } } },
+          },
+        },
+      },
+    },
+  });
+  return ordenes.filter(
+    (o) => estadoEntrega(o.cotizacion.partidas.map((p) => avancePartida(p.cantidad.toFixed(3), p.partidasEntrega.map((e) => e.cantidad.toFixed(3))))).estado !== "COMPLETA"
+  ).length;
+}
+
 // ---------------------------------------------------------------------------
 // Registrar
 // ---------------------------------------------------------------------------

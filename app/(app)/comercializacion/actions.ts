@@ -276,7 +276,8 @@ export async function confirmarCompraAction(entrada: { id: string; version: numb
   } catch (error) {
     return { error: mensajeError(error), conflicto: error instanceof ConflictoEdicionError };
   }
-  revalidatePath(`/comercializacion/compras/${entrada.id}`);
+  // B6B: la cuenta por pagar alimenta «Por atender» del listado.
+  revalidatePath("/comercializacion", "layout");
   return {};
 }
 
@@ -287,7 +288,8 @@ export async function anularCompraAction(entrada: { id: string; motivo: string }
   } catch (error) {
     return { error: mensajeError(error) };
   }
-  revalidatePath(`/comercializacion/compras/${entrada.id}`);
+  // B6B: la cuenta por pagar alimenta «Por atender» del listado.
+  revalidatePath("/comercializacion", "layout");
   return {};
 }
 

@@ -54,7 +54,7 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
   const sinCalendario = e.situacion === "SIN_CALENDARIO";
 
   return (
-    <Card className="space-y-4 p-5">
+    <Card id={esCobro ? "cobros" : "pagos"} className="scroll-mt-6 space-y-4 p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-[var(--foreground)]">{esCobro ? "Cobros del cliente" : "Pagos al proveedor"}</h2>
