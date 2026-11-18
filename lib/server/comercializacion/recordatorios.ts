@@ -4,7 +4,7 @@ import { db } from "@/lib/server/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { requerirAdministracionComercial } from "@/lib/server/comercializacion/acceso";
-import { INCLUIR_CUENTA, estadoDe } from "@/lib/server/comercializacion/cuentas";
+import { INCLUIR_CUENTA, estadoDe, folioGasto } from "@/lib/server/comercializacion/cuentas";
 import { hoyEnZona } from "@/lib/comercializacion/cuentas";
 import {
   CATEGORIAS_AVISO,
@@ -32,6 +32,9 @@ const INCLUIR_AVISOS = {
   ...INCLUIR_CUENTA,
   ordenVenta: { select: { id: true, folio: true, cotizacionId: true, cotizacion: { select: { cliente: { select: { nombre: true } } } } } },
   compra: { select: { id: true, folio: true, estatus: true, proveedorConfirmado: true, proveedor: { select: { nombre: true } } } },
+  gasto: {
+    select: { id: true, numero: true, concepto: true, estatus: true, beneficiarioNombre: true, ordenVenta: { select: { folio: true, cotizacionId: true } } },
+  },
 } as const satisfies Prisma.CuentaComercialInclude;
 
 export type RecordatoriosComerciales = {
@@ -58,21 +61,34 @@ export async function recordatoriosComerciales(
   // Solo cuentas vigentes; una compra anulada tiene su cuenta anulada (B5),
   // y además se exige compra confirmada por defensa.
   const cuentas = await db.cuentaComercial.findMany({
-    where: { empresaId, estatus: "VIGENTE", OR: [{ tipo: "POR_COBRAR" }, { tipo: "POR_PAGAR", compra: { estatus: "CONFIRMADA" } }] },
+    where: {
+      empresaId,
+      estatus: "VIGENTE",
+      OR: [{ tipo: "POR_COBRAR" }, { tipo: "POR_PAGAR", compra: { estatus: "CONFIRMADA" } }, { tipo: "POR_PAGAR", gasto: { estatus: "VIGENTE" } }],
+    },
     include: INCLUIR_AVISOS,
   });
 
   const entrada: CuentaParaAvisos[] = cuentas.map((c) => {
     const e = estadoDe(c, hoy);
     const esCobro = c.tipo === "POR_COBRAR";
+    // B7: el gasto adicional se identifica con su OV y su concepto, y enlaza
+    // a su bloque de pagos dentro del detalle de la OV.
+    const g = c.gasto;
     return {
       cuentaId: c.id,
       tipo: esCobro ? "COBRO" : "PAGO",
       contraparte: esCobro
         ? (c.ordenVenta?.cotizacion.cliente?.nombre ?? "Sin cliente")
-        : ((c.compra?.proveedorConfirmado as { nombre?: string } | null)?.nombre ?? c.compra?.proveedor?.nombre ?? "Sin proveedor"),
-      folio: esCobro ? (c.ordenVenta?.folio ?? "—") : (c.compra?.folio ?? "—"),
-      enlace: esCobro ? `/comercializacion/cotizaciones/${c.ordenVenta?.cotizacionId}#cobros` : `/comercializacion/compras/${c.compra?.id}#pagos`,
+        : g
+          ? g.beneficiarioNombre
+          : ((c.compra?.proveedorConfirmado as { nombre?: string } | null)?.nombre ?? c.compra?.proveedor?.nombre ?? "Sin proveedor"),
+      folio: esCobro ? (c.ordenVenta?.folio ?? "—") : g ? folioGasto(g) : (c.compra?.folio ?? "—"),
+      enlace: esCobro
+        ? `/comercializacion/cotizaciones/${c.ordenVenta?.cotizacionId}#cobros`
+        : g
+          ? `/comercializacion/cotizaciones/${g.ordenVenta.cotizacionId}#gasto-${g.id}`
+          : `/comercializacion/compras/${c.compra?.id}#pagos`,
       saldo: e.saldo,
       cuotas: e.cuotas.map((q) => ({ numero: q.numero, fechaVencimiento: q.fechaVencimiento, saldo: q.saldo })),
     };

@@ -48,6 +48,7 @@ function Etiqueta({ texto, estilo }: { texto: string; estilo: string }) {
 
 export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
   const esCobro = cuenta.tipo === "POR_COBRAR";
+  const esGasto = cuenta.origen === "GASTO";
   const e = cuenta.estado;
   const [editandoCondiciones, setEditandoCondiciones] = useState(false);
   const [registrando, setRegistrando] = useState(false);
@@ -55,12 +56,17 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
   const sinCalendario = e.situacion === "SIN_CALENDARIO";
 
   return (
-    <Card id={esCobro ? "cobros" : "pagos"} className="scroll-mt-6 space-y-4 p-5">
+    // El bloque de un gasto (B7) va dentro de su gasto, que ya lleva el ancla.
+    <Card id={esGasto ? undefined : esCobro ? "cobros" : "pagos"} className="scroll-mt-6 space-y-4 p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--foreground)]">{esCobro ? "Cobros del cliente" : "Pagos al proveedor"}</h2>
+          <h2 className="text-base font-semibold text-[var(--foreground)]">{esCobro ? "Cobros del cliente" : esGasto ? "Pagos del gasto" : "Pagos al proveedor"}</h2>
           <p className="text-xs text-[var(--muted)]">
-            Solo administración. {esCobro ? "Aceptar la OV no significa que esté cobrada." : "Confirmar la compra no significa que esté pagada."} El saldo
+            Solo administración. {esCobro
+              ? "Aceptar la OV no significa que esté cobrada."
+              : esGasto
+                ? "Guardar el gasto no significa que esté pagado; pagarlo no cambia el resultado estimado."
+                : "Confirmar la compra no significa que esté pagada."} El saldo
             solo baja con {esCobro ? "cobros" : "pagos"} registrados.
           </p>
         </div>
@@ -78,7 +84,7 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
 
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          [esCobro ? "Total de venta" : "Total de compra", e.total],
+          [esCobro ? "Total de venta" : esGasto ? "Total del gasto" : "Total de compra", e.total],
           [esCobro ? "Cobrado" : "Pagado", e.aplicado],
           ["Saldo", e.saldo],
           ["Vencido", e.vencido],
@@ -89,7 +95,7 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
           </div>
         ))}
       </dl>
-      {!activa && <p className="text-sm text-red-700">Cuenta anulada junto con la compra: {cuenta.motivoAnulacion}. No suma al saldo por pagar.</p>}
+      {!activa && <p className="text-sm text-red-700">Cuenta anulada junto con {esGasto ? "el gasto" : "la compra"}: {cuenta.motivoAnulacion}. No suma al saldo por pagar.</p>}
 
       {/* Condiciones y calendario */}
       <div className="space-y-2">

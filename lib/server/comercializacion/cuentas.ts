@@ -61,15 +61,17 @@ export async function hoyDeEmpresa(cliente: Cliente, empresaId: string, ahora: D
 
 export async function crearCuentaTx(
   tx: Tx,
-  datos: { empresaId: string; usuarioId: string; total: Prisma.Decimal | string } & ({ ordenVentaId: string } | { compraId: string })
+  datos: { empresaId: string; usuarioId: string; total: Prisma.Decimal | string } & ({ ordenVentaId: string } | { compraId: string } | { gastoId: string })
 ) {
+  // Un solo documento origen por cuenta: OV (por cobrar), compra o gasto (por pagar).
   const esCobro = "ordenVentaId" in datos;
   const cuenta = await tx.cuentaComercial.create({
     data: {
       empresaId: datos.empresaId,
       tipo: esCobro ? "POR_COBRAR" : "POR_PAGAR",
-      ordenVentaId: esCobro ? datos.ordenVentaId : null,
-      compraId: esCobro ? null : datos.compraId,
+      ordenVentaId: "ordenVentaId" in datos ? datos.ordenVentaId : null,
+      compraId: "compraId" in datos ? datos.compraId : null,
+      gastoId: "gastoId" in datos ? datos.gastoId : null,
       total: datos.total,
     },
     select: { id: true },
@@ -116,6 +118,7 @@ export async function compraTuvoPagosTx(tx: Tx, compraId: string): Promise<boole
 export const INCLUIR_CUENTA = {
   ordenVenta: { select: { id: true, folio: true, cotizacionId: true } },
   compra: { select: { id: true, folio: true, estatus: true } },
+  gasto: { select: { id: true, numero: true, concepto: true, estatus: true, ordenVenta: { select: { folio: true, cotizacionId: true } } } },
   cuotas: {
     orderBy: [{ fechaVencimiento: "asc" }, { numero: "asc" }],
     select: {
@@ -179,9 +182,12 @@ export type MovimientoDetalle = {
   aplicaciones: { cuotaNumero: number; fechaVencimiento: string; importe: string }[];
 };
 
+export type OrigenCuenta = "ORDEN" | "COMPRA" | "GASTO";
+
 export type DetalleCuenta = {
   id: string;
   tipo: "POR_COBRAR" | "POR_PAGAR";
+  origen: OrigenCuenta;
   documento: { id: string; folio: string };
   estatus: "VIGENTE" | "ANULADA";
   modalidad: "CONTADO" | "CREDITO" | null;
@@ -194,11 +200,21 @@ export type DetalleCuenta = {
   motivoAnulacion: string | null;
 };
 
+const origenDe = (c: { ordenVentaId: string | null; compraId: string | null }): OrigenCuenta => (c.ordenVentaId ? "ORDEN" : c.compraId ? "COMPRA" : "GASTO");
+
+/** «OV-000012 · Gasto 1 (Flete)» — identifica el gasto y su OV. */
+export const folioGasto = (g: { numero: number; concepto: string; ordenVenta: { folio: string } }) => `${g.ordenVenta.folio} · Gasto ${g.numero} (${g.concepto})`;
+
 function aDetalle(c: CuentaCargada, hoy: string): DetalleCuenta {
   return {
     id: c.id,
     tipo: c.tipo,
-    documento: c.ordenVenta ? { id: c.ordenVenta.id, folio: c.ordenVenta.folio } : { id: c.compra!.id, folio: c.compra!.folio },
+    origen: origenDe(c),
+    documento: c.ordenVenta
+      ? { id: c.ordenVenta.id, folio: c.ordenVenta.folio }
+      : c.compra
+        ? { id: c.compra.id, folio: c.compra.folio }
+        : { id: c.gasto!.id, folio: folioGasto(c.gasto!) },
     estatus: c.estatus,
     modalidad: c.modalidad,
     version: c.version,
@@ -261,8 +277,10 @@ const esquemaCondiciones = z.strictObject({
 
 async function bloquearCuenta(tx: Tx, empresaId: string, cuentaId: string) {
   if (typeof cuentaId !== "string" || !cuentaId) throw new RegistroNoEncontradoError("La cuenta");
-  const previa = await tx.cuentaComercial.findFirst({ where: { id: cuentaId, empresaId }, select: { compraId: true } });
+  const previa = await tx.cuentaComercial.findFirst({ where: { id: cuentaId, empresaId }, select: { compraId: true, gastoId: true } });
   if (!previa) throw new RegistroNoEncontradoError("La cuenta");
+  // B7: gasto → cuenta, el mismo orden que usa la anulación del gasto.
+  if (previa.gastoId) await tx.$queryRaw`SELECT id FROM gastos_comerciales WHERE id = ${previa.gastoId} FOR UPDATE`;
   // Orden de bloqueo: compra → cuenta (igual que la anulación de la compra,
   // que bloquea OV → compra → cuenta). Así un pago y una anulación
   // simultáneos se serializan sin interbloqueos.
@@ -393,6 +411,7 @@ export async function registrarMovimientoCuenta(
       const c = await bloquearCuenta(tx, empresaId, cuentaId);
       if (c.estatus !== "VIGENTE") throw new ValidacionError("La cuenta está anulada.");
       if (c.compra && c.compra.estatus !== "CONFIRMADA") throw new ValidacionError("Solo se paga una compra confirmada.");
+      if (c.gasto && c.gasto.estatus !== "VIGENTE") throw new ValidacionError("El gasto está anulado.");
       const estado = estadoDe(c, await hoyDeEmpresa(tx, empresaId));
       if (estado.cuotas.length === 0) throw new ValidacionError("Define las condiciones de pago (contado o crédito) antes de registrar el primer movimiento.");
       if (aCentavos(importe) > aCentavos(estado.saldo)) {
@@ -454,7 +473,7 @@ export async function registrarMovimientoCuenta(
         accion: "CREAR",
         valorNuevo: {
           tipo: c.tipo === "POR_COBRAR" ? "cobro" : "pago",
-          documento: c.ordenVenta?.folio ?? c.compra?.folio,
+          documento: c.ordenVenta?.folio ?? c.compra?.folio ?? (c.gasto ? folioGasto(c.gasto) : undefined),
           importe,
           fecha,
           metodo: d.metodo,
@@ -536,20 +555,29 @@ function sumarEstados(estados: EstadoCuenta[]): ResumenSaldos {
 }
 
 /** Por cobrar (cuenta de la OV) y por pagar (compras confirmadas vigentes de la OV). */
-export async function resumenFinancieroOrden(usuario: UsuarioSesion, ordenVentaId: string): Promise<{ porCobrar: ResumenSaldos; porPagar: ResumenSaldos; comprasConCuenta: number }> {
+export async function resumenFinancieroOrden(
+  usuario: UsuarioSesion,
+  ordenVentaId: string
+): Promise<{ porCobrar: ResumenSaldos; porPagar: ResumenSaldos; comprasConCuenta: number; gastosConCuenta: number }> {
   const empresaId = requerirAdministracionComercial(usuario);
   const hoy = await hoyDeEmpresa(db, empresaId);
   const [cobro, pagos] = await Promise.all([
     db.cuentaComercial.findMany({ where: { empresaId, ordenVentaId, estatus: "VIGENTE" }, include: INCLUIR_CUENTA }),
     db.cuentaComercial.findMany({
-      where: { empresaId, estatus: "VIGENTE", tipo: "POR_PAGAR", compra: { ordenVentaId, estatus: "CONFIRMADA" } },
+      where: {
+        empresaId,
+        estatus: "VIGENTE",
+        tipo: "POR_PAGAR",
+        OR: [{ compra: { ordenVentaId, estatus: "CONFIRMADA" } }, { gasto: { ordenVentaId, estatus: "VIGENTE" } }],
+      },
       include: INCLUIR_CUENTA,
     }),
   ]);
   return {
     porCobrar: sumarEstados(cobro.map((c) => estadoDe(c, hoy))),
     porPagar: sumarEstados(pagos.map((c) => estadoDe(c, hoy))),
-    comprasConCuenta: pagos.length,
+    comprasConCuenta: pagos.filter((c) => c.compraId).length,
+    gastosConCuenta: pagos.filter((c) => c.gastoId).length,
   };
 }
 
@@ -579,4 +607,29 @@ export async function estadoCobroDeOrdenes(
       return [c.ordenVentaId!, { liquidacion: e.liquidacion, situacion: e.situacion, saldo: e.saldo, vencido: e.vencido }];
     })
   );
+}
+
+/** Cuentas por pagar de los gastos de una OV, por gastoId (solo administración). */
+export async function detallesCuentasDeGastos(usuario: UsuarioSesion, ordenVentaId: string): Promise<Map<string, DetalleCuenta>> {
+  const empresaId = requerirAdministracionComercial(usuario);
+  const hoy = await hoyDeEmpresa(db, empresaId);
+  const cuentas = await db.cuentaComercial.findMany({ where: { empresaId, gasto: { ordenVentaId, empresaId } }, include: INCLUIR_CUENTA });
+  return new Map(cuentas.map((c) => [c.gastoId!, aDetalle(c, hoy)]));
+}
+
+/** Para B7: anula la cuenta por pagar de un gasto que se anula — solo si nunca tuvo pagos. Requiere el gasto y la cuenta ya bloqueados. */
+export async function anularCuentaDeGastoTx(tx: Tx, empresaId: string, gastoId: string, usuarioId: string, motivo: string) {
+  const c = await tx.cuentaComercial.findFirst({ where: { gastoId, empresaId }, select: { id: true, estatus: true, tuvoMovimientos: true } });
+  if (!c || c.estatus === "ANULADA") return;
+  if (c.tuvoMovimientos) throw new ValidacionError("El gasto tiene historial de pagos (aunque estén anulados); no se puede anular con la acción simple.");
+  await tx.cuentaComercial.update({ where: { id: c.id }, data: { estatus: "ANULADA", anuladaEn: new Date(), anuladaPorId: usuarioId, motivoAnulacion: motivo, version: { increment: 1 } } });
+  await registrarAuditoriaTx(tx, {
+    empresaId,
+    usuarioId,
+    entidad: ENTIDAD_CUENTA,
+    entidadId: c.id,
+    accion: "CAMBIAR_ESTATUS",
+    valorAnterior: { estatus: "VIGENTE" },
+    valorNuevo: { estatus: "ANULADA", motivo, origen: "anulación del gasto" },
+  });
 }

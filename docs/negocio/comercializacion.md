@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.10 · 17 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) y el cierre de B6 (evidencias adicionales y límites de carga) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
+Versión: 0.11 · 17 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) y B7 (resultado estimado, gastos adicionales y simulación 50/50) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -29,6 +29,9 @@ Convenciones:
 10. Las notificaciones iniciales se muestran exclusivamente dentro de Arqento. WhatsApp se evaluará en una fase posterior, posiblemente la semana siguiente, sin fecha comprometida.
 11. Mantener pagos parciales, evidencias y entregas parciales, sin volver a capturar los mismos datos.
 12. Contemplar resultado interno y reparto entre socios. El caso de referencia usa 50/50; abonos a deuda y reservas no deben confundirse.
+13. (17 nov 2026) Primera versión: resultado estimado por OV, gastos adicionales por OV y **simulación** de reparto 50/50. Ver §20 B7.
+14. (17 nov 2026) Se mantienen para la primera versión las reglas de P5, P6 y P11–P14 tal como están descritas en §21.
+15. (17 nov 2026) Se posponen los retiros reales de socios, el reparto autorizado o pagado, las deudas y las reservas.
 
 ## 3. Integración con Arqento y límites
 
@@ -166,7 +169,7 @@ Reglas propuestas para hacerlo sencillo:
 - Saldo cliente = total vigente de OC menos cobros válidos aplicados y ajustes autorizados correspondientes.
 - Saldo proveedor = total vigente de compra menos pagos válidos aplicados y ajustes autorizados correspondientes.
 - Registrar monto, fecha efectiva, método, referencia, comprobante, autor y obligación vinculada.
-- Primera versión (B5, provisional): cada movimiento se aplica a una sola obligación (una OV o una compra) y se distribuye entre sus cuotas. Una transferencia que cubra varias obligaciones se captura como varios movimientos; confirmar P5 antes de ampliar.
+- Primera versión (B5; regla P5 confirmada para la primera versión el 17 nov 2026): cada movimiento se aplica a una sola obligación (una OV o una compra) y se distribuye entre sus cuotas. Una transferencia que cubra varias obligaciones se captura como varios movimientos.
 - Evitar doble registro por reintento y validar abonos concurrentes. No permitir sobrepago accidental; anticipos excedentes requieren una regla explícita, no saldo negativo silencioso.
 - Anular con motivo y conservar registro; recalcular saldo y alertas. No borrar pagos históricos.
 - Pagos a socios y abonos a deuda son conceptos distintos de pagar material al proveedor.
@@ -250,16 +253,16 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P2 — resuelto | Edición de precios | Solo Administrador; vendedor no modifica precios |
 | P3 — resuelto (B3) | Alcance del vendedor, aceptación y cobros | Vendedor solo ve sus cotizaciones. Registran aceptación: Administrador, Director y el vendedor asignado (solo las suyas), con evidencia obligatoria. Solo Administrador y Director ven y registran cobros (a implementar en el bloque financiero). El vendedor ve precios y totales de venta, nunca cobranza, costos ni utilidad |
 | P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
-| P5 — provisional (B5), confirmar | Una transferencia para varias órdenes, anticipos y ajustes | Implementado: un movimiento = una obligación, distribuido entre sus cuotas. Sí se admite el anticipo dentro de una OV o compra (primera cuota de anticipo, dinero antes del vencimiento, aplicación a cuotas futuras de la misma cuenta). Excluidos: anticipos sin documento, saldo a favor, sobrepago, movimientos repartidos entre varios documentos y ajustes. Ver §20 B5 |
-| P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Implementado con umbral **provisional** de 3 días naturales (B6B, valor centralizado `DIAS_AVISO_PROXIMO`); falta confirmar el umbral. Ver §20 B6B |
+| P5 — confirmado para la primera versión (17 nov 2026) | Una transferencia para varias órdenes, anticipos y ajustes | Implementado: un movimiento = una obligación, distribuido entre sus cuotas. Sí se admite el anticipo dentro de una OV o compra (primera cuota de anticipo, dinero antes del vencimiento, aplicación a cuotas futuras de la misma cuenta). Excluidos: anticipos sin documento, saldo a favor, sobrepago, movimientos repartidos entre varios documentos y ajustes. Ver §20 B5 |
+| P6 — confirmado para la primera versión (17 nov 2026) | Canal interno; WhatsApp posterior | Avisos solo dentro de Arqento, umbral de 3 días naturales (`DIAS_AVISO_PROXIMO`) y solo para administración; el vendedor no recibe avisos financieros. Ver §20 B6B |
 | P7 — parcial | Origen y carga inicial de catálogo | Alta manual implementada (B1). Importación masiva pendiente del archivo que entregará el negocio (columnas, responsable, volumen) |
 | P9 — resuelto (B1) | Facultades administrativas y función Vendedor | Administrador y Director administran; Vendedor = Supervisor + marca `vendedorComercial` (falsa por defecto), asignada por Administrador/Director de su Empresa. Ver §20 |
-| P12 — provisional (B3), confirmar | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
-| P13 — propuesta implementada (B3), confirmar | Reglas de duplicado y de emisión | Ver «Decisiones provisionales de B3» en §20 |
-| P14 — provisional (B4), confirmar | Límites de compras | Sin excedentes sobre lo vendido, sin conversión de unidades, costo > 0, sin PDF de compra; corrección por anulación. Ver §20 B4 |
-| P11 — propuesta implementada (B2), confirmar | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
+| P12 — confirmado para la primera versión (17 nov 2026) | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
+| P13 — confirmado para la primera versión (17 nov 2026) | Reglas de duplicado y de emisión | Ver «Decisiones de B3» en §20 |
+| P14 — confirmado para la primera versión (17 nov 2026) | Límites de compras | Sin excedentes sobre lo vendido, sin conversión de unidades, costo > 0, sin PDF de compra; corrección por anulación. Ver §20 B4 |
+| P11 — confirmado para la primera versión (17 nov 2026) | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
 | P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
-| P8 | Reparto y deuda en primera entrega | Resultado estimado; automatización avanzada después si no es necesaria |
+| P8 — resuelto solo para la simulación (17 nov 2026) | Reparto y deuda en primera entrega | Implementados el resultado estimado por OV y la simulación 50/50 (B7). Pendientes: retiros reales, reparto autorizado o pagado, deudas y reservas |
 
 Estas decisiones no detienen la revisión del repositorio ni la preparación de partes independientes. No publicar reglas financieras o permisos ambiguos como definitivos.
 
@@ -411,7 +414,7 @@ Reglas implementadas:
   - Detalle: un borrador se edita; una emitida o aceptada se muestra de solo lectura con «Ver PDF», «Registrar aceptación» (si aplica) y «Duplicar». Si está aceptada, se ven la OV, la fecha, la OC del cliente, la evidencia y quién la registró.
   - Sin secciones nuevas en el menú ni cifras de cobranza o entregas.
 
-Decisiones provisionales de B3 (no confirmadas por el negocio; P12 y P13):
+Decisiones de B3 (P12 y P13; confirmada por el usuario para la primera versión el 17 nov 2026):
 - **Cotización vencida:** como este documento no define cómo aceptar una cotización emitida vencida, esa aceptación se bloquea; se duplica y se emite una nueva.
 - **Emisión:** se exige vigencia de hoy en adelante y que ningún material esté desactivado.
 - **Duplicado:**
@@ -494,7 +497,7 @@ Reglas implementadas:
   - Página de la compra (`/comercializacion/compras/[id]`, sin entrada en el menú) con formulario de borrador, confirmación con aviso, anulación con motivo y documento del proveedor.
   - No se muestran pagos ni saldos por pagar.
 
-Limitaciones de B4 (decisiones provisionales, P14):
+Limitaciones de B4 (P14; confirmada por el usuario para la primera versión el 17 nov 2026):
 - No se permiten compras por encima de lo vendido (sin excedentes ni mermas).
 - Se compra en la unidad de la partida de venta (sin conversiones de unidades).
 - Una partida de venta aparece a lo más una vez por compra.
@@ -555,7 +558,7 @@ Verificación:
   - Compra a contado con pago parcial y anulación del pago: la compra sigue sin poder anularse.
   - El vendedor no ve nada de cobranza.
 
-Decisiones provisionales de B5 (confirmar):
+Decisiones de B5 (P5 confirmada por el usuario para la primera versión el 17 nov 2026; las demás de esta lista siguen provisionales):
 - P5: un movimiento se aplica a una sola OV o compra.
   - **Sí incluido — anticipo dentro del documento:** el calendario puede empezar con una cuota de anticipo; el dinero puede registrarse antes de su vencimiento y aplicarse a cuotas futuras de la misma cuenta (propuesta automática o distribución explícita). Verificado con pruebas de integración para cobro y pago (anticipo $3,000 + $9,000).
   - **Excluido:** anticipos sin documento asociado, saldo a favor, sobrepago, movimientos repartidos entre varios documentos, notas de crédito y ajustes.
@@ -679,7 +682,7 @@ Verificación:
   - El vendedor no recibe el bloque, ni conteos, ni importes, tampoco forzando los parámetros en la URL.
   - Sin errores en consola.
 
-Decisiones provisionales de B6B (confirmar):
+Decisiones de B6B (P6 confirmada por el usuario para la primera versión el 17 nov 2026: umbral de 3 días, avisos solo para administración y solo en el listado):
 - Umbral de «Próximos»: 3 días naturales (P6; propuesta, no confirmada por el negocio). Se cambia en un solo lugar.
 - El vendedor no recibe avisos financieros. §10 menciona «avisos autorizados de su ámbito», pero no hay ninguno definido.
 - Los avisos solo se ven en el listado de Comercialización. No hay campana global, avisos en el Inicio, correo ni WhatsApp.
@@ -787,6 +790,97 @@ Verificación del cierre de B6:
   - Sin errores en consola.
   - No hay otra Empresa con usuarios en la base local, así que el bloqueo entre empresas se verificó solo con pruebas de integración.
 
+### B7 — Resultado estimado, gastos adicionales y simulación 50/50 (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. Migración `20261123090000_comercializacion_b7_gastos` (aditiva: tabla de gastos y columna opcional en cuentas). Se aplicó solo en la base de desarrollo independiente del worktree (local, puerto 54330) y en su base de pruebas dedicada (local, puerto 54331); **no** en la base compartida con `develop`, Neon ni PRD.
+
+Confirmaciones del usuario (17 nov 2026) que aplica este bloque: resultado por OV, gastos adicionales y simulación 50/50; se mantienen P5, P6 y P11–P14; se posponen retiros reales, reparto autorizado o pagado, deudas y reservas. P8 queda resuelto **solo** para la simulación.
+
+**Resultado estimado por OV** (bloque «Resultado estimado» del detalle, solo administración):
+- **Fórmula:** venta sin IVA (copia histórica de la OV) − compras **confirmadas** vigentes sin IVA (B4; excluye borradores y anuladas) − gastos adicionales **vigentes** sin IVA.
+- Importes exactos en centavos con las reglas de `importes.ts`.
+- **No usa:**
+  - El costo de referencia del catálogo.
+  - Cobros ni pagos: pagar un costo no lo vuelve a restar, cobrar no vuelve a sumar la venta, y anular un pago solo cambia el saldo financiero.
+- **Costos incompletos:**
+  - Se revisa por partida si las compras confirmadas cubren la cantidad vendida.
+  - Si falta cualquier cantidad, se muestran venta, costos conocidos y los materiales y cantidades que faltan, con «Resultado incompleto: faltan compras por registrar».
+  - No se muestra cifra final ni simulación: lo faltante no es costo cero.
+  - Una compra anulada vuelve a abrir el faltante. Entregar o cobrar no implica costos completos.
+  - Una OV sin partidas se trata como incompleta.
+- **Materiales cubiertos:** se muestra el resultado estimado, aclarando que depende de lo registrado; no es definitivo ni cierra la operación.
+- **Naturaleza de la cifra:** no es utilidad fiscal ni dinero disponible.
+
+**Gastos adicionales** (bloque «Gastos adicionales» del detalle de una OV aceptada, solo administración):
+- **Captura:**
+  - Concepto, beneficiario o proveedor, fecha del gasto (no futura) e importe sin IVA.
+  - Impuesto **explícito**: gravado con tasa, tasa 0 % o exento. No se asume 16 % ni se infiere del comprobante.
+  - Total calculado con las reglas existentes (vista previa en pantalla; el servidor vuelve a calcular).
+  - Observaciones y comprobante opcionales (PDF/JPG/PNG, 4 MB por carga, tipo validado por contenido, descarga solo para administración).
+- **Beneficiarios:** se reutiliza el catálogo existente; elegibles: proveedores y contratistas activos de la Empresa, sin alias. El alta rápida crea un proveedor con el servicio de Catálogos. No se cambiaron reglas de construcción.
+- **Pertenencia:** cada gasto pertenece a una sola OV y se numera dentro de ella («Gasto 1»). No es partida de compra ni consume cantidades vendidas.
+- **«Guardar gasto»:** registra el gasto vigente y crea su cuenta por pagar en una transacción, sin borradores ni aprobación.
+
+**Integración con cuentas y pagos (B5):**
+- **Una cuenta por gasto**, por su total con impuestos.
+- **Nuevo origen explícito `gastoId`:** la base exige un único documento origen por cuenta (OV, compra o gasto), relaciones de Empresa consistentes y una sola cuenta por gasto. No se crean compras ficticias ni otro sistema de pagos.
+- **Mismas reglas de B5:** condiciones por definir, contado o crédito, cuotas, abonos con aplicación, anulación de movimientos, saldos y vencimientos.
+- **Saldos:**
+  - El saldo del gasto entra en «Por pagar» de la OV (resumen de la orden) y del listado, una sola vez.
+  - Guardar el gasto no es pagarlo, y sus pagos no vuelven a sumarlo al resultado.
+- **Avisos (B6B):** las cuotas del gasto aparecen en «Por atender» como «OV-000014 · Gasto 1 (Flete a obra)», con el beneficiario y enlace a su bloque de pagos dentro de la OV.
+- Los importes de la OV y de las compras no cambian.
+
+**Correcciones:**
+- Un gasto no se edita ni se borra (servicio y base).
+- **Sin historial de pagos:** administración lo anula con motivo, junto con su cuenta, atómicamente. Esto lo retira del resultado y del saldo por pagar y conserva registro, comprobante, autor, fechas y bitácora.
+- **Con historial de pagos, aunque estén anulados:** no se anula con la acción simple (misma regla que las compras en B5).
+- **Pago y anulación simultáneos:** ambos bloquean el gasto y luego su cuenta, en el mismo orden, así que gana uno. La base solo acepta anular el gasto si su cuenta ya está anulada y nunca tuvo movimientos.
+- **Reintentos y doble clic:** idempotentes por clave; no duplican gastos, cuentas ni comprobantes.
+
+**Simulación 50/50:**
+- **Cuándo se muestra:** solo con materiales completos y resultado positivo. Etiquetas genéricas «Socio 1 · 50 %» y «Socio 2 · 50 %», sin catálogo de socios ni vínculo con usuarios.
+- **Cálculo:** en centavos; el centavo indivisible va al **Socio 2** y ambas partes suman exactamente el resultado.
+- **Resultado cero o negativo:** se muestra «Resultado estimado de cero» o «Pérdida estimada» y que no hay resultado positivo para simular. No se generan participaciones ni deudas.
+- **Leyenda visible:** «Simulación sobre el resultado estimado. No representa dinero disponible ni un reparto autorizado.»
+- **Sin efectos:** no genera movimientos, cuentas, reservas ni cambios en cobros o pagos.
+
+**Permisos:** gastos, comprobantes, cuentas de gastos, costos, resultado y simulación son solo para Administrador y Director de la Empresa con el módulo, revalidados en cada operación. El vendedor no los recibe en HTML, acciones, archivos ni URL directa (comprobante: 403). Sin sección nueva en el menú.
+
+Verificación:
+- **Pruebas:** 5 unitarias y 13 de integración. Cubren:
+  - El caso principal: resultado $3,000, simulación $1,500 cada uno, por cobrar $11,600 y por pagar $8,120.
+  - Pagos y cobros parciales y totales sin cambio en el resultado.
+  - Anulación de pago y de gasto, y bloqueo con historial.
+  - Avisos.
+  - Incompletos, borradores y anuladas.
+  - Resultado cero, pérdida y centavo indivisible.
+  - Tasas mixtas y cantidades fraccionarias.
+  - Validaciones, reintentos y simultáneas.
+  - Pago contra anulación en 4 rondas.
+  - Aislamiento entre empresas, vendedor y usuario sin módulo.
+  - Reglas de la base y ausencia de efectos en construcción.
+- **Recorrido en navegador local (17 de noviembre de 2026, OV-000014 [PRUEBA]):**
+  1. Sin compras: «Resultado incompleto» con el faltante de 100 piezas y sin simulación.
+  2. Compra de 100 × $60 (gravado 16 %): $4,000.
+  3. Gasto «Flete a obra» de $1,000 gravado 16 % con proveedor nuevo y comprobante:
+     - Sin impuesto elegido no se puede guardar.
+     - Vista previa de IVA $160 y total $1,160; comprobante 200.
+     - Resultado $3,000 y simulación $1,500 / $1,500.
+  4. Crédito del gasto: $580 vencida ayer y $580 en 2 días.
+  5. Pago de $300: saldo del gasto $860 (vencido $280), resultado sigue en $3,000, por pagar de la OV $7,820.
+  6. «Por atender»: la cuota vencida aparece con $280 y la próxima con $580; «Ir a pagos» lleva al gasto.
+  7. El vendedor no ve gastos, costos, resultado ni simulación.
+  - Sin errores en consola.
+
+Limitaciones de B7 (decisiones de este bloque, confirmar si se requieren cambios):
+- El resultado es por OV; no hay resultado consolidado por periodo, cliente o vendedor.
+- Sin edición de gastos: se anula y se captura de nuevo. Un gasto con pagos (aun anulados) no se puede anular.
+- La fecha del gasto no puede ser futura.
+- Beneficiarios elegibles: proveedores y contratistas; el alta rápida solo crea proveedores.
+- La simulación usa siempre 50/50 y etiquetas genéricas; no hay socios configurables por proyecto.
+- No se distribuye dinero, no se registran retiros, deudas ni reservas (pospuestos por el usuario).
+
 ### Defecto funcional de sesión (fuera de Comercialización) — corregido
 
 **Ciclo de redirecciones con una cookie de sesión inválida.**
@@ -798,20 +892,20 @@ Verificación del cierre de B6:
 
 ### Pendientes para B6 y posteriores
 
-- Confirmar las decisiones provisionales P11, P12, P13 y P14.
-- Confirmar P5 y las decisiones provisionales de B5 (reprogramación con pagos, saldo a favor, pagos agrupados, ajustes).
+- Prórroga o reprogramación de cuotas con pagos (pendiente). Saldo a favor, pagos agrupados entre documentos y ajustes quedan fuera de la primera versión por P5 (confirmada).
 - Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
-- Confirmar el umbral de avisos «Próximos» (P6, 3 días provisional) y si el vendedor debe recibir algún aviso.
 - Verificar en un despliegue aislado (no PRD) las cargas cerca del límite, el 413 de Vercel, las descargas de archivos anteriores de más de 4.5 MB y la corrección de sesión.
 - Decidir si se necesitan archivos de más de 4 MB (carga directa protegida a R2; propuesta en «Cargas de archivos»).
 - Recepciones por compra (COC) y su bloqueo de la anulación simple de una compra; el control de recepciones de B4 no está terminado.
 - Otros módulos siguen aceptando hasta 10 MB por archivo (y 55 MB por solicitud en la carga de documentos de Contabilidad), por encima de lo que admite Vercel. Se dejó sin cambiar; requiere decisión aparte.
-- P7 (importación del catálogo) y P8 (reparto y deuda) siguen pendientes.
+- P7 (importación del catálogo) sigue pendiente.
+- P8: la simulación 50/50 está implementada; retiros reales, reparto autorizado o pagado, deudas y reservas siguen pospuestos por el usuario.
+- Cancelación de OV y rechazo o cancelación de cotizaciones (ver §21).
 - Estados Rechazada/Cancelada de una cotización: no definidos.
 - Ajustes visuales y navegación móvil.
 - Resultado interno, gastos adicionales, cancelación de OV, rechazo de cotizaciones, anulación de compras surtidas y reprogramación con movimientos: ver el inventario de §21.
 
-## 21. Inventario del alcance pendiente (17 de noviembre de 2026)
+## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7)
 
 Revisión del documento contra la implementación. Las recomendaciones son **propuestas**; ninguna fila convierte una propuesta en acuerdo confirmado.
 
@@ -819,10 +913,10 @@ Revisión del documento contra la implementación. Las recomendaciones son **pro
 |---|---|---|---|---|
 | Recepciones por compra (COC) y su relación con entregas directas a obra | Pendiente | Registrar qué compra surtió qué cantidad, o acordar que la entrega directa al cliente (B6A) basta como registro físico. B6A no vincula entregas con compras | Decisión del usuario | Salir sin recepción por COC y usar solo la entrega al cliente. Consecuencia: no se sabe qué proveedor surtió cada entrega ni se detectan compras surtidas a medias |
 | Anulación de compras que ya surtieron material | Parcial | Hoy solo se bloquea si la compra tuvo pagos (B5). Sin recepciones, una compra surtida pero sin pagos se puede anular y su cuenta por pagar desaparece | Decisión del usuario | Mantenerla como está y documentar que administración verifica antes de anular. Consecuencia: depende de una revisión manual |
-| Resultado de la operación (venta − costos) | Pendiente | El bloque «Resultado interno» (§5.3, §12) no existe. Falta acordar base (con o sin IVA), costo confirmado contra costo de referencia y cómo mostrar un resultado incompleto | Decisión del usuario | Para salir pronto, un resultado estimado simple: venta sin IVA − compras confirmadas sin IVA, marcado «incompleto» si una partida no tiene compra. O posponerlo. Consecuencia: sin él, el margen se calcula fuera del sistema |
-| Gastos adicionales de la operación (fletes, maniobras, comisiones) | Pendiente | No hay registro de gastos de la OV fuera de compras de material | Decisión del usuario | Posponer, o capturarlos como compra a un proveedor. Consecuencia: el resultado no los incluiría |
-| Reparto entre socios (referencia 50/50, P8) | Pendiente | Socios, porcentajes, importes previsto, autorizado y pagado | Decisión del usuario | Fuera de la primera salida. Consecuencia: el reparto se lleva fuera del sistema |
-| Amortización o abono a deuda y reservas (§12) | Pendiente; sigue en el documento como opcional | Movimientos y saldos separados de deuda, reserva y reparto; base del descuento | Decisión del usuario | Posponer, manteniendo la separación conceptual. Consecuencia: ninguna sobre cobros y pagos actuales |
+| Resultado de la operación (venta − costos) | **Implementado (B7)** | Resultado consolidado por periodo, cliente o vendedor | Decisión del usuario | Salir con el resultado por OV |
+| Gastos adicionales de la operación (fletes, maniobras, comisiones) | **Implementado (B7)** | Edición y corrección de gastos con pagos | Decisión del usuario | Salir así: un gasto con pagos no se anula con la acción simple |
+| Reparto entre socios (referencia 50/50, P8) | **Parcial: simulación 50/50 implementada (B7)** | Socios y porcentajes configurables, reparto autorizado y pagado, retiros reales | Pospuesto por el usuario | Fuera de la primera salida. Consecuencia: los retiros se registran fuera del sistema |
+| Amortización o abono a deuda y reservas (§12) | Pendiente; pospuesto por el usuario (17 nov 2026) | Movimientos y saldos separados de deuda, reserva y reparto; base del descuento | Pospuesto por el usuario | Fuera de la primera salida |
 | Rechazo o cancelación de cotizaciones | Pendiente | Estados Rechazada y Cancelada (§4), con motivo; hoy una cotización que no prospera queda Borrador o Emitida, y vencida por fecha | Decisión del usuario | Agregar «Cancelada con motivo» para borradores y emitidas si se necesita limpiar el listado. Consecuencia sin ella: el listado acumula cotizaciones muertas |
 | Cancelación de una OV | Pendiente | No existe. Hay que definir qué pasa con su cuenta, sus compras, entregas, cobros y pagos | Decisión del usuario | No incluirla en la primera salida; una OV registrada por error se corrige con soporte técnico. Consecuencia: riesgo operativo bajo pero real |
 | Importación del catálogo (P7) | Parcial: alta manual (B1) | Archivo del negocio (columnas, responsable, volumen), validación de duplicados y resumen de errores | Decisión del usuario (archivo) | Si el catálogo es de decenas de productos, alta manual. Consecuencia: tiempo de captura inicial |
@@ -831,36 +925,36 @@ Revisión del documento contra la implementación. Las recomendaciones son **pro
 | Navegación móvil y ajustes visuales | Pendiente | Revisión en celular; §14.15 pide adjuntos desde móvil | Corrección técnica y de diseño | Antes de salir, al menos registrar entregas y agregar evidencia desde un celular real. Consecuencia sin ella: uso en obra no comprobado |
 | Archivos de más de 4 MB | Pendiente | Carga directa protegida a R2 (propuesta en §20, «Cargas de archivos») | Decisión del usuario | Salir con 4 MB por carga si las fotos y remisiones habituales caben. Consecuencia: fotos grandes se reducen antes de subirlas |
 | Verificación en despliegue aislado | Pendiente | Cargas cerca del límite, 413 de Vercel, descargas grandes y corrección de sesión | Corrección técnica | Hacerla antes de publicar, nunca en PRD |
-| P5 — cobros y pagos agrupados, anticipos y ajustes | Provisional (B5) | Confirmación | Decisión del usuario | Ver regla abajo. Consecuencia: una transferencia que paga varias OV se captura como varios movimientos |
-| P6 — avisos | Canal confirmado; umbral provisional (B6B) | Confirmar umbral y si el vendedor recibe avisos | Decisión del usuario | Mantener 3 días y solo administración |
-| P11 — vendedores elegibles y mínimos del borrador | Propuesta implementada (B2) | Confirmación | Decisión del usuario | Mantener |
-| P12 — cotizaciones vencidas | Provisional (B3) | Confirmación | Decisión del usuario | Mantener. Consecuencia: aceptar una vencida exige duplicar y emitir de nuevo |
-| P13 — reglas de duplicado y emisión | Propuesta implementada (B3) | Confirmación | Decisión del usuario | Mantener |
-| P14 — límites de compras | Provisional (B4) | Confirmación (excedentes y mermas, conversiones de unidad, costo cero) | Decisión del usuario | Mantener. Consecuencia: mermas o bonificaciones no se pueden capturar |
+| P5 — cobros y pagos agrupados, anticipos y ajustes | **Confirmado para la primera versión** | — | Confirmado | Ver regla abajo. Consecuencia: una transferencia que paga varias OV se captura como varios movimientos |
+| P6 — avisos | **Confirmado para la primera versión** | — | Confirmado | 3 días y solo administración |
+| P11 — vendedores elegibles y mínimos del borrador | **Confirmado para la primera versión** | — | Confirmado | — |
+| P12 — cotizaciones vencidas | **Confirmado para la primera versión** | — | Confirmado | Consecuencia: aceptar una vencida exige duplicar y emitir de nuevo |
+| P13 — reglas de duplicado y emisión | **Confirmado para la primera versión** | — | Confirmado | — |
+| P14 — límites de compras | **Confirmado para la primera versión** | — | Confirmado | Consecuencia: mermas o bonificaciones no se pueden capturar |
 | WhatsApp, correo y notificaciones externas | Fuera de esta versión (§10) | — | Decisión del usuario | Fuera de la primera salida |
 
-Reglas completas de las decisiones pendientes (como están implementadas, sin confirmar salvo donde se indica):
-- **P5 (provisional):**
+Reglas completas de estas decisiones, tal como están implementadas. El 17 nov 2026 el usuario las confirmó para la primera versión (P5, P6, P11–P14):
+- **P5 (confirmada para la primera versión):**
   - Un cobro o pago se aplica a una sola OV o a una sola compra y se reparte entre las cuotas de esa cuenta: propuesta automática de la más antigua a la más reciente, ajustable por administración. La suma de aplicaciones es igual al importe.
   - Se admite el anticipo dentro del documento: una cuota de anticipo, dinero registrado antes de su vencimiento y aplicación a cuotas futuras de la misma cuenta.
   - No se admiten saldo a favor, sobrepago, movimientos repartidos entre varios documentos, anticipos sin documento, notas de crédito ni ajustes.
   - Una corrección se hace anulando el movimiento con motivo.
 - **P6:**
   - Confirmado: avisos solo dentro de Arqento, sin correo, WhatsApp ni notificaciones externas.
-  - Provisional: «Próximos» cubre de mañana a 3 días naturales; los avisos se calculan al consultar, por cuota con saldo; solo Administrador y Director los ven; el vendedor no recibe avisos financieros.
-- **P11 (propuesta implementada):**
+  - Confirmado para la primera versión: «Próximos» cubre de mañana a 3 días naturales; los avisos se calculan al consultar, por cuota con saldo; solo Administrador y Director los ven; el vendedor no recibe avisos financieros.
+- **P11 (confirmada para la primera versión):**
   - Vendedores elegibles: Supervisor activo con la función Vendedor, o Administrador o Director activo.
   - El vendedor siempre queda asignado a sí mismo; administración asigna a un elegible de su Empresa.
   - Un borrador recibe folio, vendedor y fecha automáticos y exige al menos uno de: cliente, descripción o un material.
-- **P12 (provisional):** no se registra la aceptación de una cotización emitida cuya vigencia ya pasó; se duplica y se emite una nueva.
-- **P13 (propuesta implementada):**
+- **P12 (confirmada para la primera versión):** no se registra la aceptación de una cotización emitida cuya vigencia ya pasó; se duplica y se emite una nueva.
+- **P13 (confirmada para la primera versión):**
   - Emitir exige vigencia de hoy en adelante y que ningún material esté desactivado.
   - Duplicar:
     - Omite productos desactivados y avisa cuáles; toma los datos actuales del catálogo.
     - Administración conserva el precio aplicado del original; el vendedor recibe el precio vigente de catálogo.
     - El vendedor queda él mismo. Administración conserva al vendedor original si sigue siendo elegible y, si no, queda ella.
     - Fecha = hoy; la vigencia se conserva solo si sigue vigente.
-- **P14 (provisional):**
+- **P14 (confirmada para la primera versión):**
   - Una compra no supera lo vendido (sin excedentes ni mermas) y se captura en la unidad de la partida de venta, sin conversiones.
   - Cada partida de venta aparece a lo más una vez por compra, y el costo unitario debe ser mayor que 0.
   - No hay PDF de compra: se adjunta el documento del proveedor.

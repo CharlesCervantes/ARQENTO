@@ -154,6 +154,7 @@ model Empresa {
   partidasEntrega         PartidaEntregaComercial[]
   evidenciasEntrega       EvidenciaEntregaComercial[]
   cargasEvidenciaEntrega  CargaEvidenciaEntrega[]
+  gastosComerciales       GastoComercial[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -388,6 +389,8 @@ model Usuario {
   entregasComercialesRegistradas    EntregaComercial[]       @relation("EntregaComercialRegistrada")
   entregasComercialesAnuladas       EntregaComercial[]       @relation("EntregaComercialAnulada")
   cargasEvidenciaEntrega            CargaEvidenciaEntrega[]  @relation("CargaEvidenciaEntregaRegistrada")
+  gastosComercialesRegistrados      GastoComercial[]         @relation("GastoComercialRegistrado")
+  gastosComercialesAnulados         GastoComercial[]         @relation("GastoComercialAnulado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -622,6 +625,8 @@ model Beneficiario {
   // Comercialización B4: compras comerciales a este proveedor (no afecta
   // nada de construcción).
   comprasComerciales     CompraComercial[]
+  // Comercialización B7: gastos adicionales de una OV.
+  gastosComerciales      GastoComercial[]
 
   // Vínculo opcional y explícito con el Usuario que inicia sesión como esta
   // misma persona real (ej. Andrés es Usuario/Supervisor y también
@@ -3059,6 +3064,7 @@ model OrdenVenta {
   compras  CompraComercial[]
   cuenta   CuentaComercial?
   entregas EntregaComercial[]
+  gastos   GastoComercial[]
 
   @@unique([cotizacionId, empresaId])
   @@unique([id, empresaId])
@@ -3286,6 +3292,10 @@ model CuentaComercial {
   ordenVentaId String?
   compra       CompraComercial? @relation(fields: [compraId, empresaId], references: [id, empresaId], onDelete: Restrict)
   compraId     String?
+  // B7: cuenta por pagar de un gasto adicional. Un solo documento origen por
+  // cuenta (CHECK en la base).
+  gasto        GastoComercial?  @relation(fields: [gastoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  gastoId      String?
 
   total           Decimal                 @db.Decimal(14, 2)
   estatus         EstatusCuentaComercial  @default(VIGENTE)
@@ -3307,6 +3317,7 @@ model CuentaComercial {
   // Una cuenta por documento (además, índices únicos por columna en la migración).
   @@unique([ordenVentaId, empresaId])
   @@unique([compraId, empresaId])
+  @@unique([gastoId, empresaId])
   @@unique([id, empresaId])
   @@index([empresaId, tipo, estatus])
   @@map("cuentas_comerciales")
@@ -3529,4 +3540,64 @@ model CargaEvidenciaEntrega {
   @@unique([empresaId, clave])
   @@index([entregaId])
   @@map("cargas_evidencia_entrega")
+}
+
+enum EstatusGastoComercial {
+  VIGENTE
+  ANULADO
+}
+
+// Gasto adicional de una OV aceptada (B7): flete, maniobra, servicio externo…
+// No es una partida de compra ni consume cantidades vendidas. Se registra
+// VIGENTE junto con su cuenta por pagar (B5) en una transacción. No se edita
+// ni se borra: sin historial de pagos se anula con motivo (junto con su
+// cuenta). Reglas también en la base (migración 20261123090000).
+model GastoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  ordenVenta   OrdenVenta @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String
+  numero       Int // consecutivo dentro de la OV: «Gasto 1»
+
+  concepto           String
+  beneficiario       Beneficiario @relation(fields: [beneficiarioId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  beneficiarioId     String
+  // Copia del nombre al registrar: cambiar el catálogo no altera el gasto.
+  beneficiarioNombre String
+  fecha              DateTime     @db.Date
+
+  // Importes exactos con las reglas de importes.ts (servidor).
+  subtotal            Decimal                      @db.Decimal(14, 2)
+  tratamientoImpuesto TratamientoImpuestoComercial
+  tasaIva             Decimal?                     @db.Decimal(5, 2)
+  iva                 Decimal                      @db.Decimal(14, 2)
+  total               Decimal                      @db.Decimal(14, 2)
+
+  observaciones String?
+
+  comprobanteRef    String?
+  comprobanteNombre String?
+  comprobanteTipo   String?
+  comprobanteBytes  Int?
+
+  estatus         EstatusGastoComercial @default(VIGENTE)
+  claveRegistro   String
+  registradoPor   Usuario               @relation("GastoComercialRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  createdAt       DateTime              @default(now())
+
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?  @relation("GastoComercialAnulado", fields: [anuladoPorId], references: [id])
+  anuladoPorId    String?
+  motivoAnulacion String?
+
+  cuenta CuentaComercial?
+
+  @@unique([id, empresaId])
+  @@unique([ordenVentaId, numero])
+  @@unique([empresaId, claveRegistro])
+  @@index([empresaId, ordenVentaId])
+  @@map("gastos_comerciales")
 }

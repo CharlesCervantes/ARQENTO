@@ -11,6 +11,10 @@ import { CuentaComercialView } from "./cuenta-comercial";
 import type { ResumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 import { EntregasOrden } from "./entregas-orden";
 import { formatearImporte as fmt } from "@/lib/comercializacion/importes";
+import type { ResumenGastosOrden } from "@/lib/server/comercializacion/gastos";
+import type { ResultadoEstimado } from "@/lib/comercializacion/resultado";
+import { GastosOrden } from "./gastos-orden";
+import { ResultadoOrdenView } from "./resultado-orden";
 
 // Vista de una cotización EMITIDA o ACEPTADA (B3). Solo lectura y armada con
 // la COPIA HISTÓRICA (documentoEmitido): lo que se ve aquí es lo que dice el
@@ -50,6 +54,8 @@ export function CotizacionEmitidaView({
   hoy,
   compras,
   cuenta,
+  gastos,
+  resultado,
   financiero,
   entregas,
 }: {
@@ -60,9 +66,12 @@ export function CotizacionEmitidaView({
   compras: ResumenComprasOrden | null;
   // B5 — solo administración; para el vendedor son null.
   cuenta?: DetalleCuenta | null;
-  financiero?: { porCobrar: ResumenSaldos; porPagar: ResumenSaldos; comprasConCuenta: number } | null;
+  financiero?: { porCobrar: ResumenSaldos; porPagar: ResumenSaldos; comprasConCuenta: number; gastosConCuenta: number } | null;
   // B6A — administración y vendedor asignado; sin costos, compras ni cobranza.
   entregas?: ResumenEntregasOrden | null;
+  // B7 — solo administración (la página no los consulta para el vendedor).
+  gastos?: { resumen: ResumenGastosOrden; beneficiarios: { id: string; nombre: string }[] } | null;
+  resultado?: ResultadoEstimado | null;
 }) {
   const doc = cotizacion.emision!.documento;
   const orden = cotizacion.orden;
@@ -131,7 +140,7 @@ export function CotizacionEmitidaView({
             <Dato etiqueta="Vencido por pagar">{fmt(financiero.porPagar.vencido)}</Dato>
           </dl>
           <p className="mt-2 text-xs text-[var(--muted)]">
-            Saldos reales: por pagar suma solo compras confirmadas vigentes ({financiero.comprasConCuenta}). Cobrado no es utilidad; pagado no es recibido.
+            Saldos reales: por pagar suma compras confirmadas vigentes ({financiero.comprasConCuenta}) y gastos adicionales vigentes ({financiero.gastosConCuenta}). Cobrado no es utilidad; pagado no es recibido.
             {financiero.porCobrar.sinCondiciones + financiero.porPagar.sinCondiciones > 0 && " Hay cuentas con condiciones por definir (no cuentan como vencidas)."}
           </p>
         </Card>
@@ -139,6 +148,8 @@ export function CotizacionEmitidaView({
       {orden && entregas && <EntregasOrden resumen={entregas} />}
       {orden && esAdmin && cuenta && <CuentaComercialView cuenta={cuenta} />}
       {orden && esAdmin && compras && <ComprasOrden resumen={compras} />}
+      {orden && esAdmin && gastos && <GastosOrden resumen={gastos.resumen} beneficiarios={gastos.beneficiarios} />}
+      {orden && esAdmin && resultado && <ResultadoOrdenView resultado={resultado} />}
 
       <Card className="space-y-4 p-5">
         <h2 className="text-base font-semibold text-[var(--foreground)]">Datos de la cotización</h2>

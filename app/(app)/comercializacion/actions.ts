@@ -31,6 +31,7 @@ import {
   guardarBorradorCompra,
 } from "@/lib/server/comercializacion/compras";
 import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
+import { anularGastoComercial, registrarGastoComercial } from "@/lib/server/comercializacion/gastos";
 import { agregarEvidenciasEntrega, anularEntregaComercial, registrarEntregaComercial } from "@/lib/server/comercializacion/entregas";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
@@ -416,6 +417,51 @@ export async function registrarEntregaAction(ordenVentaId: string, _state: Entre
   }
   revalidatePath("/comercializacion", "layout");
   return { ok: true };
+}
+
+export type GastoState = { error?: string; ok?: boolean } | undefined;
+
+/** B7 — registra un gasto adicional de la OV con su cuenta por pagar (solo administración). */
+export async function registrarGastoAction(ordenVentaId: string, _state: GastoState, formData: FormData): Promise<GastoState> {
+  const usuario = await requireSession();
+  try {
+    const leer = (k: string) => {
+      const v = formData.get(k);
+      return typeof v === "string" ? v : undefined;
+    };
+    const archivo = formData.get("comprobante");
+    await registrarGastoComercial(
+      usuario,
+      ordenVentaId,
+      {
+        concepto: leer("concepto"),
+        beneficiarioId: leer("beneficiarioId"),
+        fecha: leer("fecha"),
+        subtotal: leer("subtotal"),
+        tratamientoImpuesto: leer("tratamientoImpuesto"),
+        tasaIva: leer("tasaIva"),
+        observaciones: leer("observaciones"),
+      },
+      archivo instanceof File && archivo.size > 0 ? { nombre: archivo.name, bytes: new Uint8Array(await archivo.arrayBuffer()) } : null,
+      leer("clave")
+    );
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return { ok: true };
+}
+
+/** B7 — anula un gasto sin historial de pagos, junto con su cuenta (solo administración). */
+export async function anularGastoAction(entrada: { gastoId: string; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await anularGastoComercial(usuario, entrada?.gastoId, entrada?.motivo);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
 }
 
 export type EvidenciasState = { error?: string; ok?: boolean; agregadas?: number } | undefined;

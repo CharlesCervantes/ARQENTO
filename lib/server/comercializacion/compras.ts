@@ -117,7 +117,7 @@ export type CantidadesPartidaVenta = {
   costoReferencia: string | null; // ORIENTATIVO (catálogo actual), solo administración
 };
 
-async function cantidadesDeOrden(cliente: Cliente, empresaId: string, cotizacionId: string): Promise<CantidadesPartidaVenta[]> {
+export async function cantidadesDeOrden(cliente: Cliente, empresaId: string, cotizacionId: string): Promise<CantidadesPartidaVenta[]> {
   const partidas = await cliente.partidaCotizacionVenta.findMany({
     where: { cotizacionId, empresaId },
     orderBy: { orden: "asc" },
