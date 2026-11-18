@@ -12,6 +12,7 @@ import { crearProveedor } from "@/lib/server/catalogos";
 import { requerirAdministracionComercial } from "@/lib/server/comercializacion/acceso";
 import { ConflictoEdicionError } from "@/lib/server/comercializacion/cotizaciones";
 import { anularCuentaDeCompraTx, compraTuvoPagosTx, crearCuentaTx } from "@/lib/server/comercializacion/cuentas";
+import { bloqueosSurtidoDeCompraTx } from "@/lib/server/comercializacion/surtido";
 import {
   aMilesimas,
   calcularImportePartida,
@@ -608,11 +609,15 @@ export async function confirmarCompraComercial(
  * Motivos que impiden una anulación SIMPLE. Punto único de extensión:
  * - B5: cualquier pago registrado, AUNQUE se haya anulado después (la
  *   historia de pagos exige un reverso explícito, no esta acción).
- * - B6: recepciones (pendiente).
+ * - B8A: cantidades vinculadas a entregas vigentes, o entregas vigentes de
+ *   sus materiales con cantidades sin vincular (se llama con la OV bloqueada).
  */
 async function motivosQueImpidenAnular(tx: Prisma.TransactionClient, compraId: string): Promise<string[]> {
   const motivos: string[] = [];
   if (await compraTuvoPagosTx(tx, compraId)) motivos.push("la compra tiene historial de pagos al proveedor (aunque estén anulados)");
+  for (const b of await bloqueosSurtidoDeCompraTx(tx, compraId)) {
+    motivos.push(`${b.texto} (${b.entregas.map((e) => `Entrega ${e.numero}`).join(", ")})`);
+  }
   return motivos;
 }
 

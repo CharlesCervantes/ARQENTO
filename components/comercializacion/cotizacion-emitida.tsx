@@ -15,6 +15,7 @@ import type { ResumenGastosOrden } from "@/lib/server/comercializacion/gastos";
 import type { ResultadoEstimado } from "@/lib/comercializacion/resultado";
 import { GastosOrden } from "./gastos-orden";
 import { ResultadoOrdenView } from "./resultado-orden";
+import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
 
 // Vista de una cotización EMITIDA o ACEPTADA (B3). Solo lectura y armada con
 // la COPIA HISTÓRICA (documentoEmitido): lo que se ve aquí es lo que dice el
@@ -56,6 +57,7 @@ export function CotizacionEmitidaView({
   cuenta,
   gastos,
   resultado,
+  surtido,
   financiero,
   entregas,
 }: {
@@ -72,6 +74,8 @@ export function CotizacionEmitidaView({
   // B7 — solo administración (la página no los consulta para el vendedor).
   gastos?: { resumen: ResumenGastosOrden; beneficiarios: { id: string; nombre: string }[] } | null;
   resultado?: ResultadoEstimado | null;
+  // B8A — surtido a obra por entrega, solo administración.
+  surtido?: Record<string, SurtidoEntrega> | null;
 }) {
   const doc = cotizacion.emision!.documento;
   const orden = cotizacion.orden;
@@ -145,7 +149,7 @@ export function CotizacionEmitidaView({
           </p>
         </Card>
       )}
-      {orden && entregas && <EntregasOrden resumen={entregas} />}
+      {orden && entregas && <EntregasOrden resumen={entregas} surtido={esAdmin ? surtido : null} />}
       {orden && esAdmin && cuenta && <CuentaComercialView cuenta={cuenta} />}
       {orden && esAdmin && compras && <ComprasOrden resumen={compras} />}
       {orden && esAdmin && gastos && <GastosOrden resumen={gastos.resumen} beneficiarios={gastos.beneficiarios} />}

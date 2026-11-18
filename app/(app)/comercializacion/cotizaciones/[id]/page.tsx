@@ -14,6 +14,7 @@ import { resumenComprasOrden } from "@/lib/server/comercializacion/compras";
 import { detalleCuentaDeOrden, resumenFinancieroOrden } from "@/lib/server/comercializacion/cuentas";
 import { resumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 import { listarBeneficiariosGasto, resultadoOrden, resumenGastosOrden } from "@/lib/server/comercializacion/gastos";
+import { surtidoDeOrden } from "@/lib/server/comercializacion/surtido";
 
 // Detalle único: un BORRADOR se consulta y edita en el formulario; una
 // cotización EMITIDA/ACEPTADA se muestra de solo lectura desde su copia
@@ -45,9 +46,9 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
       ? await Promise.all([resumenComprasOrden(usuario, ovId), detalleCuentaDeOrden(usuario, ovId), resumenFinancieroOrden(usuario, ovId)])
       : [null, null, null];
     // B7: gastos, costos y resultado — tampoco se consultan para el vendedor.
-    const [gastosOrden, beneficiarios, resultado] = ovId
-      ? await Promise.all([resumenGastosOrden(usuario, ovId), listarBeneficiariosGasto(usuario), resultadoOrden(usuario, ovId)])
-      : [null, null, null];
+    const [gastosOrden, beneficiarios, resultado, surtido] = ovId
+      ? await Promise.all([resumenGastosOrden(usuario, ovId), listarBeneficiariosGasto(usuario), resultadoOrden(usuario, ovId), surtidoDeOrden(usuario, ovId)])
+      : [null, null, null, null];
     // B6A: entregas — administración y el vendedor asignado (alcance en el servicio).
     const entregas = cotizacion.orden ? await resumenEntregasOrden(usuario, cotizacion.orden.id) : null;
     return (
@@ -55,6 +56,7 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
         entregas={entregas}
         gastos={gastosOrden && beneficiarios ? { resumen: gastosOrden, beneficiarios } : null}
         resultado={resultado}
+        surtido={surtido}
       />
     );
   }

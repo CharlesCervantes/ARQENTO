@@ -32,6 +32,7 @@ import {
 } from "@/lib/server/comercializacion/compras";
 import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
 import { anularGastoComercial, registrarGastoComercial } from "@/lib/server/comercializacion/gastos";
+import { anularVinculoSurtido, vincularSurtido } from "@/lib/server/comercializacion/surtido";
 import { agregarEvidenciasEntrega, anularEntregaComercial, registrarEntregaComercial } from "@/lib/server/comercializacion/entregas";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
@@ -457,6 +458,30 @@ export async function anularGastoAction(entrada: { gastoId: string; motivo: stri
   const usuario = await requireSession();
   try {
     await anularGastoComercial(usuario, entrada?.gastoId, entrada?.motivo);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+/** B8A — vincula cantidades entregadas con las compras que las surtieron (solo administración). */
+export async function vincularSurtidoAction(entrada: { entregaId: string; lineas: unknown; clave: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await vincularSurtido(usuario, entrada?.entregaId, entrada?.lineas, entrada?.clave);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+/** B8A — anula un vínculo capturado por error, con motivo (solo administración). */
+export async function anularVinculoSurtidoAction(entrada: { vinculoId: string; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await anularVinculoSurtido(usuario, entrada?.vinculoId, entrada?.motivo);
   } catch (error) {
     return { error: mensajeError(error) };
   }

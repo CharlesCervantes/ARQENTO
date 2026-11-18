@@ -12,6 +12,8 @@ import { ETIQUETA_ESTADO_ENTREGA, MAX_EVIDENCIAS_POR_CARGA, MAX_EVIDENCIAS_POR_E
 import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
 import { agregarEvidenciasAction, anularEntregaAction, registrarEntregaAction, type EntregaState, type EvidenciasState } from "@/app/(app)/comercializacion/actions";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
+import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
+import { SurtidoEntregaView } from "./surtido-entrega";
 
 // Entregas y documentos de una OV — B6A. Lo ven administración y el vendedor
 // asignado (el servidor aplica el alcance). Solo cantidades y evidencias de
@@ -40,11 +42,13 @@ function Etiqueta({ texto, estilo }: { texto: string; estilo: string }) {
 
 const cant = (c: string, unidad: string) => `${formatearCantidad(c)} ${unidad}`;
 
-export function EntregasOrden({ resumen }: { resumen: ResumenEntregasOrden }) {
+// `surtido` (B8A) solo llega para administración; el vendedor no lo recibe.
+export function EntregasOrden({ resumen, surtido }: { resumen: ResumenEntregasOrden; surtido?: Record<string, SurtidoEntrega> | null }) {
   const [registrando, setRegistrando] = useState(false);
   const hayPendiente = resumen.partidas.some((p) => !p.completa);
+  const sinOrigen = surtido ? Object.values(surtido).filter((x) => x.vigente && x.pendienteTotal).length : 0;
   return (
-    <Card className="space-y-4 p-5">
+    <Card id="entregas" className="scroll-mt-6 space-y-4 p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-[var(--foreground)]">Entregas y documentos</h2>
@@ -98,6 +102,12 @@ export function EntregasOrden({ resumen }: { resumen: ResumenEntregasOrden }) {
         <p className="text-sm text-[var(--muted)]">Todo lo vendido está entregado.</p>
       )}
 
+      {sinOrigen > 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {sinOrigen} entrega{sinOrigen === 1 ? "" : "s"} vigente{sinOrigen === 1 ? "" : "s"} con origen por identificar: falta vincular qué compra surtió parte de lo entregado.
+        </p>
+      )}
+
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">Historial de entregas</h3>
         {resumen.entregas.length === 0 ? (
@@ -105,7 +115,7 @@ export function EntregasOrden({ resumen }: { resumen: ResumenEntregasOrden }) {
         ) : (
           <ul className="space-y-2">
             {resumen.entregas.map((e) => (
-              <Entrega key={e.id} e={e} puedeAnular={resumen.puedeAnular} />
+              <Entrega key={e.id} e={e} puedeAnular={resumen.puedeAnular} surtido={surtido?.[e.id] ?? null} />
             ))}
           </ul>
         )}
@@ -254,7 +264,7 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
   );
 }
 
-function Entrega({ e, puedeAnular }: { e: EntregaDetalle; puedeAnular: boolean }) {
+function Entrega({ e, puedeAnular, surtido }: { e: EntregaDetalle; puedeAnular: boolean; surtido: SurtidoEntrega | null }) {
   const router = useRouter();
   const [anulando, setAnulando] = useState(false);
   const [motivo, setMotivo] = useState("");
@@ -262,7 +272,7 @@ function Entrega({ e, puedeAnular }: { e: EntregaDetalle; puedeAnular: boolean }
   const [pendiente, start] = useTransition();
   const anulada = e.estatus === "ANULADA";
   return (
-    <li className={`rounded-lg border border-[var(--border)] p-3 text-sm ${anulada ? "opacity-70" : ""}`}>
+    <li id={`entrega-${e.id}`} className={`scroll-mt-6 rounded-lg border border-[var(--border)] p-3 text-sm ${anulada ? "opacity-70" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <span className={`font-semibold ${anulada ? "line-through" : ""}`}>Entrega {e.numero}</span>{" "}
@@ -295,6 +305,7 @@ function Entrega({ e, puedeAnular }: { e: EntregaDetalle; puedeAnular: boolean }
       </p>
       {e.observaciones && <p className="mt-0.5 text-xs text-[var(--muted)]">{e.observaciones}</p>}
       {!anulada && <AgregarEvidencias e={e} />}
+      {surtido && <SurtidoEntregaView surtido={surtido} />}
       {e.anulada && (
         <p className="mt-0.5 text-xs text-red-700">
           Anulada por {e.anulada.porNombre ?? "administración"} el {formatoFechaHora.format(new Date(e.anulada.en))}: {e.anulada.motivo}. Sus cantidades ya no

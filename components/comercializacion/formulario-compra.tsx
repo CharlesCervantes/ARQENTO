@@ -53,12 +53,12 @@ function etiquetaImpuesto(t: TratamientoImpuesto | null, tasa: string | null) {
 export function FormularioCompra({
   compra,
   proveedoresIniciales,
-  tuvoPagos = false,
+  bloqueosAnulacion = [],
 }: {
   compra: CompraDetalle;
   proveedoresIniciales: OpcionProveedor[];
-  /** B5: con historial de pagos (aun anulados) la compra ya no se anula sin más. */
-  tuvoPagos?: boolean;
+  /** Motivos que impiden la anulación simple (B5: pagos; B8A: surtido a obra). Calculados en el servidor, que vuelve a validarlos. */
+  bloqueosAnulacion?: { texto: string; enlaces: { href: string; etiqueta: string }[] }[];
 }) {
   const router = useRouter();
   const editable = compra.estatus === "BORRADOR";
@@ -483,10 +483,26 @@ export function FormularioCompra({
               </Button>
             </>
           )}
-          {!editable && tuvoPagos ? (
-            <p className="text-xs text-[var(--muted)]">
-              No se puede anular: la compra tiene historial de pagos al proveedor (aunque estén anulados).
-            </p>
+          {!editable && bloqueosAnulacion.length > 0 ? (
+            <div className="text-xs text-[var(--muted)]" data-bloqueos-anulacion>
+              <p>No se puede anular con la acción simple:</p>
+              <ul className="list-disc pl-5">
+                {bloqueosAnulacion.map((b) => (
+                  <li key={b.texto}>
+                    {b.texto}
+                    {b.enlaces.length > 0 && ": "}
+                    {b.enlaces.map((e, i) => (
+                      <span key={e.href}>
+                        {i > 0 && ", "}
+                        <Link href={e.href} className="font-medium text-[var(--brand)] hover:underline">
+                          {e.etiqueta}
+                        </Link>
+                      </span>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : (
             <button type="button" onClick={() => setAnulando(true)} className={claseSecundaria} disabled={pendiente || anulando}>
               {editable ? "Descartar borrador" : "Anular compra"}

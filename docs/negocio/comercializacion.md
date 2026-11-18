@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.11 · 17 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) y B7 (resultado estimado, gastos adicionales y simulación 50/50) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
+Versión: 0.12 · 18 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) y B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -197,7 +197,7 @@ WhatsApp queda fuera de esta entrega y como posible fase siguiente, sin promesa 
 - Una entrega registra fecha, cantidades por partida, receptor, observaciones, fotos y remisión.
 - Calcular pendientes por producto/unidad; evitar sobreentregas accidentales. No sumar piezas, toneladas y metros en un porcentaje engañoso.
 - Estados: Pendiente, Parcial y Completa. Completa solo cuando todas las partidas aplicables estén cubiertas.
-- Recepción del proveedor y entrega al cliente son hechos distintos, aunque el envío sea directo a obra. Confirmar si necesitan capturar ambos por separado; no duplicar cantidades. B6A implementa solo la entrega al cliente contra la OV (ver §20 B6A); la recepción por compra sigue pendiente.
+- Recepción del proveedor y entrega al cliente son hechos distintos, aunque el envío sea directo a obra. Confirmar si necesitan capturar ambos por separado; no duplicar cantidades. B6A implementa la entrega al cliente contra la OV y B8A permite identificar qué compra la surtió cuando el envío es directo a obra (ver §20 B8A). La recepción independiente en almacén y otros escenarios de recepción siguen pendientes.
 - Preservar correcciones de entregas en historial. Devoluciones y cambios con movimientos necesitan regla acordada; no editar una entrega antigua para ocultarlos.
 - Documentos clasificados por función: cotización, autorización/OC cliente, compra/factura proveedor, comprobante de cobro/pago, remisión y fotos. Controlar visibilidad por rol.
 - PDF cliente: marca de la empresa, folio, versión, fecha, vendedor según decisión comercial, cliente/obra, materiales, precios de venta, impuestos, total y condiciones. Nunca costos, margen o reparto.
@@ -611,7 +611,7 @@ Qué hace:
 - B6A acredita **entrega al cliente**; **no** acredita la recepción de una compra (COC) específica.
 - No se vinculan entregas con compras, ni se marcan compras como recibidas o entregadas.
 - Una entrega real no se bloquea porque la captura administrativa de la compra esté pendiente.
-- La recepción por COC y su bloqueo de la anulación simple de una compra (`motivosQueImpidenAnular`) **siguen pendientes**. El control de recepciones de B4 **no** está terminado.
+- La recepción por COC y su bloqueo de la anulación simple de una compra (`motivosQueImpidenAnular`) **siguen pendientes**. El control de recepciones de B4 **no** está terminado. *(Actualización B8A: el surtido directo a obra y su bloqueo de anulación se implementaron en B8A; la recepción independiente sigue pendiente.)*
 - La estructura (partidas de entrega ligadas a la partida vendida) permite agregar después el vínculo con compras o recepciones sin rehacer las entregas.
 
 Verificación:
@@ -881,6 +881,100 @@ Limitaciones de B7 (decisiones de este bloque, confirmar si se requieren cambios
 - La simulación usa siempre 50/50 y etiquetas genéricas; no hay socios configurables por proyecto.
 - No se distribuye dinero, no se registran retiros, deudas ni reservas (pospuestos por el usuario).
 
+### B8A — Surtido directo a obra y protección de la anulación de compras (implementado, sin desplegar)
+
+Rama `feature/comercializacion`. Migración `20261124090000_comercializacion_b8a_surtido` (aditiva: tabla de vínculos e índices únicos `(id, empresaId)` en las partidas de entrega y de compra). Se aplicó solo en la base de desarrollo independiente del worktree (local, puerto 54330) y en su base de pruebas dedicada (local, puerto 54331); **no** en la base compartida con `develop`, Neon ni PRD. Las entregas existentes quedaron **sin vínculos**: no se infirieron proveedores por precio, fecha ni archivo.
+
+**Alcance de B8A (propuesta de alcance de este bloque):**
+- Acredita el **surtido directo a obra**: qué compra (proveedor) surtió una cantidad de una entrega al cliente ya registrada (B6A).
+- Reutiliza las entregas y sus evidencias; no vuelve a capturar cantidades físicas, fechas ni archivos.
+- **No** implementa inventario, recepción en almacén ni recepción independiente del proveedor. Esos escenarios **no** quedan resueltos.
+
+**Vínculo por partida** (solo Administrador y Director):
+- **Qué une:** una cantidad de una partida **entregada** con una partida de **compra confirmada vigente**.
+  - Misma Empresa, misma OV y misma partida original de venta (nunca por nombre del material).
+  - Entrega vigente; cantidad positiva con hasta 3 decimales.
+- **Combinaciones:** una partida entregada puede surtirse con varias compras, y una partida comprada puede surtir varias entregas.
+- **Límites:**
+  - Σ vinculado de una partida de entrega ≤ cantidad entregada.
+  - Σ vinculado de una partida de compra ≤ cantidad comprada.
+  - Solo cuentan vínculos vigentes de entregas y compras vigentes.
+- **Concurrencia:** se valida en una transacción que bloquea la OV. La base repite las validaciones (misma partida y OV, documentos vigentes, límites).
+- **Idempotencia:** cada captura lleva una clave; reintentos y doble clic no duplican.
+- **Captura sencilla:** «Vincular compras» desde la entrega.
+  - Por material muestra entregado, vinculado, pendiente y las compras elegibles con su disponible.
+  - Admite vinculación parcial.
+  - Con una sola compra con disponible se **propone** la cantidad compatible; nada se guarda sin «Confirmar vínculos».
+- **Origen pendiente visible:**
+  - Registrar una entrega sigue siendo posible sin compras capturadas.
+  - Administración ve «Origen por identificar» en la entrega y un aviso en el bloque cuando falta vincular.
+  - El vendedor sigue registrando entregas de sus OV sin elegir compras.
+
+**Consulta desde la compra:** bloque «Surtido a obra registrado» en el detalle de la compra.
+- Por partida: comprado, vinculado a entregas vigentes, sin vincular y entregas relacionadas (con enlace).
+- «Sin vincular» puede ser falta de captura; no es una recepción física comprobada.
+
+**Anulación de compras:** se conservan los bloqueos financieros de B5 y además se impide la anulación simple si:
+- (a) la compra tiene cantidades vinculadas a entregas vigentes, o
+- (b) alguna partida de venta que abastece tiene cantidades entregadas (entregas vigentes) **sin vincular** a una compra vigente.
+
+La pantalla explica el motivo y enlaza a las entregas correspondientes; no hay casilla para omitir el control. Si esas entregas están completamente vinculadas a **otras** compras y la compra no tiene vínculos ni bloqueos financieros, se anula con el flujo normal de B4. La base vuelve a exigir (a) y (b).
+
+**Orden de bloqueos (concurrencia):**
+- Todas estas operaciones bloquean primero la OV: registrar o anular una entrega, confirmar o anular una compra, y crear o anular un vínculo.
+- Después se bloquea compra o entrega, y luego la cuenta.
+- Un pago bloquea compra → cuenta, igual que la anulación de la compra (B5).
+- Así se serializan vínculo contra anulación de compra, entrega contra anulación de compra, y pago contra anulación de compra.
+
+**Correcciones e historial:**
+- **Anular un vínculo:** Administrador o Director lo anulan con motivo.
+  - Se conservan autor, fecha, cantidad y motivo; no se borra ni se sobrescribe.
+  - La cantidad queda libre en la compra y otra vez pendiente en la entrega.
+  - No es una devolución ni cambia cantidades compradas o entregadas.
+  - Mientras la entrega siga vigente y sin vincular, la protección de la compra continúa: anular un vínculo no sirve para saltarla.
+- **Anular una entrega** (flujo de B6A): sus vínculos dejan de contar en esa misma transacción, porque solo cuentan los de entregas vigentes. Se conservan con su historial y evidencias, y la entrega anulada ya no admite vínculos (servicio y base).
+
+**Sin efectos:** vincular o corregir no cambia cantidades vendidas, compradas ni entregadas, importes, cuentas, cuotas, cobros, pagos, el resultado estimado (B7) ni construcción. El vendedor no recibe vínculos, compras de origen, proveedores, costos ni datos financieros (servicio, HTML y URL directa).
+
+**Ejemplo (caso principal):** OV de 100 postes; compra A 60 y compra B 40.
+
+| Paso | Compra A | Compra B | Entregas |
+|---|---|---|---|
+| Entrega 1 de 70 | 0 de 60 vinculados | 0 de 40 vinculados | E1: 70 pendiente de origen |
+| Vincular 60 A + 10 B a E1 | 60 | 10 | E1: completa |
+| Entrega 2 de 30 y vincular 30 B | 60 | 40 | E1 y E2: completas |
+
+No se aceptan 71 en E1 ni 41 desde B. A y B no se anulan mientras tengan vínculos vigentes.
+
+Verificación:
+- **Pruebas:** 11 de integración. Cubren:
+  - El caso principal con excesos y bloqueos.
+  - Corrección con historial.
+  - Compra anulable cuando otras compras cubren las entregas.
+  - Anulación de entrega.
+  - Fracciones (2.375 m = 1.25 + 1.125) y vinculación parcial.
+  - Borradores, compras anuladas, otra partida, OV o Empresa.
+  - Vendedor bloqueado y resumen de entregas del vendedor sin datos internos.
+  - Ausencia de efectos en saldos, resultado y cantidades.
+  - Idempotencia y concurrencia: misma clave, capturas simultáneas, entrega contra anulación de compra, vínculo contra anulación de entrega.
+  - Reglas de la base.
+- **Recorrido en navegador local (18 de noviembre de 2026, OV-000015 [PRUEBA]):**
+  1. Entrega 1 de 70 con «Origen por identificar». La compra A no ofrece «Anular compra» y enlaza a la Entrega 1.
+  2. Intento de 71: rechazado con mensaje claro. Después, 60 A + 10 B y «Origen identificado».
+  3. El vendedor registra la Entrega 2 de 30 sin ver compras.
+  4. Se propusieron 30 de B (A sin disponible) y se confirmó.
+  5. Compra B: 40 vinculados (Entrega 1: 10, Entrega 2: 30) y bloqueada por vínculos. Compra A: 60 (Entrega 1).
+  6. Corrección del vínculo de 10 de B: E1 vuelve a 10 pendiente con el vínculo anulado visible. B queda en 30 vinculados y 10 sin vincular, bloqueada por la Entrega 2 vinculada y por la Entrega 1 sin vincular.
+  7. El vendedor no ve compras, proveedores ni vínculos.
+  - Sin errores en consola.
+
+Limitaciones de B8A:
+- Sin recepción en almacén, inventario ni recepción independiente del proveedor; tampoco envíos parciales del proveedor sin entrega al cliente.
+- Sin devoluciones ni mermas (P14 no admite excedentes).
+- Un vínculo no se edita: se anula y se captura de nuevo.
+- No se vinculan compras de otra OV, aunque sea el mismo material.
+- La compra que surtió no se elige al registrar la entrega; se vincula después desde la entrega.
+
 ### Defecto funcional de sesión (fuera de Comercialización) — corregido
 
 **Ciclo de redirecciones con una cookie de sesión inválida.**
@@ -896,23 +990,23 @@ Limitaciones de B7 (decisiones de este bloque, confirmar si se requieren cambios
 - Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
 - Verificar en un despliegue aislado (no PRD) las cargas cerca del límite, el 413 de Vercel, las descargas de archivos anteriores de más de 4.5 MB y la corrección de sesión.
 - Decidir si se necesitan archivos de más de 4 MB (carga directa protegida a R2; propuesta en «Cargas de archivos»).
-- Recepciones por compra (COC) y su bloqueo de la anulación simple de una compra; el control de recepciones de B4 no está terminado.
+- Recepción en almacén o recepción independiente del proveedor (B8A solo cubre el surtido directo a obra ligado a una entrega al cliente).
 - Otros módulos siguen aceptando hasta 10 MB por archivo (y 55 MB por solicitud en la carga de documentos de Contabilidad), por encima de lo que admite Vercel. Se dejó sin cambiar; requiere decisión aparte.
 - P7 (importación del catálogo) sigue pendiente.
 - P8: la simulación 50/50 está implementada; retiros reales, reparto autorizado o pagado, deudas y reservas siguen pospuestos por el usuario.
 - Cancelación de OV y rechazo o cancelación de cotizaciones (ver §21).
 - Estados Rechazada/Cancelada de una cotización: no definidos.
 - Ajustes visuales y navegación móvil.
-- Resultado interno, gastos adicionales, cancelación de OV, rechazo de cotizaciones, anulación de compras surtidas y reprogramación con movimientos: ver el inventario de §21.
+- Detalle del estado de cada función (implementadas en B7 y B8A y pendientes): ver el inventario de §21.
 
-## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7)
+## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7 y B8A)
 
 Revisión del documento contra la implementación. Las recomendaciones son **propuestas**; ninguna fila convierte una propuesta en acuerdo confirmado.
 
 | Función o decisión | Estado real | Qué falta | Tipo | Recomendación para la primera salida y consecuencia |
 |---|---|---|---|---|
-| Recepciones por compra (COC) y su relación con entregas directas a obra | Pendiente | Registrar qué compra surtió qué cantidad, o acordar que la entrega directa al cliente (B6A) basta como registro físico. B6A no vincula entregas con compras | Decisión del usuario | Salir sin recepción por COC y usar solo la entrega al cliente. Consecuencia: no se sabe qué proveedor surtió cada entrega ni se detectan compras surtidas a medias |
-| Anulación de compras que ya surtieron material | Parcial | Hoy solo se bloquea si la compra tuvo pagos (B5). Sin recepciones, una compra surtida pero sin pagos se puede anular y su cuenta por pagar desaparece | Decisión del usuario | Mantenerla como está y documentar que administración verifica antes de anular. Consecuencia: depende de una revisión manual |
+| Recepciones por compra (COC) y su relación con entregas directas a obra | **Parcial (B8A): surtido directo a obra implementado** | Recepción en almacén o independiente del proveedor, envíos parciales sin entrega al cliente | Decisión del usuario | Salir con el surtido directo a obra si así opera el negocio |
+| Anulación de compras que ya surtieron material | **Implementado (B8A)** | Reverso de una compra con vínculos o pagos (hoy no se anula con la acción simple) | Decisión del usuario | Salir así |
 | Resultado de la operación (venta − costos) | **Implementado (B7)** | Resultado consolidado por periodo, cliente o vendedor | Decisión del usuario | Salir con el resultado por OV |
 | Gastos adicionales de la operación (fletes, maniobras, comisiones) | **Implementado (B7)** | Edición y corrección de gastos con pagos | Decisión del usuario | Salir así: un gasto con pagos no se anula con la acción simple |
 | Reparto entre socios (referencia 50/50, P8) | **Parcial: simulación 50/50 implementada (B7)** | Socios y porcentajes configurables, reparto autorizado y pagado, retiros reales | Pospuesto por el usuario | Fuera de la primera salida. Consecuencia: los retiros se registran fuera del sistema |

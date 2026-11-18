@@ -155,6 +155,7 @@ model Empresa {
   evidenciasEntrega       EvidenciaEntregaComercial[]
   cargasEvidenciaEntrega  CargaEvidenciaEntrega[]
   gastosComerciales       GastoComercial[]
+  vinculosSurtido         VinculoSurtidoComercial[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -369,28 +370,30 @@ model Usuario {
   // Director de SU Empresa. Default false: nadie queda marcado al migrar.
   vendedorComercial Boolean @default(false)
 
-  productosComercialesCreados       ProductoComercial[]      @relation("ProductoComercialCreado")
-  productosComercialesActualizados  ProductoComercial[]      @relation("ProductoComercialActualizado")
-  clientesComercialesCreados        ClienteComercial[]       @relation("ClienteComercialCreado")
-  obrasComercialesCreadas           ObraComercial[]          @relation("ObraComercialCreada")
-  cotizacionesVentaCreadas          CotizacionVenta[]        @relation("CotizacionVentaCreada")
-  cotizacionesVentaActualizadas     CotizacionVenta[]        @relation("CotizacionVentaActualizada")
-  cotizacionesVentaVendidas         CotizacionVenta[]        @relation("CotizacionVentaVendedor")
-  partidasPrecioAjustado            PartidaCotizacionVenta[] @relation("PartidaPrecioAjustado")
-  cotizacionesVentaEmitidas         CotizacionVenta[]        @relation("CotizacionVentaEmitida")
-  ordenesVentaRegistradas           OrdenVenta[]             @relation("OrdenVentaRegistrada")
-  comprasComercialesCreadas         CompraComercial[]        @relation("CompraComercialCreada")
-  comprasComercialesActualizadas    CompraComercial[]        @relation("CompraComercialActualizada")
-  comprasComercialesConfirmadas     CompraComercial[]        @relation("CompraComercialConfirmada")
-  comprasComercialesAnuladas        CompraComercial[]        @relation("CompraComercialAnulada")
-  cuentasComercialesAnuladas        CuentaComercial[]        @relation("CuentaComercialAnulada")
-  movimientosComercialesRegistrados MovimientoComercial[]    @relation("MovimientoComercialRegistrado")
-  movimientosComercialesAnulados    MovimientoComercial[]    @relation("MovimientoComercialAnulado")
-  entregasComercialesRegistradas    EntregaComercial[]       @relation("EntregaComercialRegistrada")
-  entregasComercialesAnuladas       EntregaComercial[]       @relation("EntregaComercialAnulada")
-  cargasEvidenciaEntrega            CargaEvidenciaEntrega[]  @relation("CargaEvidenciaEntregaRegistrada")
-  gastosComercialesRegistrados      GastoComercial[]         @relation("GastoComercialRegistrado")
-  gastosComercialesAnulados         GastoComercial[]         @relation("GastoComercialAnulado")
+  productosComercialesCreados       ProductoComercial[]       @relation("ProductoComercialCreado")
+  productosComercialesActualizados  ProductoComercial[]       @relation("ProductoComercialActualizado")
+  clientesComercialesCreados        ClienteComercial[]        @relation("ClienteComercialCreado")
+  obrasComercialesCreadas           ObraComercial[]           @relation("ObraComercialCreada")
+  cotizacionesVentaCreadas          CotizacionVenta[]         @relation("CotizacionVentaCreada")
+  cotizacionesVentaActualizadas     CotizacionVenta[]         @relation("CotizacionVentaActualizada")
+  cotizacionesVentaVendidas         CotizacionVenta[]         @relation("CotizacionVentaVendedor")
+  partidasPrecioAjustado            PartidaCotizacionVenta[]  @relation("PartidaPrecioAjustado")
+  cotizacionesVentaEmitidas         CotizacionVenta[]         @relation("CotizacionVentaEmitida")
+  ordenesVentaRegistradas           OrdenVenta[]              @relation("OrdenVentaRegistrada")
+  comprasComercialesCreadas         CompraComercial[]         @relation("CompraComercialCreada")
+  comprasComercialesActualizadas    CompraComercial[]         @relation("CompraComercialActualizada")
+  comprasComercialesConfirmadas     CompraComercial[]         @relation("CompraComercialConfirmada")
+  comprasComercialesAnuladas        CompraComercial[]         @relation("CompraComercialAnulada")
+  cuentasComercialesAnuladas        CuentaComercial[]         @relation("CuentaComercialAnulada")
+  movimientosComercialesRegistrados MovimientoComercial[]     @relation("MovimientoComercialRegistrado")
+  movimientosComercialesAnulados    MovimientoComercial[]     @relation("MovimientoComercialAnulado")
+  entregasComercialesRegistradas    EntregaComercial[]        @relation("EntregaComercialRegistrada")
+  entregasComercialesAnuladas       EntregaComercial[]        @relation("EntregaComercialAnulada")
+  cargasEvidenciaEntrega            CargaEvidenciaEntrega[]   @relation("CargaEvidenciaEntregaRegistrada")
+  gastosComercialesRegistrados      GastoComercial[]          @relation("GastoComercialRegistrado")
+  gastosComercialesAnulados         GastoComercial[]          @relation("GastoComercialAnulado")
+  vinculosSurtidoRegistrados        VinculoSurtidoComercial[] @relation("VinculoSurtidoRegistrado")
+  vinculosSurtidoAnulados           VinculoSurtidoComercial[] @relation("VinculoSurtidoAnulado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -3233,6 +3236,9 @@ model PartidaCompraComercial {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  vinculosSurtido VinculoSurtidoComercial[]
+
+  @@unique([id, empresaId])
   @@unique([compraId, partidaVentaId])
   @@index([empresaId, partidaVentaId])
   @@map("partidas_compra_comercial")
@@ -3483,6 +3489,9 @@ model PartidaEntregaComercial {
 
   cantidad Decimal @db.Decimal(14, 3)
 
+  vinculosSurtido VinculoSurtidoComercial[]
+
+  @@unique([id, empresaId])
   @@unique([entregaId, partidaVentaId])
   @@index([empresaId, partidaVentaId])
   @@map("partidas_entrega_comercial")
@@ -3600,4 +3609,51 @@ model GastoComercial {
   @@unique([empresaId, claveRegistro])
   @@index([empresaId, ordenVentaId])
   @@map("gastos_comerciales")
+}
+
+enum EstatusVinculoSurtido {
+  VIGENTE
+  ANULADO
+}
+
+// B8A — surtido directo a obra: qué partida de compra (proveedor) surtió una
+// cantidad de una partida ENTREGADA al cliente (B6A). No es inventario ni
+// recepción en almacén. Ambas partidas son de la misma Empresa, OV y partida
+// de venta. Cuenta solo si el vínculo está VIGENTE, su entrega CONFIRMADA y
+// su compra CONFIRMADA. No se edita ni se borra: se anula con motivo.
+// entregaId, compraId, ordenVentaId y partidaVentaId son copias que la base
+// verifica contra las partidas (migración 20261124090000).
+model VinculoSurtidoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  partidaEntrega   PartidaEntregaComercial @relation(fields: [partidaEntregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaEntregaId String
+  partidaCompra    PartidaCompraComercial  @relation(fields: [partidaCompraId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaCompraId  String
+
+  ordenVentaId   String
+  entregaId      String
+  compraId       String
+  partidaVentaId String
+
+  cantidad Decimal               @db.Decimal(14, 3)
+  estatus  EstatusVinculoSurtido @default(VIGENTE)
+
+  claveRegistro   String
+  registradoPor   Usuario  @relation("VinculoSurtidoRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  createdAt       DateTime @default(now())
+
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?  @relation("VinculoSurtidoAnulado", fields: [anuladoPorId], references: [id])
+  anuladoPorId    String?
+  motivoAnulacion String?
+
+  @@unique([empresaId, claveRegistro])
+  @@index([empresaId, ordenVentaId])
+  @@index([partidaEntregaId])
+  @@index([partidaCompraId])
+  @@map("vinculos_surtido_comercial")
 }
