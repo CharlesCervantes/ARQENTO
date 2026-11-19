@@ -1,0 +1,63 @@
+/* Comercialización — estilo del rediseño (design/plan-rediseno-comercializacion
+   §8). ACOTADO a .comercial (layout del módulo): no altera construcción, el
+   sidebar ni otras pantallas. Fondo gris cálido, tarjetas blancas y carbón
+   como color de acción; el color configurado de la Empresa se conserva en
+   --marca-empresa para acentos discretos. */
+.comercial-raiz {
+  --marca-empresa: var(--brand);
+}
+.comercial {
+  --background: #f1efed;
+  --surface: #ffffff;
+  --foreground: #1d2023;
+  --muted: #5c6167;
+  --border: #e4e0db;
+  --brand: #222629;
+  --brand-foreground: #ffffff;
+  --c-suave: #f7f5f3;
+  color: var(--foreground);
+}
+main:has(.comercial) {
+  background: #f1efed;
+}
+.comercial .rounded-2xl {
+  border-radius: 20px;
+}
+
+/* Panel lateral (<dialog>): a la derecha en escritorio, pantalla completa en
+   móvil. */
+.comercial-panel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  border: 0;
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: -18px 0 48px -24px rgba(22, 25, 28, 0.35);
+}
+.comercial-panel::backdrop {
+  background: rgba(22, 25, 28, 0.38);
+}
+@media (min-width: 640px) {
+  .comercial-panel {
+    width: min(36rem, 100vw);
+    border-radius: 20px 0 0 20px;
+  }
+  .comercial-panel[data-ancho="amplio"] {
+    width: min(64rem, 100vw);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .comercial-panel[open] {
+    transition: translate 220ms var(--ease-out), opacity 220ms var(--ease-out);
+    @starting-style {
+      translate: 24px 0;
+      opacity: 0;
+    }
+  }
+}

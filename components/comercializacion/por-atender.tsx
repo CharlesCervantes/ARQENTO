@@ -1,15 +1,14 @@
 import Link from "next/link";
-import { Card } from "@/components/ui/card";
 import { Table, Thead, Th, Tr, Td } from "@/components/ui/table";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { CATEGORIAS_AVISO, ETIQUETA_CATEGORIA_AVISO, type CategoriaAviso, type TotalesAviso } from "@/lib/comercializacion/recordatorios";
 import type { RecordatoriosComerciales } from "@/lib/server/comercializacion/recordatorios";
-import { ActualizarConsulta } from "./actualizar-consulta";
 
 // Bloque «Por atender» (B6B) del listado de Comercialización. SOLO se
 // renderiza para administración (la página no calcula nada para el
-// vendedor). Componente de servidor: categoría y "Ver más" por GET.
+// vendedor). Componente de servidor: categoría y "Ver más" por GET. Desde el
+// rediseño se muestra dentro del panel «Ver pendientes» del listado.
 // Por cobrar y por pagar siempre por separado; nunca se compensan.
 
 const unidad = (categoria: CategoriaAviso, t: TotalesAviso) =>
@@ -37,14 +36,8 @@ export function PorAtender({ datos, parametros }: { datos: RecordatoriosComercia
           : "Cuentas con saldo que todavía no tienen fechas de pago. No se clasifican como vencidas.";
 
   return (
-    <Card id="por-atender" className="scroll-mt-6 space-y-4 p-5">
-      <ActualizarConsulta hoy={datos.hoy} zona={datos.zona} generadoEn={datos.generadoEn} />
-      <div>
-        <h2 className="text-base font-semibold text-[var(--foreground)]">Por atender</h2>
-        <p className="mt-0.5 text-xs text-[var(--muted)]">
-          Cobros y pagos pendientes según las cuotas reales. Se resuelven registrando el cobro o pago en el documento. Importe = saldo pendiente de cada cuota.
-        </p>
-      </div>
+    <div id="por-atender" className="scroll-mt-6 space-y-4">
+      <p className="text-sm text-[var(--muted)]">Se resuelven registrando el cobro o pago en su documento. Importe = saldo pendiente de cada cuota.</p>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4" role="tablist" aria-label="Categorías de avisos">
         {CATEGORIAS_AVISO.map((k) => {
@@ -59,7 +52,7 @@ export function PorAtender({ datos, parametros }: { datos: RecordatoriosComercia
               aria-selected={activa}
               data-categoria={k}
               className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                activa ? "border-[var(--brand)] bg-[var(--brand)]/5" : "border-[var(--border)] hover:bg-black/[0.03]"
+                activa ? "border-[var(--brand)] bg-[var(--brand)]/[0.06] ring-1 ring-[var(--brand)]" : "border-[var(--border)] hover:bg-black/[0.03]"
               }`}
             >
               <span className={`block text-sm font-medium ${k === "VENCIDO" && hay ? "text-red-700" : "text-[var(--foreground)]"}`}>{ETIQUETA_CATEGORIA_AVISO[k]}</span>
@@ -106,7 +99,7 @@ export function PorAtender({ datos, parametros }: { datos: RecordatoriosComercia
                   </Td>
                   <Td className="text-right tabular-nums whitespace-nowrap">{formatearImporte(a.saldo)}</Td>
                   <Td className="whitespace-nowrap">
-                    <Link href={a.enlace} className="text-sm font-medium text-[var(--brand)] hover:underline">
+                    <Link href={a.enlace} className="text-sm font-medium text-[var(--foreground)] underline decoration-[var(--border)] underline-offset-4 hover:decoration-[var(--foreground)]">
                       {a.tipo === "COBRO" ? "Ir a cobros" : "Ir a pagos"}
                     </Link>
                   </Td>
@@ -126,6 +119,6 @@ export function PorAtender({ datos, parametros }: { datos: RecordatoriosComercia
           </div>
         </>
       )}
-    </Card>
+    </div>
   );
 }
