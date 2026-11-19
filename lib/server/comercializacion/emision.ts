@@ -14,7 +14,7 @@ import {
   alcance,
   crearCotizacionVenta,
 } from "@/lib/server/comercializacion/cotizaciones";
-import { calcularImportePartida, calcularTotalesCotizacion } from "@/lib/comercializacion/importes";
+import { calcularImportePartida, calcularTotalesCotizacion, comoTratamientoVenta } from "@/lib/comercializacion/importes";
 import { dateAFecha, hoyNegocio } from "@/lib/comercializacion/fechas";
 import { leerDocumentoEmitido, type DocumentoCotizacion } from "@/lib/comercializacion/documento";
 
@@ -76,7 +76,7 @@ function armarDocumento(c: CotizacionParaDocumento): DocumentoCotizacion {
       cantidad,
       precioUnitario,
       importe: calcularImportePartida(cantidad, precioUnitario),
-      tratamientoImpuesto: p.tratamientoImpuesto,
+      tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto),
       tasaIva: p.tasaIva === null ? null : p.tasaIva.toFixed(2),
     };
   });

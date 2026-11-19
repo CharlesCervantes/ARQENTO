@@ -62,7 +62,7 @@ async function orden(total: string, u: UsuarioSesion = admin) {
 
 async function compra(o: { ordenId: string; partidaVentaId: string }, cantidad: string) {
   const { id } = await crearCompraComercial(admin, o.ordenId, clave());
-  await guardarBorradorCompra(admin, id, 1, { proveedorId: PROV, fecha: HOY_REAL, partidas: [{ partidaVentaId: o.partidaVentaId, cantidad, costoUnitario: "1", tratamientoImpuesto: "EXENTO" }] });
+  await guardarBorradorCompra(admin, id, 1, { proveedorId: PROV, fecha: HOY_REAL, partidas: [{ partidaVentaId: o.partidaVentaId, cantidad, costoUnitario: "1", tratamientoImpuesto: "SIN_IVA" }] });
   await confirmarCompraComercial(admin, id, 2);
   const cuenta = await db.cuentaComercial.findFirstOrThrow({ where: { compraId: id } });
   const folio = (await db.compraComercial.findUniqueOrThrow({ where: { id } })).folio;

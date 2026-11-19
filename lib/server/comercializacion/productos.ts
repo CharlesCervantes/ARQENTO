@@ -12,6 +12,7 @@ import {
   normalizarImporte,
   normalizarTasa,
   type TratamientoImpuesto,
+  comoTratamientoVenta,
 } from "@/lib/comercializacion/importes";
 
 // Catálogo de productos de Comercialización — B1 (noviembre 2026).
@@ -76,7 +77,7 @@ function aVenta(p: Prisma.ProductoComercialGetPayload<{ select: typeof SELECT_VE
     descripcion: p.descripcion,
     unidad: p.unidad,
     precioVenta: dec(p.precioVenta),
-    tratamientoImpuesto: p.tratamientoImpuesto,
+    tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto),
     tasaIva: decONulo(p.tasaIva),
   };
 }
@@ -293,7 +294,7 @@ export async function editarProductoComercial(
   return conCodigoUnico(datos.codigo, () =>
     db.$transaction(async (tx) => {
       const actual = await productoDeMiEmpresaTx(tx, empresaId, productoId);
-      const antes = instantanea(actual);
+      const antes = instantanea({ ...actual, tratamientoImpuesto: comoTratamientoVenta(actual.tratamientoImpuesto) });
       const despues = instantanea(datos);
       const cambios = Object.keys(despues).filter((k) => antes[k] !== despues[k]);
       if (cambios.length === 0) return { cambios };

@@ -11,7 +11,7 @@ import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructu
 import { requerirAdministracionComercial } from "@/lib/server/comercializacion/acceso";
 import { anularCuentaDeGastoTx, crearCuentaTx, detallesCuentasDeGastos, hoyDeEmpresa, type DetalleCuenta } from "@/lib/server/comercializacion/cuentas";
 import { cantidadesDeOrden } from "@/lib/server/comercializacion/compras";
-import { calcularImpuesto, normalizarImporte, normalizarTasa, TRATAMIENTOS_IMPUESTO, type TratamientoImpuesto } from "@/lib/comercializacion/importes";
+import { calcularImpuesto, normalizarImporte, normalizarTasa, TRATAMIENTOS_IMPUESTO, type TratamientoImpuesto, comoTratamientoVenta } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, normalizarFecha } from "@/lib/comercializacion/fechas";
 import { MAX_BYTES_POR_CARGA, MB_POR_CARGA, formatearTamano } from "@/lib/comercializacion/cargas";
 import { calcularResultado, type ResultadoEstimado } from "@/lib/comercializacion/resultado";
@@ -122,7 +122,7 @@ export async function resumenGastosOrden(usuario: UsuarioSesion, ordenVentaId: s
       beneficiarioNombre: g.beneficiarioNombre,
       fecha: dateAFecha(g.fecha),
       subtotal: g.subtotal.toFixed(2),
-      tratamientoImpuesto: g.tratamientoImpuesto,
+      tratamientoImpuesto: comoTratamientoVenta(g.tratamientoImpuesto),
       tasaIva: g.tasaIva?.toFixed(2) ?? null,
       iva: g.iva.toFixed(2),
       total: g.total.toFixed(2),

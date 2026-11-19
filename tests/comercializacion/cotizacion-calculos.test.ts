@@ -105,6 +105,7 @@ describe("calcularTotalesCotizacion — impuestos mixtos", () => {
       gravado: [],
       baseTasaCero: "0.00",
       baseExenta: "0.00",
+      baseSinIva: "0.00",
       iva: "0.00",
       total: "0.00",
     });

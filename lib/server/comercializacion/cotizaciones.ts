@@ -15,6 +15,7 @@ import {
   normalizarImporte,
   type TotalesCotizacion,
   type TratamientoImpuesto,
+  comoTratamientoVenta,
 } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
 import { leerDocumentoEmitido, type DocumentoCotizacion } from "@/lib/comercializacion/documento";
@@ -325,7 +326,7 @@ async function resolverPartidas(
         codigo: prod.codigo,
         descripcion: prod.descripcion,
         unidad: prod.unidad,
-        tratamientoImpuesto: prod.tratamientoImpuesto,
+        tratamientoImpuesto: comoTratamientoVenta(prod.tratamientoImpuesto),
         tasaIva: prod.tasaIva === null ? null : prod.tasaIva.toFixed(2),
         precioBase: prod.precioVenta.toFixed(2),
       };
@@ -535,7 +536,7 @@ export async function actualizarCotizacionVenta(
 
     await validarClienteObra(tx, empresaId, datos);
     const vendedorId = await resolverVendedor(tx, usuario, empresaId, datos.vendedorId, actual.vendedorId);
-    const partidas = await resolverPartidas(tx, usuario, empresaId, datos.partidas, actual.partidas);
+    const partidas = await resolverPartidas(tx, usuario, empresaId, datos.partidas, actual.partidas.map((p) => ({ ...p, tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto) })));
     const totales = totalesDe(partidas);
 
     // --- Diferencias para bitácora (y para saber si hay algo que guardar) ---
@@ -871,7 +872,7 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
     codigo: p.codigo,
     descripcion: p.descripcion,
     unidad: p.unidad,
-    tratamientoImpuesto: p.tratamientoImpuesto,
+    tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto),
     tasaIva: p.tasaIva === null ? null : p.tasaIva.toFixed(2),
     cantidad: p.cantidad.toFixed(3),
     precioBase: p.precioBase.toFixed(2),

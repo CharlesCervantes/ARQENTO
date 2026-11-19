@@ -11,6 +11,7 @@ import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructu
 import { requerirAdministracionComercial } from "@/lib/server/comercializacion/acceso";
 import { ConflictoEdicionError } from "@/lib/server/comercializacion/cotizaciones";
 import { aCentavos, deCentavos, formatearImporte, normalizarImporte } from "@/lib/comercializacion/importes";
+import { esPlazoMensual, generarMensualidades, GeneracionMensualidadesError, type PlazoMensual } from "@/lib/comercializacion/mensualidades";
 import { dateAFecha, fechaADate, normalizarFecha } from "@/lib/comercializacion/fechas";
 import {
   calcularEstadoCuenta,
@@ -269,10 +270,15 @@ export async function detalleCuentaDeCompra(usuario: UsuarioSesion, compraId: st
 
 const esquemaCondiciones = z.strictObject({
   modalidad: z.enum(["CONTADO", "CREDITO"], { error: "Elige contado o crédito." }),
+  // Cuotas capturadas (contado o «Cuotas manuales»)…
   cuotas: z
     .array(z.strictObject({ fechaVencimiento: z.unknown(), importe: z.unknown() }))
     .min(1, "Indica al menos una fecha de pago.")
-    .max(MAX_CUOTAS, `Máximo ${MAX_CUOTAS} cuotas.`),
+    .max(MAX_CUOTAS, `Máximo ${MAX_CUOTAS} cuotas.`)
+    .optional(),
+  // …o mensualidades automáticas (solo crédito de compras a proveedor): el
+  // servidor genera el calendario desde el total de la cuenta; no recibe importes.
+  mensualidades: z.strictObject({ plazo: z.unknown(), primerVencimiento: z.unknown() }).optional(),
 });
 
 async function bloquearCuenta(tx: Tx, empresaId: string, cuentaId: string) {
@@ -293,14 +299,21 @@ export async function definirCondicionesCuenta(usuario: UsuarioSesion, cuentaId:
   const empresaId = requerirAdministracionComercial(usuario);
   const version = z.number({ error: "Versión inválida." }).int().min(1).parse(versionLeida);
   const d = esquemaCondiciones.parse(datosCrudos);
-  const cuotas = d.cuotas.map((q, i) => {
-    const fecha = normalizarFecha(q.fechaVencimiento);
-    if (!fecha) throw new ValidacionError(`Cuota ${i + 1}: indica una fecha válida (AAAA-MM-DD).`);
-    const importe = normalizarImporte(q.importe, { permitirCero: false });
-    if (!importe) throw new ValidacionError(`Cuota ${i + 1}: el importe debe ser mayor que 0 con máximo 2 decimales.`);
-    return { fecha, importe };
-  });
-  if (d.modalidad === "CONTADO" && cuotas.length !== 1) throw new ValidacionError("De contado se paga en una sola fecha por el total.");
+  const mensualidades = d.mensualidades ?? null;
+  if (mensualidades ? d.cuotas !== undefined : d.cuotas === undefined) throw new ValidacionError("Indica las cuotas o el plazo de mensualidades (no ambos).");
+  if (mensualidades && d.modalidad !== "CREDITO") throw new ValidacionError("Las mensualidades automáticas son de crédito.");
+  if (mensualidades && !esPlazoMensual(mensualidades.plazo)) throw new ValidacionError("Elige un plazo de 3, 6, 12, 18 o 24 meses.");
+  let cuotas: { fecha: string; importe: string }[] = [];
+  if (d.cuotas) {
+    cuotas = d.cuotas.map((q, i) => {
+      const fecha = normalizarFecha(q.fechaVencimiento);
+      if (!fecha) throw new ValidacionError(`Cuota ${i + 1}: indica una fecha válida (AAAA-MM-DD).`);
+      const importe = normalizarImporte(q.importe, { permitirCero: false });
+      if (!importe) throw new ValidacionError(`Cuota ${i + 1}: el importe debe ser mayor que 0 con máximo 2 decimales.`);
+      return { fecha, importe };
+    });
+    if (d.modalidad === "CONTADO" && cuotas.length !== 1) throw new ValidacionError("De contado se paga en una sola fecha por el total.");
+  }
 
   return db.$transaction(async (tx) => {
     const c = await bloquearCuenta(tx, empresaId, cuentaId);
@@ -308,6 +321,18 @@ export async function definirCondicionesCuenta(usuario: UsuarioSesion, cuentaId:
     if (c.version !== version) throw new ConflictoEdicionError();
     if (c.tuvoMovimientos) {
       throw new ValidacionError("Las condiciones ya no se pueden cambiar: la cuenta tiene cobros o pagos registrados (reprogramar con pagos queda pendiente).");
+    }
+    if (mensualidades) {
+      if (!c.compraId) throw new ValidacionError("Las mensualidades automáticas solo aplican al crédito de compras a proveedor.");
+      try {
+        cuotas = generarMensualidades(c.total.toFixed(2), mensualidades.plazo as PlazoMensual, String(mensualidades.primerVencimiento ?? "")).map((q) => ({
+          fecha: q.fechaVencimiento,
+          importe: q.importe,
+        }));
+      } catch (e) {
+        if (e instanceof GeneracionMensualidadesError) throw new ValidacionError(e.message);
+        throw e;
+      }
     }
     const suma = cuotas.reduce((s, q) => s + aCentavos(q.importe), BigInt(0));
     if (suma !== aCentavos(c.total.toFixed(2))) {
@@ -333,7 +358,12 @@ export async function definirCondicionesCuenta(usuario: UsuarioSesion, cuentaId:
         modalidad: c.modalidad,
         cuotas: anteriores.map((q) => ({ fecha: dateAFecha(q.fechaVencimiento), importe: q.importe.toFixed(2) })),
       },
-      valorNuevo: { modalidad: d.modalidad, cuotas: ordenadas.map((q) => ({ fecha: q.fecha, importe: q.importe })), version: nuevaVersion },
+      valorNuevo: {
+        modalidad: d.modalidad,
+        generacion: mensualidades ? { plazoMeses: mensualidades.plazo, primerVencimiento: ordenadas[0].fecha } : "MANUAL",
+        cuotas: ordenadas.map((q) => ({ fecha: q.fecha, importe: q.importe })),
+        version: nuevaVersion,
+      },
     });
     return { version: nuevaVersion };
   });

@@ -82,7 +82,7 @@ async function compraDe12000(ordenId: string, partidaVentaId: string) {
   await guardarBorradorCompra(admin, id, 1, {
     proveedorId: PROV,
     fecha: HOY,
-    partidas: [{ partidaVentaId, cantidad: "1", costoUnitario: "12000", tratamientoImpuesto: "EXENTO" }],
+    partidas: [{ partidaVentaId, cantidad: "1", costoUnitario: "12000", tratamientoImpuesto: "SIN_IVA" }],
   });
   await confirmarCompraComercial(admin, id, 2);
   return id;

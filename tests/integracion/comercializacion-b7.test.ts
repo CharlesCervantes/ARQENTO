@@ -223,8 +223,8 @@ describe("Costos incompletos y compras", () => {
     // 2.375 × 100.10 = 237.74 (half-up) y 1.5 × 33.33 = 50.00 (49.995 half-up).
     assert.equal(ov.subtotal.toFixed(2), "287.74");
     await compra(o.ordenId, [
-      { partidaVentaId: o.pv[0], cantidad: "2.375", costoUnitario: "70.01", tasaIva: "8" },
-      { partidaVentaId: o.pv[1], cantidad: "1.5", costoUnitario: "20", tratamientoImpuesto: "TASA_CERO", tasaIva: undefined },
+      { partidaVentaId: o.pv[0], cantidad: "2.375", costoUnitario: "70.01" },
+      { partidaVentaId: o.pv[1], cantidad: "1.5", costoUnitario: "20", tratamientoImpuesto: "SIN_IVA", tasaIva: undefined },
     ]);
     const g = await gasto(o.ordenId, { subtotal: "10.55", tasaIva: "8" });
     const det = (await resumenGastosOrden(admin, o.ordenId)).gastos.find((x) => x.id === g.gastoId)!;

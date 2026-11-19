@@ -12,14 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   calcularImportePartida,
   calcularTotalesCotizacion,
-  ETIQUETA_TRATAMIENTO,
+  esImpuestoCompraVigente,
+  etiquetaImpuestoCompra,
   formatearCantidad,
   formatearImporte,
   normalizarCantidad,
   normalizarImporte,
   normalizarTasa,
-  TRATAMIENTOS_IMPUESTO,
-  type TratamientoImpuesto,
+  OPCIONES_IMPUESTO_COMPRA,
+  type TratamientoImpuestoCompra,
 } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import type { CompraDetalle, OpcionProveedor } from "@/lib/server/comercializacion/compras";
@@ -43,11 +44,18 @@ const claseSecundaria = "text-sm text-[var(--muted)] hover:text-[var(--foregroun
 const claseEnlace = "text-sm font-medium text-[var(--brand)] hover:underline";
 const formatoFechaHora = new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Monterrey" });
 
-type Linea = { cantidad: string; costo: string; tratamiento: TratamientoImpuesto | ""; tasa: string };
+type Linea = { cantidad: string; costo: string; tratamiento: TratamientoImpuestoCompra | ""; tasa: string };
 
-function etiquetaImpuesto(t: TratamientoImpuesto | null, tasa: string | null) {
-  if (!t) return "—";
-  return t === "GRAVADO" && tasa ? `IVA ${Number(tasa)} %` : ETIQUETA_TRATAMIENTO[t];
+const etiquetaImpuesto = etiquetaImpuestoCompra;
+
+// Selector visible: «Sin IVA» / «IVA 16 %». Un tratamiento anterior del
+// borrador (tasa 0 %, exento u otra tasa) se muestra como opción propia para
+// conservarlo tal cual; no se ofrece para partidas nuevas.
+function valorSelector(l: Linea): string {
+  if (!l.tratamiento) return "";
+  const tasa = l.tratamiento === "GRAVADO" ? normalizarTasa(l.tasa) : null;
+  if (esImpuestoCompraVigente(l.tratamiento, tasa)) return l.tratamiento === "SIN_IVA" ? "SIN_IVA" : "IVA";
+  return "ANTERIOR";
 }
 
 export function FormularioCompra({
@@ -66,6 +74,15 @@ export function FormularioCompra({
   const [proveedorId, setProveedorId] = useState(compra.proveedorId ?? "");
   const [fecha, setFecha] = useState(compra.fecha);
   const [notas, setNotas] = useState(compra.notas ?? "");
+  const anteriores = useMemo(() => {
+    const m: Record<string, Linea> = {};
+    for (const p of compra.partidas) {
+      if (p.tratamientoImpuesto && !esImpuestoCompraVigente(p.tratamientoImpuesto, p.tasaIva)) {
+        m[p.partidaVentaId] = { cantidad: "", costo: "", tratamiento: p.tratamientoImpuesto, tasa: p.tasaIva ? String(Number(p.tasaIva)) : "" };
+      }
+    }
+    return m;
+  }, [compra.partidas]);
   const [lineas, setLineas] = useState<Record<string, Linea>>(() => {
     const m: Record<string, Linea> = {};
     for (const q of compra.cantidadesOrden) m[q.partidaVentaId] = { cantidad: "", costo: "", tratamiento: "", tasa: "" };
@@ -111,7 +128,7 @@ export function FormularioCompra({
     let totales = null;
     try {
       totales = calcularTotalesCotizacion(
-        validas.map((f) => ({ importe: f.importe!, tratamientoImpuesto: f.l.tratamiento as TratamientoImpuesto, tasaIva: f.tasa }))
+        validas.map((f) => ({ importe: f.importe!, tratamientoImpuesto: f.l.tratamiento as TratamientoImpuestoCompra, tasaIva: f.tasa }))
       );
     } catch {
       totales = null;
@@ -251,7 +268,7 @@ export function FormularioCompra({
           <h2 className="text-base font-semibold text-[var(--foreground)]">Materiales de la orden</h2>
           <p className="text-xs text-[var(--muted)]">
             {editable
-              ? "Captura la cantidad que compras a este proveedor (vacío = no se incluye), el costo unitario sin IVA y el impuesto que aplica el proveedor. Se compra en la unidad de la venta. El costo de referencia del catálogo es solo orientativo."
+              ? "Captura la cantidad que compras a este proveedor (vacío = no se incluye), el costo unitario sin IVA y si la partida lleva IVA (16 % sobre el importe) o no. Se compra en la unidad de la venta. El costo de referencia del catálogo es solo orientativo."
               : "Copia histórica de lo comprado."}
           </p>
         </div>
@@ -304,33 +321,31 @@ export function FormularioCompra({
                           {q.costoReferencia && <div className="mt-0.5 text-xs text-[var(--muted)]">Ref. catálogo: {formatearImporte(q.costoReferencia)}</div>}
                         </td>
                         <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={l.tratamiento}
-                              onChange={(e) => {
-                                const t = e.target.value as TratamientoImpuesto | "";
-                                actualizar(q.partidaVentaId, { tratamiento: t, tasa: t === "GRAVADO" ? l.tasa || "16" : "" });
-                              }}
-                              className={`${claseSelect} w-36`}
-                              aria-label={`Impuesto de compra de ${q.codigo}`}
-                            >
-                              <option value="">Selecciona…</option>
-                              {TRATAMIENTOS_IMPUESTO.map((t) => (
-                                <option key={t} value={t}>
-                                  {ETIQUETA_TRATAMIENTO[t]}
-                                </option>
-                              ))}
-                            </select>
-                            {l.tratamiento === "GRAVADO" && (
-                              <Input
-                                value={l.tasa}
-                                onChange={(e) => actualizar(q.partidaVentaId, { tasa: e.target.value })}
-                                inputMode="decimal"
-                                className="w-20"
-                                aria-label={`Tasa de IVA de compra de ${q.codigo}`}
-                              />
+                          <select
+                            value={valorSelector(l)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const anterior = anteriores[q.partidaVentaId];
+                              const opcion = OPCIONES_IMPUESTO_COMPRA.find((o) => o.valor === v);
+                              if (opcion) actualizar(q.partidaVentaId, { tratamiento: opcion.tratamiento, tasa: opcion.tasa ? String(Number(opcion.tasa)) : "" });
+                              else if (v === "ANTERIOR" && anterior) actualizar(q.partidaVentaId, { tratamiento: anterior.tratamiento, tasa: anterior.tasa });
+                              else actualizar(q.partidaVentaId, { tratamiento: "", tasa: "" });
+                            }}
+                            className={`${claseSelect} w-40`}
+                            aria-label={`Impuesto de compra de ${q.codigo}`}
+                          >
+                            <option value="">Selecciona…</option>
+                            {OPCIONES_IMPUESTO_COMPRA.map((o) => (
+                              <option key={o.valor} value={o.valor}>
+                                {o.etiqueta}
+                              </option>
+                            ))}
+                            {anteriores[q.partidaVentaId] && (
+                              <option value="ANTERIOR">
+                                {etiquetaImpuesto(anteriores[q.partidaVentaId].tratamiento || null, normalizarTasa(anteriores[q.partidaVentaId].tasa))} (registro anterior)
+                              </option>
                             )}
-                          </div>
+                          </select>
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                           {importe ? formatearImporte(importe) : <span className="text-[var(--muted)]">—</span>}
@@ -371,14 +386,27 @@ export function FormularioCompra({
                 <span>Subtotal</span>
                 <span className="tabular-nums">{formatearImporte(t.subtotal)}</span>
               </div>
-              {t.gravado.map((g) => (
-                <div key={g.tasa} className="flex justify-between gap-4">
-                  <span>
-                    IVA {Number(g.tasa)} % sobre {formatearImporte(g.base)}
-                  </span>
-                  <span className="tabular-nums">{formatearImporte(g.iva)}</span>
+              {t.gravado.length === 0 ? (
+                <div className="flex justify-between gap-4">
+                  <span>IVA</span>
+                  <span className="tabular-nums">{formatearImporte(t.iva)}</span>
                 </div>
-              ))}
+              ) : (
+                t.gravado.map((g) => (
+                  <div key={g.tasa} className="flex justify-between gap-4">
+                    <span>
+                      IVA {Number(g.tasa)} % sobre {formatearImporte(g.base)}
+                    </span>
+                    <span className="tabular-nums">{formatearImporte(g.iva)}</span>
+                  </div>
+                ))
+              )}
+              {t.baseSinIva !== "0.00" && (
+                <div className="flex justify-between gap-4 text-[var(--muted)]">
+                  <span>Importe sin IVA (no agrega impuesto)</span>
+                  <span className="tabular-nums">{formatearImporte(t.baseSinIva)}</span>
+                </div>
+              )}
               {t.baseTasaCero !== "0.00" && (
                 <div className="flex justify-between gap-4 text-[var(--muted)]">
                   <span>Base tasa 0 % (IVA $0.00)</span>

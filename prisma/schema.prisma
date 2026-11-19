@@ -2822,10 +2822,14 @@ model DocumentoEgreso {
 // Tratamiento de impuesto por producto. TASA_CERO (IVA 0 %) y EXENTO (no
 // causa IVA) son fiscalmente distintos aunque ambos sumen $0 de IVA — nunca
 // se colapsan en uno solo. Solo GRAVADO usa ProductoComercial.tasaIva.
+// SIN_IVA: SOLO partidas de compra a proveedor (selector «Sin IVA»): el cálculo
+// no agrega impuesto; no declara exención ni tasa 0 %. La base lo rechaza en
+// catálogo, cotizaciones y gastos.
 enum TratamientoImpuestoComercial {
   GRAVADO
   TASA_CERO
   EXENTO
+  SIN_IVA
 }
 
 // Producto del catálogo comercial de una Empresa. Precios SIEMPRE sin IVA.

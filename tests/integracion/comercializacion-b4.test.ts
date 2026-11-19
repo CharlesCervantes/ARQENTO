@@ -161,27 +161,27 @@ describe("Compras de una OV", () => {
     const [tubo, varilla, flete] = ov.partidasVenta;
     const id = await compra(ov.ordenId, PROV_A, [
       linea(tubo.id, "1.25", "98.76", "GRAVADO", "16"), // 123.45; IVA 19.752 → 19.75
-      linea(varilla.id, "0.125", "2500", "TASA_CERO"), // 312.50
-      linea(flete.id, "1.5", "100", "GRAVADO", "8"), // venta EXENTA, compra gravada 8 %: 150.00; IVA 12.00
+      linea(varilla.id, "0.125", "2500", "SIN_IVA"), // 312.50 (venta tasa 0 %, compra «Sin IVA»)
+      linea(flete.id, "1.5", "100", "GRAVADO", "16"), // venta EXENTA, compra con IVA 16 %: 150.00
     ]);
     const c = await obtenerCompraComercial(admin, id);
     assert.deepEqual(c.partidas.map((p) => [p.codigo, p.cantidad, p.importe, p.tratamientoImpuesto, p.tasaIva]), [
       ["TUBO", "1.250", "123.45", "GRAVADO", "16.00"],
-      ["VARILLA", "0.125", "312.50", "TASA_CERO", null],
-      ["FLETE", "1.500", "150.00", "GRAVADO", "8.00"],
+      ["VARILLA", "0.125", "312.50", "SIN_IVA", null],
+      ["FLETE", "1.500", "150.00", "GRAVADO", "16.00"],
     ]);
     assert.equal(c.totales.subtotal, "585.95");
-    assert.deepEqual(c.totales.gravado, [
-      { tasa: "16.00", base: "123.45", iva: "19.75" },
-      { tasa: "8.00", base: "150.00", iva: "12.00" },
-    ]);
-    assert.equal(c.totales.baseTasaCero, "312.50");
-    assert.equal(c.totales.total, "617.70");
+    // IVA agrupado: 273.45 × 16 % = 43.752 → 43.75 (una sola vez por tasa).
+    assert.deepEqual(c.totales.gravado, [{ tasa: "16.00", base: "273.45", iva: "43.75" }]);
+    assert.equal(c.totales.baseSinIva, "312.50");
+    assert.equal(c.totales.baseTasaCero, "0.00");
+    assert.equal(c.totales.baseExenta, "0.00");
+    assert.equal(c.totales.total, "629.70");
     const [fila] = await db.$queryRawUnsafe<{ s: string; i: string; t: string }[]>(
       `SELECT subtotal::text s, iva::text i, total::text t FROM compras_comerciales WHERE id = $1`,
       id
     );
-    assert.deepEqual(fila, { s: "585.95", i: "31.75", t: "617.70" });
+    assert.deepEqual(fila, { s: "585.95", i: "43.75", t: "629.70" });
     assert.deepEqual(await pendientes(ov.ordenId), {
       TUBO: { comprado: "1.250", pendiente: "1.125", borrador: "0.000" },
       VARILLA: { comprado: "0.125", pendiente: "0.000", borrador: "0.000" },

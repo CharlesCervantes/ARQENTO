@@ -246,7 +246,7 @@ describe("Límite por carga (4 MB) en todas las cargas del módulo", () => {
     // Documento de compra.
     const prov = (await crearProveedorComercial(admin, { nombre: "Proveedor ficticio cierre" })).id;
     const compra = (await crearCompraComercial(admin, o.ordenId, clave())).id;
-    await guardarBorradorCompra(admin, compra, 1, { proveedorId: prov, fecha: HOY, partidas: [{ partidaVentaId: o.partidaVentaId, cantidad: "1", costoUnitario: "10", tratamientoImpuesto: "EXENTO" }] });
+    await guardarBorradorCompra(admin, compra, 1, { proveedorId: prov, fecha: HOY, partidas: [{ partidaVentaId: o.partidaVentaId, cantidad: "1", costoUnitario: "10", tratamientoImpuesto: "SIN_IVA" }] });
     await assert.rejects(adjuntarDocumentoCompra(admin, compra, { nombre: "f.pdf", bytes: pdfDe(4.1) }), /el máximo es 4 MB/);
     assert.equal((await db.compraComercial.findUniqueOrThrow({ where: { id: compra } })).documentoRef, null);
     await confirmarCompraComercial(admin, compra, 2);

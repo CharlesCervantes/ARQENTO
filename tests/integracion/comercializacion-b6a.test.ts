@@ -355,7 +355,7 @@ describe("Sin efectos fuera de las entregas", () => {
     await guardarBorradorCompra(admin, compraId, 1, {
       proveedorId: prov,
       fecha: HOY,
-      partidas: [{ partidaVentaId: o.poste, cantidad: "30", costoUnitario: "80", tratamientoImpuesto: "EXENTO" }],
+      partidas: [{ partidaVentaId: o.poste, cantidad: "30", costoUnitario: "80", tratamientoImpuesto: "SIN_IVA" }],
     });
     await confirmarCompraComercial(admin, compraId, 2);
     const fotoAntes = async () => ({

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import type { DetalleCuenta } from "@/lib/server/comercializacion/cuentas";
 import { aCentavos, deCentavos, formatearImporte, normalizarImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
+import { generarMensualidades, PLAZOS_MENSUALES, type CuotaGenerada, type PlazoMensual } from "@/lib/comercializacion/mensualidades";
 import {
   ETIQUETA_LIQUIDACION,
   ETIQUETA_METODO,
@@ -203,6 +204,19 @@ function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onL
   const [cuotas, setCuotas] = useState<{ fecha: string; importe: string }[]>(() =>
     cuenta.estado.cuotas.length > 0 ? cuenta.estado.cuotas.map((q) => ({ fecha: q.fechaVencimiento, importe: q.importe })) : [{ fecha: cuenta.hoy, importe: cuenta.estado.total }]
   );
+  // Crédito de compras a proveedor: mensualidades automáticas o cuotas manuales.
+  const admiteMensualidades = cuenta.origen === "COMPRA";
+  const [plazo, setPlazo] = useState<PlazoMensual | "MANUAL">("MANUAL");
+  const [primerVencimiento, setPrimerVencimiento] = useState("");
+  const automatico = admiteMensualidades && modalidad === "CREDITO" && plazo !== "MANUAL";
+  const propuesta = useMemo((): { cuotas: CuotaGenerada[] } | { error: string } | null => {
+    if (!automatico || !primerVencimiento) return null;
+    try {
+      return { cuotas: generarMensualidades(cuenta.estado.total, plazo, primerVencimiento) };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "No se pudo generar el calendario." };
+    }
+  }, [automatico, plazo, primerVencimiento, cuenta.estado.total]);
   const [error, setError] = useState<string | null>(null);
   const [pendiente, start] = useTransition();
   const suma = cuotas.reduce((s, q) => {
@@ -213,10 +227,13 @@ function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onL
 
   function guardar() {
     setError(null);
+    // En automático solo se envían plazo y fecha: el servidor genera los importes.
     const datos =
       modalidad === "CONTADO"
         ? { modalidad, cuotas: [{ fechaVencimiento: fechaContado, importe: cuenta.estado.total }] }
-        : { modalidad, cuotas: cuotas.map((q) => ({ fechaVencimiento: q.fecha, importe: q.importe })) };
+        : automatico
+          ? { modalidad, mensualidades: { plazo, primerVencimiento } }
+          : { modalidad, cuotas: cuotas.map((q) => ({ fechaVencimiento: q.fecha, importe: q.importe })) };
     start(async () => {
       const r = await definirCondicionesAction({ cuentaId: cuenta.id, version: cuenta.version, datos });
       if (r.error) return setError(r.error);
@@ -242,6 +259,75 @@ function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onL
         </label>
       ) : (
         <div className="space-y-2">
+          {admiteMensualidades && (
+            <label className="block max-w-xs">
+              <span className="mb-1.5 block text-sm font-medium">Plazo</span>
+              <select
+                value={plazo}
+                onChange={(ev) => setPlazo(ev.target.value === "MANUAL" ? "MANUAL" : (Number(ev.target.value) as PlazoMensual))}
+                className={claseSelect}
+                aria-label="Plazo del crédito"
+              >
+                {PLAZOS_MENSUALES.map((p) => (
+                  <option key={p} value={p}>
+                    {p} meses
+                  </option>
+                ))}
+                <option value="MANUAL">Cuotas manuales</option>
+              </select>
+            </label>
+          )}
+          {automatico ? (
+            <div className="space-y-2" data-mensualidades>
+              <label className="block max-w-xs">
+                <span className="mb-1.5 block text-sm font-medium">Primer vencimiento</span>
+                <Input type="date" value={primerVencimiento} onChange={(ev) => setPrimerVencimiento(ev.target.value)} aria-label="Fecha del primer vencimiento" />
+              </label>
+              <p className="text-xs text-[var(--muted)]">
+                {plazo} mensualidades por el total de {formatearImporte(cuenta.estado.total)} (incluye el impuesto de la compra), sin intereses ni comisiones. Cada mes vence el mismo
+                día; si un mes no lo tiene, vence su último día. La última cuota ajusta los centavos.
+              </p>
+              {!propuesta ? (
+                <p className="text-xs text-amber-800">Indica el primer vencimiento para ver el calendario.</p>
+              ) : "error" in propuesta ? (
+                <p className="text-xs text-red-700">{propuesta.error}</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+                    <table className="w-full text-sm" aria-label="Calendario propuesto">
+                      <thead className="bg-black/[0.02] text-left text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                        <tr>
+                          <th className="border-b border-[var(--border)] px-3 py-1.5">Cuota</th>
+                          <th className="border-b border-[var(--border)] px-3 py-1.5">Vence</th>
+                          <th className="border-b border-[var(--border)] px-3 py-1.5 text-right">Importe</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {propuesta.cuotas.map((q) => (
+                          <tr key={q.numero} className="border-b border-[var(--border)] last:border-0" data-mensualidad={q.numero}>
+                            <td className="px-3 py-1.5">{q.numero}</td>
+                            <td className="px-3 py-1.5">{formatearFechaCalendario(q.fechaVencimiento)}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">{formatearImporte(q.importe)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCuotas(propuesta.cuotas.map((q) => ({ fecha: q.fechaVencimiento, importe: q.importe })));
+                      setPlazo("MANUAL");
+                    }}
+                    className="text-sm font-medium text-[var(--brand)] hover:underline"
+                  >
+                    Editar como cuotas manuales
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
           {cuotas.map((q, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
               <span className="w-16 text-sm text-[var(--muted)]">Cuota {i + 1}</span>
@@ -268,6 +354,8 @@ function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onL
             Suma de cuotas: {formatearImporte(deCentavos(suma))} de {formatearImporte(cuenta.estado.total)}
             {diferencia !== BigInt(0) && ` · diferencia ${formatearImporte(deCentavos(diferencia))}`}. Se admiten fechas pasadas para compromisos ya existentes.
           </p>
+            </>
+          )}
         </div>
       )}
       <p className="text-xs text-[var(--muted)]">Guardar las condiciones no registra dinero recibido ni pagado.</p>
@@ -277,7 +365,7 @@ function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onL
         </p>
       )}
       <div className="flex items-center gap-3">
-        <Button type="button" onClick={guardar} disabled={pendiente}>
+        <Button type="button" onClick={guardar} disabled={pendiente || (automatico && !(propuesta && "cuotas" in propuesta))}>
           {pendiente ? "Guardando…" : "Guardar condiciones"}
         </Button>
         <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>

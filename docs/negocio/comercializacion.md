@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.12 · 18 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) y B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
+Versión: 0.13 · 19 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) y los ajustes de compras y crédito al proveedor (selector «Sin IVA» / «IVA 16 %» y mensualidades automáticas) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -144,7 +144,7 @@ Una venta puede requerir una o varias compras. **Propuesta:** admitir varias com
 Compra mínima: proveedor, folio/referencia, partidas/cantidades y costos confirmados, subtotal/impuestos/total, fecha de compra, modalidad **Pago directo / Crédito**, documento y condición de pago.
 
 - Pago directo: registrar obligación y pago efectivo por separado; fecha exigible capturada o confirmada. Guardar la compra no significa pagarla.
-- Crédito: calendario de una o varias cuotas, cada una con monto y fecha de vencimiento obligatorios. Capturar fechas explícitas; un generador de plazos sería opcional y no necesario para iniciar.
+- Crédito: calendario de una o varias cuotas, cada una con monto y fecha de vencimiento obligatorios. Capturar fechas explícitas; un generador de plazos sería opcional y no necesario para iniciar. **Aprobado e implementado (19 nov 2026), solo para compras a proveedor:** mensualidades automáticas de 3, 6, 12, 18 o 24 meses desde un primer vencimiento elegido; ver §20, «Ajustes de compras y crédito al proveedor».
 - No asumir si el plazo corre desde compra, factura o recepción. En primera versión capturar fechas por cuota. La base de plazo solo queda pendiente si se agrega cálculo automático.
 - Cambiar vencimiento requiere permiso, motivo e historial. Conservar vencimiento original y vigente.
 - Cada compra tiene saldo propio. Mostrar suma en la OC sin perder vencimientos individuales.
@@ -974,6 +974,61 @@ Limitaciones de B8A:
 - Un vínculo no se edita: se anula y se captura de nuevo.
 - No se vinculan compras de otra OV, aunque sea el mismo material.
 - La compra que surtió no se elige al registrar la entrega; se vincula después desde la entrega.
+
+### Ajustes de compras y crédito al proveedor (implementado, sin desplegar)
+
+Aprobados por el usuario el 19 de noviembre de 2026. Migración `20261125090000_comercializacion_impuesto_compra_sin_iva`, aplicada solo a las bases locales de desarrollo y de pruebas de Comercialización.
+
+**A. Selector de impuesto en las partidas de compra**
+- Opciones visibles: **Sin IVA** (no agrega impuesto) e **IVA 16 %** (16 % sobre el importe sin IVA). El costo unitario se sigue capturando sin IVA. La compra muestra subtotal, IVA y total.
+- «Sin IVA» se guarda como un tratamiento propio, `SIN_IVA`, exclusivo de compras. Describe el cálculo, **no** declara una exención ni una tasa 0 %; por eso no reutiliza `EXENTO` ni `TASA_CERO`. Se reporta como «Importe sin IVA (no agrega impuesto)», aparte de las bases de tasa 0 % y exenta.
+- Solo aplica a las partidas de compras comerciales. Catálogo, cotizaciones de venta y gastos adicionales conservan sus opciones; la base rechaza `SIN_IVA` en esas tablas.
+- **Históricos:** las compras confirmadas no se recalculan ni se modifican; conservan su tratamiento y tasa (tasa 0 %, exento, otras tasas) y se muestran con su etiqueta original («Tasa 0 %», «Exento», «IVA 8 %»). En un borrador anterior, una partida con un tratamiento previo lo conserva mientras no se cambie: el selector la muestra como «(registro anterior)». Una partida nueva, o un cambio a otro tratamiento anterior, solo admite las dos opciones vigentes (lo valida el servidor).
+
+**B. Mensualidades automáticas del crédito al proveedor**
+- Solo en las condiciones de crédito de compras a proveedor. Plazos: 3, 6, 12, 18 o 24 meses (= ese número de cuotas mensuales) o **Cuotas manuales** (el comportamiento anterior). Las cuentas por cobrar y las de gastos conservan solo la captura manual.
+- Se pide la fecha del primer vencimiento y se muestra el calendario antes de guardar. «Editar como cuotas manuales» pasa la propuesta a edición manual antes de guardarla.
+- Importe: total de la cuenta (incluye el impuesto de la compra) ÷ cuotas, en centavos. Todas llevan el cociente y la última absorbe la diferencia, para que la suma sea exactamente el total. Sin intereses ni comisiones. Si el total no alcanza para un centavo por cuota, no se genera.
+- Vencimientos: el mismo día del mes que el primero. Si un mes no tiene ese día, se usa su último día y el día original se recupera después, porque cada fecha se calcula desde la primera: 31 ene → 28 feb → 31 mar; 29 ene 2028 → 29 feb → 29 mar.
+- Reutiliza las cuentas y cuotas de B5. En automático el navegador envía solo el plazo y la fecha: el servidor genera y valida el calendario y lo deja en la bitácora (`generacion: {plazoMeses, primerVencimiento}` o `MANUAL`). Guardar el calendario no registra pagos.
+- Aplica al configurar condiciones o al sustituir un calendario sin historial de movimientos; el calendario anterior se conserva como sustituido. Con movimientos registrados, aunque estén anulados, se mantiene la restricción de B5: no se regenera ni se sustituye. Cambiar vencimientos individuales con pagos corresponde a un bloque posterior (B8B, no implementado).
+
+**Ejemplo:** compra de 10 × $100 con IVA 16 % = $1,160.00.
+
+| Plazo | Cuotas | Última cuota |
+|---|---|---|
+| 3 meses | $386.66 × 2 | $386.68 |
+| 6 meses | $193.33 × 5 | $193.35 |
+| 12 meses | $96.66 × 11 | $96.74 |
+| 18 meses | $64.44 × 17 | $64.52 |
+| 24 meses | $48.33 × 23 | $48.41 |
+
+Con primer vencimiento el 31 ene 2027, el plazo de 3 meses vence el 31 ene, el 28 feb y el 31 mar.
+
+**Verificación**
+- Pruebas unitarias (`tests/comercializacion/mensualidades.test.ts`): plazos, centavos, mínimo de un centavo, días 29, 30 y 31, años bisiestos y etiquetas.
+- Pruebas de integración (`tests/integracion/comercializacion-compras-credito.test.ts`, 9 casos):
+  - compra sin IVA y con IVA
+  - opciones rechazadas y exclusividad de «Sin IVA»
+  - conservación de impuestos históricos
+  - los cinco plazos
+  - días 29, 30 y 31
+  - validación en el servidor
+  - cuotas manuales
+  - bloqueo después de movimientos
+- Las pruebas anteriores de compras se actualizaron a las opciones vigentes.
+- Recorrido en navegador local (OV-000016 [PRUEBA]):
+  - El selector ofrece solo «Sin IVA» e «IVA 16 %». Totales: $1,000.00 sin IVA y $1,160.00 con IVA.
+  - Plazos: 3, 6, 12, 18, 24 meses y «Cuotas manuales».
+  - Propuesta de 3 meses desde el 31 ene 2027: $386.66, $386.66 y $386.68 al 31 ene, 28 feb y 31 mar. La de 24 meses termina el 31 dic 2028 con $48.41.
+  - La propuesta pasa a edición manual; el calendario guardado coincide.
+  - Después de un pago ya no se ofrece «Cambiar condiciones». La cuenta por cobrar no ofrece plazos.
+  - Sin errores en consola.
+
+**Limitaciones**
+- La tasa del selector es fija (16 %). Otra tasa solo se conserva en registros anteriores.
+- No se elige la base del plazo (compra, factura o recepción): se captura la fecha del primer vencimiento.
+- Sin reprogramación con pagos (B8B pendiente).
 
 ### Defecto funcional de sesión (fuera de Comercialización) — corregido
 

@@ -20,9 +20,11 @@ import {
   normalizarCantidad,
   normalizarImporte,
   normalizarTasa,
-  TRATAMIENTOS_IMPUESTO,
+  esImpuestoCompraVigente,
+  etiquetaImpuestoCompra,
+  TRATAMIENTOS_IMPUESTO_COMPRA,
   type TotalesCotizacion,
-  type TratamientoImpuesto,
+  type TratamientoImpuestoCompra,
 } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
 import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
@@ -320,7 +322,7 @@ type LineaCompra = {
   partidaVentaId: string;
   cantidad: string;
   costoUnitario: string | null;
-  tratamientoImpuesto: TratamientoImpuesto | null;
+  tratamientoImpuesto: TratamientoImpuestoCompra | null;
   tasaIva: string | null;
 };
 
@@ -340,18 +342,18 @@ export function validarDatosCompra(datosCrudos: unknown) {
       costoUnitario = normalizarImporte(p.costoUnitario, { permitirCero: false });
       if (!costoUnitario) throw new ValidacionError(`Partida ${n}: el costo unitario debe ser mayor que 0 con máximo 2 decimales.`);
     }
-    let tratamientoImpuesto: TratamientoImpuesto | null = null;
+    let tratamientoImpuesto: TratamientoImpuestoCompra | null = null;
     let tasaIva: string | null = null;
     if (!vacio(p.tratamientoImpuesto)) {
-      if (!TRATAMIENTOS_IMPUESTO.includes(p.tratamientoImpuesto as TratamientoImpuesto)) {
+      if (!TRATAMIENTOS_IMPUESTO_COMPRA.includes(p.tratamientoImpuesto as TratamientoImpuestoCompra)) {
         throw new ValidacionError(`Partida ${n}: tratamiento de impuesto inválido.`);
       }
-      tratamientoImpuesto = p.tratamientoImpuesto as TratamientoImpuesto;
+      tratamientoImpuesto = p.tratamientoImpuesto as TratamientoImpuestoCompra;
       if (tratamientoImpuesto === "GRAVADO") {
         tasaIva = normalizarTasa(p.tasaIva);
         if (!tasaIva) throw new ValidacionError(`Partida ${n}: indica la tasa de IVA de la compra (mayor que 0 y hasta 100 %).`);
       } else if (!vacio(p.tasaIva) && normalizarTasa(p.tasaIva) !== null) {
-        throw new ValidacionError(`Partida ${n}: la tasa de IVA solo aplica a compras gravadas.`);
+        throw new ValidacionError(`Partida ${n}: la tasa de IVA solo aplica a partidas con IVA.`);
       }
     } else if (!vacio(p.tasaIva)) {
       throw new ValidacionError(`Partida ${n}: selecciona el tratamiento de impuesto de la compra.`);
@@ -367,7 +369,7 @@ export function validarDatosCompra(datosCrudos: unknown) {
   };
 }
 
-const lineaCompleta = (l: { costoUnitario: string | null; tratamientoImpuesto: TratamientoImpuesto | null }) =>
+const lineaCompleta = (l: { costoUnitario: string | null; tratamientoImpuesto: TratamientoImpuestoCompra | null }) =>
   l.costoUnitario !== null && l.tratamientoImpuesto !== null;
 
 function importeDe(l: LineaCompra, n: number): string | null {
@@ -379,7 +381,7 @@ function importeDe(l: LineaCompra, n: number): string | null {
   }
 }
 
-function totalesDe(lineas: { importe: string | null; tratamientoImpuesto: TratamientoImpuesto | null; tasaIva: string | null }[]): TotalesCotizacion {
+function totalesDe(lineas: { importe: string | null; tratamientoImpuesto: TratamientoImpuestoCompra | null; tasaIva: string | null }[]): TotalesCotizacion {
   try {
     return calcularTotalesCotizacion(
       lineas
@@ -435,9 +437,22 @@ export async function guardarBorradorCompra(
         })
       ).map((p) => [p.id, p])
     );
+    // Impuesto de compra: «Sin IVA» o «IVA 16 %». Un tratamiento o tasa
+    // anterior (tasa 0 %, exento, otra tasa) solo se conserva si la partida
+    // del borrador ya lo tenía: no se recalcula ni se pierde su distinción.
+    const guardadas = new Map(actual.partidas.map((p) => [p.partidaVentaId, p]));
     const lineas = datos.partidas.map((l, i) => {
       const venta = ventas.get(l.partidaVentaId);
       if (!venta) throw new ValidacionError(`Partida ${i + 1}: el material no pertenece a la orden de venta ${actual.ordenVenta.folio}.`);
+      if (l.tratamientoImpuesto && !esImpuestoCompraVigente(l.tratamientoImpuesto, l.tasaIva)) {
+        const g = guardadas.get(l.partidaVentaId);
+        const conserva = g && g.tratamientoImpuesto === l.tratamientoImpuesto && (g.tasaIva?.toFixed(2) ?? null) === l.tasaIva;
+        if (!conserva) {
+          throw new ValidacionError(
+            `Partida ${i + 1}: el impuesto de compra es «Sin IVA» o «IVA 16 %» (${etiquetaImpuestoCompra(l.tratamientoImpuesto, l.tasaIva)} solo se conserva en partidas que ya lo tenían).`
+          );
+        }
+      }
       return { ...l, venta, orden: i, importe: importeDe(l, i + 1) };
     });
     const totales = totalesDe(lineas);
@@ -745,7 +760,7 @@ export type PartidaCompraDetalle = {
   unidad: string;
   cantidad: string;
   costoUnitario: string | null;
-  tratamientoImpuesto: TratamientoImpuesto | null;
+  tratamientoImpuesto: TratamientoImpuestoCompra | null;
   tasaIva: string | null;
   importe: string | null;
 };

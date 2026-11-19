@@ -62,7 +62,7 @@ async function compra(o: Orden, lineas: [string, string][], confirmar = true) {
   await guardarBorradorCompra(admin, id, 1, {
     proveedorId: PROV,
     fecha: HOY,
-    partidas: lineas.map(([codigo, cantidad]) => ({ partidaVentaId: o.pv[codigo], cantidad, costoUnitario: "50", tratamientoImpuesto: "EXENTO" })),
+    partidas: lineas.map(([codigo, cantidad]) => ({ partidaVentaId: o.pv[codigo], cantidad, costoUnitario: "50", tratamientoImpuesto: "SIN_IVA" })),
   });
   if (confirmar) await confirmarCompraComercial(admin, id, 2);
   const pcs = await db.partidaCompraComercial.findMany({ where: { compraId: id } });

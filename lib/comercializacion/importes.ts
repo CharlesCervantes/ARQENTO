@@ -20,6 +20,43 @@ export const ETIQUETA_TRATAMIENTO: Record<TratamientoImpuesto, string> = {
   EXENTO: "Exento",
 };
 
+// Compras a proveedor (ajuste de nov-2026): el selector visible se reduce a
+// «Sin IVA» e «IVA 16 %». SIN_IVA es un tratamiento PROPIO de compras: indica
+// que el cálculo no agrega impuesto y NO declara una exención ni tasa 0 %
+// (por eso no se reutiliza EXENTO ni TASA_CERO). Catálogo, cotizaciones y
+// gastos siguen usando solo TRATAMIENTOS_IMPUESTO. Las compras históricas
+// conservan su tratamiento y tasa originales (TASA_CERO, EXENTO, otras tasas).
+export type TratamientoImpuestoCompra = TratamientoImpuesto | "SIN_IVA";
+export const TRATAMIENTOS_IMPUESTO_COMPRA: readonly TratamientoImpuestoCompra[] = [...TRATAMIENTOS_IMPUESTO, "SIN_IVA"];
+export const TASA_IVA_COMPRA = "16.00";
+/** Opciones visibles para capturar una partida de compra. */
+export const OPCIONES_IMPUESTO_COMPRA = [
+  { valor: "SIN_IVA", etiqueta: "Sin IVA", tratamiento: "SIN_IVA", tasa: null },
+  { valor: "IVA", etiqueta: "IVA 16 %", tratamiento: "GRAVADO", tasa: TASA_IVA_COMPRA },
+] as const;
+
+/**
+ * Tratamiento leído de catálogo, cotizaciones o gastos: la base rechaza
+ * SIN_IVA en esas tablas (CHECK); esto solo lo hace explícito en el tipo.
+ */
+export function comoTratamientoVenta(t: TratamientoImpuestoCompra): TratamientoImpuesto {
+  if (t === "SIN_IVA") throw new Error("«Sin IVA» solo aplica a compras a proveedor.");
+  return t;
+}
+
+/** Etiqueta de pantalla del impuesto de una partida de compra (incluye históricos). */
+export function etiquetaImpuestoCompra(t: TratamientoImpuestoCompra | null, tasa: string | null): string {
+  if (!t) return "—";
+  if (t === "SIN_IVA") return "Sin IVA";
+  if (t === "GRAVADO") return tasa ? `IVA ${Number(tasa)} %` : "IVA";
+  return ETIQUETA_TRATAMIENTO[t];
+}
+
+/** ¿Es una de las dos opciones vigentes de captura (Sin IVA / IVA 16 %)? */
+export function esImpuestoCompraVigente(t: TratamientoImpuestoCompra | null, tasa: string | null): boolean {
+  return t === "SIN_IVA" || (t === "GRAVADO" && tasa === TASA_IVA_COMPRA);
+}
+
 // Valor inicial del formulario de producto, editable por administración —
 // nunca una regla fija para todos los productos.
 export const TASA_IVA_INICIAL = "16.00";
@@ -163,7 +200,7 @@ export function calcularImportePartida(cantidad: string, precioUnitario: string)
 
 export type PartidaParaTotales = {
   importe: string;
-  tratamientoImpuesto: TratamientoImpuesto;
+  tratamientoImpuesto: TratamientoImpuestoCompra;
   tasaIva: string | null;
 };
 
@@ -174,6 +211,7 @@ export type TotalesCotizacion = {
   gravado: DesgloseImpuesto[]; // una fila por tasa, de mayor a menor
   baseTasaCero: string;
   baseExenta: string;
+  baseSinIva: string; // solo compras: «Sin IVA» (no es exención ni tasa 0 %)
   iva: string;
   total: string;
 };
@@ -182,6 +220,7 @@ export function calcularTotalesCotizacion(partidas: PartidaParaTotales[]): Total
   let subtotal = BigInt(0);
   let tasaCero = BigInt(0);
   let exenta = BigInt(0);
+  let sinIva = BigInt(0);
   const porTasa = new Map<string, bigint>();
   for (const p of partidas) {
     const importe = aCentavos(p.importe);
@@ -191,6 +230,8 @@ export function calcularTotalesCotizacion(partidas: PartidaParaTotales[]): Total
       porTasa.set(p.tasaIva, (porTasa.get(p.tasaIva) ?? BigInt(0)) + importe);
     } else if (p.tratamientoImpuesto === "TASA_CERO") {
       tasaCero += importe;
+    } else if (p.tratamientoImpuesto === "SIN_IVA") {
+      sinIva += importe;
     } else {
       exenta += importe;
     }
@@ -206,6 +247,7 @@ export function calcularTotalesCotizacion(partidas: PartidaParaTotales[]): Total
     gravado,
     baseTasaCero: deCentavos(tasaCero),
     baseExenta: deCentavos(exenta),
+    baseSinIva: deCentavos(sinIva),
     iva: deCentavos(iva),
     total: deCentavos(total),
   };
