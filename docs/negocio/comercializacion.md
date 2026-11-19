@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.14 · 19 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) los ajustes de compras y crédito al proveedor (selector «Sin IVA» / «IVA 16 %» y mensualidades automáticas) y B8B (rechazo/cancelación de cotizaciones, cancelación básica de OV y cambios individuales de vencimiento) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
+Versión: 0.15 · 19 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) los ajustes de compras y crédito al proveedor (selector «Sin IVA» / «IVA 16 %» y mensualidades automáticas) B8B (rechazo/cancelación de cotizaciones, cancelación básica de OV y cambios individuales de vencimiento) y el rediseño de la interfaz (Operaciones como expediente, vistas internas y paneles de captura) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -72,7 +72,7 @@ Entrega, cobro y pago son estados independientes. No utilizar un único estado p
 
 ### 5.1 Listado único: Comercialización
 
-- Título propuesto: **Cotizaciones y órdenes**.
+- Título propuesto: **Cotizaciones y órdenes**. Desde el rediseño (§20) se llama **Operaciones**: una fila por cotización y, si se aceptó, su OV.
 - Acción principal: **Nueva cotización**.
 - Filtros sencillos: búsqueda, obra, estado; vendedor para administración.
 - Tabla: folio y tipo (COT/OC), descripción, cliente/obra, vendedor, total, estado comercial y entrega. Saldo y vencimiento según permiso.
@@ -91,7 +91,7 @@ No exigir pagos, fotos de entrega o proveedor definitivo para guardar un borrado
 
 ### 5.3 Detalle único
 
-Encabezado con folios, cliente/obra, vendedor, estado y acción Ver cotización. Antes de aceptación: acciones comerciales según permiso. Después: bloques simples de Materiales, Compras vinculadas, Cobros/pagos, Entregas/documentos y Resultado interno. Los bloques sensibles no se envían al vendedor desde servidor.
+Encabezado con folios, cliente/obra, vendedor, estado y acción Ver cotización. Desde el rediseño (§20) el detalle se organiza en vistas internas: Resumen / Compras y entregas / Cobros y pagos para administración; Resumen / Entregas para el vendedor. Antes de aceptación: acciones comerciales según permiso. Después: bloques simples de Materiales, Compras vinculadas, Cobros/pagos, Entregas/documentos y Resultado interno. Los bloques sensibles no se envían al vendedor desde servidor.
 
 Las compras pueden mostrarse como filas o sección expandible dentro del detalle. Cada una identifica proveedor, importe, modalidad y próximo vencimiento, con calendario de cuotas expandible. Registrar un pago sobre la compra correcta.
 
@@ -1102,6 +1102,51 @@ La aplicación de $1,500 queda intacta.
 - Una OV con cobros o pagos, aunque estén anulados, no se cancela con la acción básica.
 - Cambiar vencimientos no redistribuye importes ni aplicaciones, y no cambia varias cuotas a la vez.
 - Rechazo y cancelación no tienen reversión: una captura equivocada se corrige duplicando.
+
+### Rediseño de la interfaz: Operaciones como expediente (implementado, sin desplegar)
+
+Solicitado por el usuario el 19 de noviembre de 2026, sobre `design/design-system/plan-rediseno-comercializacion.md`. Cambia solo la presentación: no agrega tablas, migraciones, estados ni reglas, y conserva cálculos, servicios, permisos, historial y todas las restricciones de B8B. No modifica construcción, el sidebar global ni `globals.css`. Los estilos (fondo gris cálido, tarjetas blancas, carbón como color de acción, acciones de 44 px) están acotados al layout del módulo (`app/(app)/comercializacion/comercial.css`).
+
+**Listado «Operaciones»**
+- Una fila por operación: descripción y cliente protagonistas; folios (OV · COT), estado y fecha como dato secundario; venta total; por cobrar (solo administración); entrega; botón **Abrir**.
+- Tres indicadores: Por cobrar y Por pagar, con lo vencido como dato secundario y sin sumarse entre sí, y Entregas pendientes. Si hay filtros, se aclara que los indicadores son de toda la empresa.
+- «Por atender» queda como franja compacta (vencidos y vencen hoy). **Ver pendientes** abre el detalle existente de B6B en un panel. Su estado sigue en la URL (`?avisos=…&ver=…`), así que categorías, «Ver más», Recargar y Atrás funcionan igual y cerrar conserva los filtros.
+- Buscador, estado y **Más filtros** (cliente, obra y, para administración, vendedor). Los filtros activos se muestran y se quitan uno por uno. Rechazadas y canceladas siguen visibles con su filtro.
+- En pantallas angostas la tabla se convierte en tarjetas.
+
+**Detalle (expediente)**
+- Encabezado: volver a Operaciones, descripción, cliente · obra, estado y referencias (Venta OV, Cotización COT, OC del cliente y vendedor).
+- Acciones: **Ver cotización PDF**, **Registrar aceptación** (solo si está emitida y vigente), **Ver aceptación** (evidencia en panel) y **Más acciones**: Duplicar y, para administración, Registrar rechazo, Cancelar cotización y Cancelar OV. Cada una tiene su panel con consecuencias, motivo y confirmación; los bloqueos de «Cancelar OV» se muestran con enlaces al intentar la acción, ya no como bloque permanente.
+- Una cotización sin OV (emitida, rechazada o cancelada) muestra solo su consulta: no aparenta compras ni cuentas.
+- Con OV, vistas internas en `?vista=resumen|compras|cobros` (vendedor: `resumen|entregas`), conservadas por Recargar y Atrás:
+  - **Resumen**: seguimiento independiente de cotización, compras (solo administración) y entregas; venta total, por cobrar y por pagar por separado; pendientes concretos con enlace al bloque; datos comerciales; materiales compactos con **Ver todos los materiales**; condiciones plegadas; **Actividad**.
+  - **Compras y entregas**: compras y pendiente por comprar, **+ Nueva compra**; entregas con evidencias, surtido y **Registrar entrega**.
+  - **Cobros y pagos**: lista de documentos con cobro o pago (venta, cada compra y cada gasto, con a quién corresponde, saldo y situación) y enlace a su bloque; cobros del cliente; gastos adicionales con sus pagos plegados; resultado estimado y simulación.
+- Los enlaces con ancla (`#cobros`, `#gasto-…`, `#entrega-…`), desde «Por atender», bloqueos o pendientes, abren la vista que contiene el bloque, despliegan lo plegado y llevan a él.
+- El vendedor solo ve Resumen y Entregas de sus operaciones. La página sigue sin consultar compras, costos, gastos, cuentas ni simulaciones para él, y la actividad solo usa lo que recibe.
+
+**Capturas en panel**
+- Registrar entrega, Registrar cobro o pago, Definir o cambiar condiciones, Cambiar vencimiento, Agregar gasto y Registrar aceptación se abren al pedirlos, en panel lateral (pantalla completa en angosto). Reutilizan los formularios y validaciones existentes.
+- Cada panel muestra título, documento y destinatario. Pide confirmación al descartar una captura, conserva los datos ante errores y lleva el foco al mensaje.
+- Cotización y compra conservan su pantalla amplia. La compra muestra «Compra a {proveedor} · COC», la venta, el cliente y la obra de origen, y un regreso a la operación en su vista de compras.
+
+**Pendiente visual de B8B corregido:** una OV cancelada a la que le faltaban compras ahora explica que no tiene simulación de reparto. La regla que impide mostrarla no cambió.
+
+**Lecturas agregadas (solo administración, sin cálculos nuevos):**
+- `estadoPagoDeCompras`, con el mismo cálculo (`estadoDe`) del bloque de pagos de la compra.
+- Fecha y autor de confirmación y anulación en `resumenComprasOrden`, para la actividad.
+- Descripción, cliente y obra de origen en `obtenerCompraComercial`.
+
+**Actividad (cronología):** reúne eventos ya registrados que el usuario puede ver: emisión, rechazo o cancelación, aceptación, cancelación de la OV, entregas y sus anulaciones o evidencias agregadas, confirmación o anulación de compras, cobros del cliente y sus anulaciones, gastos y sus pagos, y cambios de vencimiento. Distingue la fecha operativa de la de captura. **Pendiente:** no incluye todavía los pagos ni los cambios de vencimiento de las compras, que se consultan en cada compra, ni la definición de condiciones ni los vínculos de surtido, que se consultan en su bloque; sumarlos requiere consultas adicionales. No se fabrican eventos.
+
+**Verificación**
+- Prueba de integración `comercializacion-rediseno-lecturas` (4) para las lecturas nuevas: permisos, Empresa y coincidencia con el bloque de pagos.
+- Recorrido funcional en navegador local (datos [PRUEBA]): 50 comprobaciones que cubren paneles, enlaces de avisos y bloqueos, Atrás y Recargar, errores con datos conservados, entrega, cobro y vencimiento reales, OV cancelada, rechazada, filtros y ausencia de datos restringidos en la respuesta al vendedor.
+- Capturas antes y después de los mismos registros a 1440, 1366, 1280 y 390 px.
+
+**Limitaciones**
+- El AppShell global no es responsivo: a 390 px el sidebar fijo de 268 px deja unos 120 px al contenido, antes y después del rediseño. Corregirlo exige cambiar el shell y el sidebar global, fuera de este bloque. El módulo se verificó a 390 px con una emulación que oculta el sidebar solo en la prueba; no hubo prueba en teléfono real (cámara, teclado ni carga de archivos móviles).
+- No se usó una imagen del mockup original: no estaba disponible en el repositorio. Se siguió la dirección visual descrita en el plan (§8).
 
 ### Defecto funcional de sesión (fuera de Comercialización) — corregido
 

@@ -71,6 +71,7 @@ export function FormularioCotizacion({
   productos,
   hoy,
   cotizacion,
+  accionesEncabezado,
 }: {
   esAdmin: boolean;
   usuarioActual: OpcionVendedor;
@@ -80,6 +81,8 @@ export function FormularioCotizacion({
   productos: ProductoParaVenta[];
   hoy: string;
   cotizacion?: CotizacionDetalle;
+  /** Rediseño: «Más acciones» del borrador (administración). */
+  accionesEncabezado?: React.ReactNode;
 }) {
   const router = useRouter();
   const [clientes, setClientes] = useState(clientesIniciales);
@@ -244,7 +247,7 @@ export function FormularioCotizacion({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link href="/comercializacion" className={claseSecundaria}>
-            ← Cotizaciones y órdenes
+            ← Operaciones
           </Link>
           <h1 className="mt-1 text-2xl font-semibold text-[var(--foreground)]">
             {cotizacion ? `Cotización ${cotizacion.folio}` : "Nueva cotización"}
@@ -268,7 +271,10 @@ export function FormularioCotizacion({
           )}
         </div>
         {cotizacion && (
-          <span className="w-fit rounded-full bg-black/[0.06] px-2.5 py-1 text-xs font-medium text-[var(--muted)]">Borrador</span>
+          <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+            <span className="w-fit rounded-full bg-black/[0.06] px-2.5 py-1 text-xs font-medium text-[var(--muted)]">Borrador</span>
+            {accionesEncabezado}
+          </div>
         )}
       </div>
 

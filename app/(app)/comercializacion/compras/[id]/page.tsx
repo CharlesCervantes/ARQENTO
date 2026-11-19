@@ -44,7 +44,7 @@ export default async function CompraPage(props: PageProps<"/comercializacion/com
     <div className="space-y-6">
       <FormularioCompra key={`${compra.id}-${compra.version}`} compra={compra} proveedoresIniciales={proveedores} bloqueosAnulacion={bloqueosAnulacion} />
       {surtido && <SurtidoCompraView surtido={surtido} />}
-      {cuenta && <CuentaComercialView cuenta={cuenta} />}
+      {cuenta && <CuentaComercialView cuenta={cuenta} contexto={`Compra ${compra.folio}${(compra.proveedorConfirmado?.nombre ?? compra.proveedorNombre) ? ` · ${compra.proveedorConfirmado?.nombre ?? compra.proveedorNombre}` : ""}`} />}
     </div>
   );
 }

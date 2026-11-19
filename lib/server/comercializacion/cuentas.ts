@@ -762,6 +762,27 @@ export async function estadoCobroDeOrdenes(
 }
 
 /** Cuentas por pagar de los gastos de una OV, por gastoId (solo administración). */
+/**
+ * Rediseño — estado de pago de cada compra (para la lista de documentos de
+ * «Cobros y pagos» de la OV). Solo administración; mismo cálculo (estadoDe)
+ * que el bloque de pagos de la compra.
+ */
+export async function estadoPagoDeCompras(
+  usuario: UsuarioSesion,
+  compraIds: string[]
+): Promise<Map<string, Pick<EstadoCuenta, "liquidacion" | "situacion" | "saldo" | "vencido" | "aplicado" | "total"> & { anulada: boolean }>> {
+  const empresaId = requerirAdministracionComercial(usuario);
+  if (compraIds.length === 0) return new Map();
+  const hoy = await hoyDeEmpresa(db, empresaId);
+  const cuentas = await db.cuentaComercial.findMany({ where: { empresaId, compraId: { in: compraIds } }, include: INCLUIR_CUENTA });
+  return new Map(
+    cuentas.map((c) => {
+      const e = estadoDe(c, hoy);
+      return [c.compraId!, { liquidacion: e.liquidacion, situacion: e.situacion, saldo: e.saldo, vencido: e.vencido, aplicado: e.aplicado, total: e.total, anulada: c.estatus !== "VIGENTE" }];
+    })
+  );
+}
+
 export async function detallesCuentasDeGastos(usuario: UsuarioSesion, ordenVentaId: string): Promise<Map<string, DetalleCuenta>> {
   const empresaId = requerirAdministracionComercial(usuario);
   const hoy = await hoyDeEmpresa(db, empresaId);

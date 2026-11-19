@@ -166,6 +166,9 @@ export type FilaCompraOrden = {
   fecha: string;
   total: string;
   completa: boolean;
+  // Rediseño — para la actividad de la operación (solo administración).
+  confirmada: { en: string; porNombre: string | null } | null;
+  anulada: { en: string; porNombre: string | null } | null;
 };
 
 export type ResumenComprasOrden = {
@@ -193,6 +196,10 @@ export async function resumenComprasOrden(usuario: UsuarioSesion, ordenVentaId: 
         proveedorConfirmado: true,
         proveedor: { select: { nombre: true } },
         partidas: { select: { costoUnitario: true, tratamientoImpuesto: true } },
+        confirmadaEn: true,
+        confirmadaPor: { select: { nombre: true } },
+        anuladaEn: true,
+        anuladaPor: { select: { nombre: true } },
       },
     }),
   ]);
@@ -208,6 +215,8 @@ export async function resumenComprasOrden(usuario: UsuarioSesion, ordenVentaId: 
       fecha: dateAFecha(c.fecha),
       total: c.total.toFixed(2),
       completa: c.partidas.length > 0 && c.partidas.every((p) => p.costoUnitario !== null && p.tratamientoImpuesto !== null),
+      confirmada: c.confirmadaEn ? { en: c.confirmadaEn.toISOString(), porNombre: c.confirmadaPor?.nombre ?? null } : null,
+      anulada: c.anuladaEn ? { en: c.anuladaEn.toISOString(), porNombre: c.anuladaPor?.nombre ?? null } : null,
     })),
   };
 }
@@ -777,7 +786,16 @@ export type CompraDetalle = {
   folio: string;
   estatus: "BORRADOR" | "CONFIRMADA" | "ANULADA";
   version: number;
-  orden: { id: string; folio: string; cotizacionId: string; cotizacionFolio: string };
+  orden: {
+    id: string;
+    folio: string;
+    cotizacionId: string;
+    cotizacionFolio: string;
+    // Rediseño — contexto de la operación de origen (solo administración).
+    descripcion: string | null;
+    clienteNombre: string | null;
+    obraNombre: string | null;
+  };
   proveedorId: string | null;
   proveedorNombre: string | null;
   proveedorConfirmado: { nombre: string; razonSocial: string | null; rfc: string | null } | null;
@@ -801,7 +819,14 @@ export async function obtenerCompraComercial(usuario: UsuarioSesion, compraId: s
   const c = await db.compraComercial.findFirst({
     where: { id: compraId, empresaId },
     include: {
-      ordenVenta: { select: { id: true, folio: true, cotizacionId: true, cotizacion: { select: { folio: true } } } },
+      ordenVenta: {
+        select: {
+          id: true,
+          folio: true,
+          cotizacionId: true,
+          cotizacion: { select: { folio: true, descripcion: true, cliente: { select: { nombre: true } }, obra: { select: { nombre: true } } } },
+        },
+      },
       proveedor: { select: { nombre: true } },
       partidas: { orderBy: { orden: "asc" } },
       creadoPor: { select: { nombre: true } },
@@ -826,7 +851,15 @@ export async function obtenerCompraComercial(usuario: UsuarioSesion, compraId: s
     folio: c.folio,
     estatus: c.estatus,
     version: c.version,
-    orden: { id: c.ordenVenta.id, folio: c.ordenVenta.folio, cotizacionId: c.ordenVenta.cotizacionId, cotizacionFolio: c.ordenVenta.cotizacion.folio },
+    orden: {
+      id: c.ordenVenta.id,
+      folio: c.ordenVenta.folio,
+      cotizacionId: c.ordenVenta.cotizacionId,
+      cotizacionFolio: c.ordenVenta.cotizacion.folio,
+      descripcion: c.ordenVenta.cotizacion.descripcion,
+      clienteNombre: c.ordenVenta.cotizacion.cliente?.nombre ?? null,
+      obraNombre: c.ordenVenta.cotizacion.obra?.nombre ?? null,
+    },
     proveedorId: c.proveedorId,
     proveedorNombre: c.proveedor?.nombre ?? null,
     proveedorConfirmado: c.proveedorConfirmado as CompraDetalle["proveedorConfirmado"],

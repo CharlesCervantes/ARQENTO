@@ -1,27 +1,47 @@
-import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import type { CotizacionDetalle } from "@/lib/server/comercializacion/cotizaciones";
 import { formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
-import { AccionesCotizacionEmitida } from "./acciones-cotizacion-emitida";
-import { AvisoCierre, EstatusCotizacionBadge } from "./cotizacion-emitida";
+import { AccionesOperacion } from "./acciones-operacion";
+import { AvisoCierre, EncabezadoOperacion, EstatusCotizacionBadge } from "./cotizacion-emitida";
 
 // B8B — borrador CANCELADO: nunca se emitió (no hay copia emitida ni PDF).
 // Solo lectura con sus datos y partidas guardados; se puede Duplicar.
 
-export function CotizacionCanceladaBorradorView({ cotizacion, esAdmin, hoy }: { cotizacion: CotizacionDetalle; esAdmin: boolean; hoy: string }) {
+export function CotizacionCanceladaBorradorView({
+  cotizacion,
+  esAdmin,
+  hoy,
+  clienteNombre,
+  obraNombre,
+}: {
+  cotizacion: CotizacionDetalle;
+  esAdmin: boolean;
+  hoy: string;
+  clienteNombre: string | null;
+  obraNombre: string | null;
+}) {
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <Link href="/comercializacion" className="text-sm text-[var(--muted)] hover:text-[var(--foreground)]">
-            ← Cotizaciones y órdenes
-          </Link>
-          <h1 className="mt-1 text-2xl font-semibold text-[var(--foreground)]">Cotización {cotizacion.folio}</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">Borrador cancelado antes de emitirse. Capturó {cotizacion.creadoPorNombre}.</p>
-        </div>
-        <EstatusCotizacionBadge estatus={cotizacion.estatus} />
-      </div>
+      <EncabezadoOperacion
+        descripcion={cotizacion.descripcion}
+        clienteNombre={clienteNombre}
+        obraNombre={obraNombre}
+        referencias={[`Cotización ${cotizacion.folio}`, "Borrador cancelado antes de emitirse (sin PDF)", `Capturó ${cotizacion.creadoPorNombre}`]}
+        estado={<EstatusCotizacionBadge estatus={cotizacion.estatus} />}
+        acciones={
+          <AccionesOperacion
+            cotizacionId={cotizacion.id}
+            folio={cotizacion.folio}
+            estatus={cotizacion.estatus}
+            esAdmin={esAdmin}
+            sinPdf
+            vencida={false}
+            fechaMinima={cotizacion.fecha}
+            hoy={hoy}
+          />
+        }
+      />
       {cotizacion.cierre && <AvisoCierre titulo="Cotización cancelada" cierre={cotizacion.cierre} />}
       <Card className="space-y-4 p-5">
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
@@ -74,16 +94,6 @@ export function CotizacionCanceladaBorradorView({ cotizacion, esAdmin, hoy }: { 
         </div>
         <p className="text-right text-sm font-semibold">Total {formatearImporte(cotizacion.totales.total)}</p>
       </Card>
-      <AccionesCotizacionEmitida
-        cotizacionId={cotizacion.id}
-        folio={cotizacion.folio}
-        estatus={cotizacion.estatus}
-        esAdmin={esAdmin}
-        sinPdf
-        vencida={false}
-        fechaMinima={cotizacion.fecha}
-        hoy={hoy}
-      />
     </div>
   );
 }

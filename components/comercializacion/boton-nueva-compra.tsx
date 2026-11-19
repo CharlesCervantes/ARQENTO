@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { crearCompraAction } from "@/app/(app)/comercializacion/actions";
+import { BOTON_PRIMARIO } from "./estilos";
 
 // Crea un borrador de compra para la OV (idempotente por clave: un doble clic
 // no crea dos borradores) y abre su formulario.
@@ -14,8 +14,9 @@ export function BotonNuevaCompra({ ordenVentaId }: { ordenVentaId: string }) {
   const [pendiente, start] = useTransition();
   return (
     <div className="flex flex-col items-start gap-1 sm:items-end">
-      <Button
+      <button
         type="button"
+        className={BOTON_PRIMARIO}
         disabled={pendiente}
         onClick={() =>
           start(async () => {
@@ -27,8 +28,8 @@ export function BotonNuevaCompra({ ordenVentaId }: { ordenVentaId: string }) {
         }
       >
         {pendiente ? "Creando…" : "+ Nueva compra"}
-      </Button>
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      </button>
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     </div>
   );
 }

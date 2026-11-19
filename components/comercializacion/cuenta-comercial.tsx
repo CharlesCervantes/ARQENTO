@@ -1,7 +1,9 @@
 "use client";
 
-import { Fragment, useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
+import { PanelLateral } from "./panel-lateral";
+import { ACCION_EN_LINEA, BOTON_PRIMARIO, BOTON_SECUNDARIO } from "./estilos";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,9 @@ import {
 // administración (las páginas no la consultan para el vendedor). Muestra
 // saldos REALES: guardar condiciones no registra dinero; solo los cobros/pagos
 // registrados reducen el saldo. El servidor recalcula y valida todo.
+// Rediseño: registrar cobro/pago, definir condiciones y cambiar vencimiento
+// se capturan en un panel que se abre al pedir la acción (mismos formularios
+// y validaciones).
 
 const claseSelect =
   "w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15";
@@ -48,32 +53,51 @@ function Etiqueta({ texto, estilo }: { texto: string; estilo: string }) {
   return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${estilo}`}>{texto}</span>;
 }
 
-export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
+// El bloque de un gasto (B7) va dentro de su gasto, que ya lleva el ancla y el marco.
+function Marco({ esGasto, id, children }: { esGasto: boolean; id: string; children: React.ReactNode }) {
+  if (esGasto) return <div className="space-y-4">{children}</div>;
+  return (
+    <Card id={id} className="scroll-mt-6 space-y-4 p-5">
+      {children}
+    </Card>
+  );
+}
+
+export function CuentaComercialView({ cuenta, contexto }: { cuenta: DetalleCuenta; contexto?: string }) {
   const esCobro = cuenta.tipo === "POR_COBRAR";
   const esGasto = cuenta.origen === "GASTO";
   const e = cuenta.estado;
   const [editandoCondiciones, setEditandoCondiciones] = useState(false);
   const [registrando, setRegistrando] = useState(false);
   const [cambiandoCuota, setCambiandoCuota] = useState<string | null>(null);
+  const cerrarCondiciones = useCallback(() => setEditandoCondiciones(false), []);
+  const cerrarRegistro = useCallback(() => setRegistrando(false), []);
+  const cerrarVencimiento = useCallback(() => setCambiandoCuota(null), []);
+  const cuotaEnCambio = e.cuotas.find((q) => q.id === cambiandoCuota) ?? null;
+  const documento = contexto ?? cuenta.documento.folio;
   const activa = cuenta.estatus === "VIGENTE";
   const sinCalendario = e.situacion === "SIN_CALENDARIO";
 
   return (
-    // El bloque de un gasto (B7) va dentro de su gasto, que ya lleva el ancla.
-    <Card id={esGasto ? undefined : esCobro ? "cobros" : "pagos"} className="scroll-mt-6 space-y-4 p-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+    <Marco esGasto={esGasto} id={esCobro ? "cobros" : "pagos"}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--foreground)]">{esCobro ? "Cobros del cliente" : esGasto ? "Pagos del gasto" : "Pagos al proveedor"}</h2>
-          <p className="text-xs text-[var(--muted)]">
-            Solo administración. {esCobro
+          <h2 className={`${esGasto ? "text-base" : "text-lg"} font-semibold text-[var(--foreground)]`}>{esCobro ? "Cobros del cliente" : esGasto ? "Pagos del gasto" : "Pagos al proveedor"}</h2>
+          <p className="text-sm text-[var(--muted)]">
+            {esCobro
               ? "Aceptar la OV no significa que esté cobrada."
               : esGasto
-                ? "Guardar el gasto no significa que esté pagado; pagarlo no cambia el resultado estimado."
-                : "Confirmar la compra no significa que esté pagada."} El saldo
-            solo baja con {esCobro ? "cobros" : "pagos"} registrados.
+                ? "Pagarlo no cambia el resultado estimado."
+                : "Confirmar la compra no significa que esté pagada."}{" "}
+            El saldo solo baja con {esCobro ? "cobros" : "pagos"} registrados.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {activa && !sinCalendario && e.liquidacion !== "LIQUIDADA" && (
+            <button type="button" className={BOTON_PRIMARIO} onClick={() => setRegistrando(true)}>
+              {esCobro ? "Registrar cobro" : "Registrar pago"}
+            </button>
+          )}
           {!activa ? (
             <Etiqueta texto="Cuenta anulada" estilo="bg-red-50 text-red-700" />
           ) : (
@@ -107,20 +131,22 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
             Condiciones:{" "}
             {cuenta.modalidad === "CONTADO" ? "contado" : cuenta.modalidad === "CREDITO" ? "crédito" : <span className="text-amber-800">por definir</span>}
           </h3>
-          {activa && !cuenta.tuvoMovimientos && !editandoCondiciones && (
-            <button type="button" onClick={() => setEditandoCondiciones(true)} className="text-sm font-medium text-[var(--brand)] hover:underline">
+          {activa && !cuenta.tuvoMovimientos && (
+            <button type="button" onClick={() => setEditandoCondiciones(true)} className={sinCalendario ? BOTON_SECUNDARIO : ACCION_EN_LINEA}>
               {sinCalendario ? "Definir condiciones" : "Cambiar condiciones"}
             </button>
           )}
         </div>
-        {editandoCondiciones && <FormularioCondiciones cuenta={cuenta} onListo={() => setEditandoCondiciones(false)} />}
-        {sinCalendario && !editandoCondiciones ? (
+        <PanelLateral abierto={editandoCondiciones} onCerrar={cerrarCondiciones} titulo={sinCalendario ? "Definir condiciones" : "Cambiar condiciones"} contexto={documento}>
+          <FormularioCondiciones cuenta={cuenta} onListo={cerrarCondiciones} />
+        </PanelLateral>
+        {sinCalendario ? (
           <p className="text-sm text-[var(--muted)]">
             Condiciones por definir: el saldo completo sigue pendiente y no se considera vencido. Define contado o crédito para registrar{" "}
             {esCobro ? "cobros" : "pagos"}.
           </p>
         ) : (
-          !editandoCondiciones && (
+          (
             <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
               <table className="w-full text-sm">
                 <thead className="bg-black/[0.02]">
@@ -136,8 +162,7 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
                 </thead>
                 <tbody>
                   {e.cuotas.map((q) => (
-                    <Fragment key={q.id}>
-                    <tr className="border-b border-[var(--border)] last:border-0" data-cuota={q.numero}>
+                    <tr key={q.id} className="border-b border-[var(--border)] last:border-0" data-cuota={q.numero}>
                       <td className="px-3 py-2">{q.numero}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         {formatearFechaCalendario(q.fechaVencimiento)}
@@ -156,22 +181,14 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
                       </td>
                       {activa && (
                         <td className="px-3 py-2 text-right">
-                          {aCentavos(q.saldo) > BigInt(0) && cambiandoCuota !== q.id && (
-                            <button type="button" onClick={() => setCambiandoCuota(q.id)} className="text-xs font-medium text-[var(--brand)] hover:underline whitespace-nowrap">
+                          {aCentavos(q.saldo) > BigInt(0) && (
+                            <button type="button" onClick={() => setCambiandoCuota(q.id)} className={`${ACCION_EN_LINEA} whitespace-nowrap text-xs`}>
                               Cambiar vencimiento
                             </button>
                           )}
                         </td>
                       )}
                     </tr>
-                    {cambiandoCuota === q.id && (
-                      <tr>
-                        <td colSpan={7} className="bg-black/[0.02] px-3 py-3">
-                          <FormularioVencimiento cuenta={cuenta} cuota={q} onListo={() => setCambiandoCuota(null)} />
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -216,17 +233,16 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
         )}
       </div>
 
-      {/* Registrar */}
-      {activa && !sinCalendario && e.liquidacion !== "LIQUIDADA" && !registrando && (
-        <Button type="button" onClick={() => setRegistrando(true)}>
-          {esCobro ? "Registrar cobro" : "Registrar pago"}
-        </Button>
-      )}
-      {registrando && <FormularioMovimiento cuenta={cuenta} onListo={() => setRegistrando(false)} />}
+      <PanelLateral abierto={registrando} onCerrar={cerrarRegistro} titulo={esCobro ? "Registrar cobro" : "Registrar pago"} contexto={documento}>
+        <FormularioMovimiento cuenta={cuenta} onListo={cerrarRegistro} />
+      </PanelLateral>
+      <PanelLateral abierto={cuotaEnCambio !== null} onCerrar={cerrarVencimiento} titulo="Cambiar vencimiento" contexto={cuotaEnCambio ? `${documento} · cuota ${cuotaEnCambio.numero}` : documento}>
+        {cuotaEnCambio && <FormularioVencimiento cuenta={cuenta} cuota={cuotaEnCambio} onListo={cerrarVencimiento} />}
+      </PanelLateral>
 
       {/* Historial */}
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Historial de {esCobro ? "cobros" : "pagos"}</h3>
+        <h3 className="text-base font-semibold">Historial de {esCobro ? "cobros" : "pagos"}</h3>
         {cuenta.movimientos.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">Sin {esCobro ? "cobros" : "pagos"} registrados.</p>
         ) : (
@@ -237,7 +253,7 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
           </ul>
         )}
       </div>
-    </Card>
+    </Marco>
   );
 }
 
@@ -252,22 +268,30 @@ function FormularioVencimiento({ cuenta, cuota, onListo }: { cuenta: DetalleCuen
   const [error, setError] = useState<string | null>(null);
   const [pendiente, start] = useTransition();
   return (
-    <div className="flex flex-col gap-2 text-sm" data-formulario-vencimiento>
-      <p className="text-xs text-[var(--muted)]">
+    <div className="flex flex-col gap-4 text-sm" data-formulario-vencimiento>
+      <p className="text-sm text-[var(--muted)]">
         Cuota {cuota.numero}: vence {formatearFechaCalendario(cuota.fechaVencimiento)}, saldo {formatearImporte(cuota.saldo)}. Solo cambia esta fecha: el importe,
         las demás cuotas y los {cuenta.tipo === "POR_COBRAR" ? "cobros" : "pagos"} aplicados no cambian.
       </p>
-      <div className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-col gap-3">
         <label className="block">
-          <span className="mb-1 block text-xs font-medium">Nueva fecha</span>
+          <span className="mb-1.5 block text-sm font-medium">Nueva fecha</span>
           <Input type="date" value={nuevaFecha} min={cuenta.hoy} onChange={(ev) => setNuevaFecha(ev.target.value)} aria-label={`Nueva fecha de la cuota ${cuota.numero}`} className="w-44" />
         </label>
-        <label className="block min-w-[16rem] flex-1">
-          <span className="mb-1 block text-xs font-medium">Motivo</span>
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium">Motivo (obligatorio)</span>
           <Input value={motivo} onChange={(ev) => setMotivo(ev.target.value)} maxLength={500} placeholder="Motivo (obligatorio)" aria-label={`Motivo del cambio de la cuota ${cuota.numero}`} />
         </label>
-        <Button
+      </div>
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
           type="button"
+          className={BOTON_PRIMARIO}
           disabled={pendiente || !nuevaFecha || motivo.trim().length < 3}
           onClick={() =>
             start(async () => {
@@ -280,16 +304,11 @@ function FormularioVencimiento({ cuenta, cuota, onListo }: { cuenta: DetalleCuen
           }
         >
           {pendiente ? "Guardando…" : "Guardar vencimiento"}
-        </Button>
-        <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>
+        </button>
+        <button type="button" onClick={onListo} className={BOTON_SECUNDARIO} disabled={pendiente}>
           Cancelar
         </button>
       </div>
-      {error && (
-        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
     </div>
   );
 }
@@ -340,8 +359,8 @@ function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onL
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-[var(--border)] p-4">
-      <div className="flex flex-wrap gap-4 text-sm">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 text-sm">
         {(["CONTADO", "CREDITO"] as const).map((m) => (
           <label key={m} className="flex items-center gap-2">
             <input type="radio" name={`modalidad-${cuenta.id}`} checked={modalidad === m} onChange={() => setModalidad(m)} />
@@ -508,10 +527,10 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
   const aplicacionesJson = JSON.stringify(distribucion.filter((d) => d.valor && d.valor !== "0.00").map((d) => ({ cuotaId: d.q.id, importe: d.valor })));
 
   return (
-    <form action={formAction} className="space-y-3 rounded-lg border border-[var(--border)] p-4">
+    <form action={formAction} className="space-y-4">
       <input type="hidden" name="clave" value={claveRegistro} />
       <input type="hidden" name="aplicaciones" value={aplicacionesJson} />
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium">Importe</span>
           <Input
@@ -545,11 +564,11 @@ function FormularioMovimiento({ cuenta, onListo }: { cuenta: DetalleCuenta; onLi
           <span className="mb-1.5 block text-sm font-medium">Referencia (opcional)</span>
           <Input name="referencia" value={referencia} onChange={(ev) => setReferencia(ev.target.value)} maxLength={100} placeholder="Folio, SPEI…" />
         </label>
-        <label className="block md:col-span-2">
+        <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Observaciones (opcional)</span>
           <Input name="observaciones" value={observaciones} onChange={(ev) => setObservaciones(ev.target.value)} maxLength={1000} />
         </label>
-        <label className="block md:col-span-2">
+        <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Comprobante (opcional, PDF/JPG/PNG)</span>
           <input
             type="file"

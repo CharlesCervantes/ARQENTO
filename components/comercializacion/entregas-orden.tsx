@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { agregarEvidenciasAction, anularEntregaAction, registrarEntregaAction, t
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
 import { SurtidoEntregaView } from "./surtido-entrega";
+import { PanelLateral } from "./panel-lateral";
+import { BOTON_PRIMARIO, BOTON_SECUNDARIO } from "./estilos";
 
 // Entregas y documentos de una OV — B6A. Lo ven administración y el vendedor
 // asignado (el servidor aplica el alcance). Solo cantidades y evidencias de
@@ -21,7 +23,7 @@ import { SurtidoEntregaView } from "./surtido-entrega";
 // El servidor recalcula pendientes y valida todo; aquí solo se orienta.
 
 const claseSecundaria = "text-sm text-[var(--muted)] hover:text-[var(--foreground)]";
-const claseEnlace = "font-medium text-[var(--brand)] hover:underline";
+const claseEnlace = "font-medium text-[var(--foreground)] underline decoration-[var(--border)] underline-offset-4 hover:decoration-[var(--foreground)]";
 const formatoFechaHora = new Intl.DateTimeFormat("es-MX", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -47,30 +49,40 @@ export function EntregasOrden({
   resumen,
   surtido,
   ordenCancelada = false,
+  contexto,
 }: {
   resumen: ResumenEntregasOrden;
   surtido?: Record<string, SurtidoEntrega> | null;
   ordenCancelada?: boolean;
+  /** «Cliente · Obra» para el encabezado del panel. */
+  contexto?: string;
 }) {
   const [registrando, setRegistrando] = useState(false);
+  const cerrar = useCallback(() => setRegistrando(false), []);
   const hayPendiente = resumen.partidas.some((p) => !p.completa);
   const sinOrigen = surtido ? Object.values(surtido).filter((x) => x.vigente && x.pendienteTotal).length : 0;
   return (
     <Card id="entregas" className="scroll-mt-6 space-y-4 p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--foreground)]">Entregas y documentos</h2>
-          <p className="text-xs text-[var(--muted)]">
-            Material entregado al cliente en obra, con fotografías o remisión. No acredita la recepción de una compra ni modifica precios, compras, cobros o
-            pagos: una venta puede estar entregada y pendiente de cobro.
-          </p>
+          <h2 className="text-lg font-semibold text-[var(--foreground)]">Entregas al cliente</h2>
+          <p className="text-sm text-[var(--muted)]">Material entregado en obra, con fotografías o remisión. No acredita la recepción de una compra ni cambia cobros.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Etiqueta texto={`Entrega: ${ETIQUETA_ESTADO_ENTREGA[resumen.estado]}`} estilo={ESTILO_ESTADO[resumen.estado]} />
+            <span className="text-xs text-[var(--muted)]">
+              {resumen.completas} de {resumen.totalPartidas} partidas completas
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Etiqueta texto={`Entrega: ${ETIQUETA_ESTADO_ENTREGA[resumen.estado]}`} estilo={ESTILO_ESTADO[resumen.estado]} />
-          <span className="text-xs text-[var(--muted)]">
-            {resumen.completas} de {resumen.totalPartidas} partidas completas
-          </span>
-        </div>
+        {ordenCancelada ? (
+          <span className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevas entregas.</span>
+        ) : hayPendiente ? (
+          <button type="button" className={BOTON_PRIMARIO} onClick={() => setRegistrando(true)}>
+            Registrar entrega
+          </button>
+        ) : (
+          <span className="text-sm text-emerald-800">Todo lo vendido está entregado.</span>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
@@ -100,17 +112,9 @@ export function EntregasOrden({
         </table>
       </div>
 
-      {ordenCancelada ? (
-        <p className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevas entregas.</p>
-      ) : registrando ? (
-        <FormularioEntrega resumen={resumen} onListo={() => setRegistrando(false)} />
-      ) : hayPendiente ? (
-        <Button type="button" onClick={() => setRegistrando(true)}>
-          Registrar entrega
-        </Button>
-      ) : (
-        <p className="text-sm text-[var(--muted)]">Todo lo vendido está entregado.</p>
-      )}
+      <PanelLateral abierto={registrando && !ordenCancelada} onCerrar={cerrar} titulo="Registrar entrega" contexto={`${resumen.folio}${contexto ? ` · ${contexto}` : ""}`}>
+        <FormularioEntrega resumen={resumen} onListo={cerrar} />
+      </PanelLateral>
 
       {sinOrigen > 0 && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -119,7 +123,7 @@ export function EntregasOrden({
       )}
 
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Historial de entregas</h3>
+        <h3 className="text-base font-semibold">Historial de entregas</h3>
         {resumen.entregas.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">Sin entregas registradas.</p>
         ) : (
@@ -166,10 +170,10 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
   const partidasJson = JSON.stringify(filas.filter((f) => f.valor.trim()).map((f) => ({ partidaVentaId: f.p.partidaVentaId, cantidad: f.valor })));
 
   return (
-    <form action={formAction} className="space-y-3 rounded-lg border border-[var(--border)] p-4">
+    <form action={formAction} className="space-y-4">
       <input type="hidden" name="clave" value={claveRegistro} />
       <input type="hidden" name="partidas" value={partidasJson} />
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium">Fecha real de entrega</span>
           <Input type="date" name="fechaEntrega" value={fecha} max={resumen.hoy} onChange={(ev) => setFecha(ev.target.value)} required />
@@ -184,7 +188,7 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
             placeholder="Nombre de quien recibe"
           />
         </label>
-        <label className="block">
+        <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Observaciones (opcional)</span>
           <Input name="observaciones" value={observaciones} onChange={(ev) => setObservaciones(ev.target.value)} maxLength={1000} />
         </label>
@@ -245,7 +249,7 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
           accept="image/jpeg,image/png,application/pdf"
           required
           onChange={archivos.onChange}
-          className="block text-sm"
+          className="block w-full text-sm file:mr-3 file:min-h-11 file:rounded-xl file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-3 file:text-sm"
         />
         <AvisosArchivos
           exceso={avisoArchivos}
@@ -262,11 +266,15 @@ function FormularioEntrega({ resumen, onListo }: { resumen: ResumenEntregasOrden
           {state.error}
         </p>
       )}
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pendiente || conCantidad.length === 0 || archivos.n === 0 || Boolean(avisoArchivos) || filas.some((f) => f.invalida)}>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          className={BOTON_PRIMARIO}
+          disabled={pendiente || conCantidad.length === 0 || archivos.n === 0 || Boolean(avisoArchivos) || filas.some((f) => f.invalida)}
+        >
           {pendiente ? "Registrando…" : "Registrar entrega"}
-        </Button>
-        <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>
+        </button>
+        <button type="button" onClick={onListo} className={BOTON_SECUNDARIO} disabled={pendiente}>
           Cancelar
         </button>
       </div>

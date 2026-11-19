@@ -19,17 +19,14 @@ const ESTATUS: Record<string, { texto: string; clase: string }> = {
 export function ComprasOrden({ resumen, ordenCancelada = false }: { resumen: ResumenComprasOrden; ordenCancelada?: boolean }) {
   const todoComprado = resumen.partidas.every((p) => Number(p.pendiente) === 0);
   return (
-    <Card className="space-y-4 p-5">
+    <Card id="compras" className="scroll-mt-6 space-y-4 p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--foreground)]">Compras a proveedores</h2>
-          <p className="text-xs text-[var(--muted)]">
-            Solo administración. Cuenta como comprado lo de compras confirmadas; los borradores y las anuladas no. Comprado no
-            significa pagado ni recibido.
-          </p>
+          <h2 className="text-lg font-semibold text-[var(--foreground)]">Compras a proveedores</h2>
+          <p className="text-sm text-[var(--muted)]">Cuenta como comprado solo lo confirmado. Comprado no significa pagado ni recibido.</p>
         </div>
         {!todoComprado && !ordenCancelada && <BotonNuevaCompra ordenVentaId={resumen.ordenVentaId} />}
-        {ordenCancelada && <span className="text-xs text-[var(--muted)]">OV cancelada: no admite nuevas compras.</span>}
+        {ordenCancelada && <span className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevas compras.</span>}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
@@ -83,8 +80,8 @@ export function ComprasOrden({ resumen, ordenCancelada = false }: { resumen: Res
               {resumen.compras.map((c) => (
                 <tr key={c.id} className="border-b border-[var(--border)] last:border-0">
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    <Link href={`/comercializacion/compras/${c.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                      {c.folio}
+                    <Link href={`/comercializacion/compras/${c.id}`} className="font-medium text-[var(--foreground)] underline decoration-[var(--border)] underline-offset-4 hover:decoration-[var(--foreground)]">
+                      Abrir {c.folio}
                     </Link>
                   </td>
                   <td className="px-3 py-2.5">{c.proveedorNombre ?? <span className="text-[var(--muted)]">Sin proveedor</span>}</td>

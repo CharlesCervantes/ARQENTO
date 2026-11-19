@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { ETIQUETA_LIQUIDACION, ETIQUETA_SITUACION } from "@/lib/comercializacion
 import { anularGastoAction, crearProveedorCompraAction, registrarGastoAction, type GastoState } from "@/app/(app)/comercializacion/actions";
 import { CuentaComercialView } from "./cuenta-comercial";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
+import { PanelLateral } from "./panel-lateral";
+import { BOTON_PRIMARIO, BOTON_SECUNDARIO } from "./estilos";
 
 // Gastos adicionales de una OV — B7. SOLO administración (la página no los
 // consulta para el vendedor). Un gasto se guarda vigente con su cuenta por
@@ -34,32 +36,31 @@ export function GastosOrden({
   ordenCancelada?: boolean;
 }) {
   const [capturando, setCapturando] = useState(false);
+  const cerrar = useCallback(() => setCapturando(false), []);
   const vigentes = resumen.gastos.filter((g) => g.estatus === "VIGENTE");
   const totalBase = deCentavos(vigentes.reduce((s, g) => s + aCentavos(g.subtotal), BigInt(0)));
   return (
     <Card id="gastos" className="scroll-mt-6 space-y-4 p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--foreground)]">Gastos adicionales</h2>
-          <p className="text-xs text-[var(--muted)]">
-            Solo administración. Fletes, maniobras o servicios externos de esta OV. No son compras de material ni consumen cantidades vendidas. Guardar un gasto
-            crea su cuenta por pagar; no significa que esté pagado.
+          <h2 className="text-lg font-semibold text-[var(--foreground)]">Gastos adicionales</h2>
+          <p className="text-sm text-[var(--muted)]">Fletes, maniobras o servicios externos. Guardar un gasto crea su cuenta por pagar; no significa que esté pagado.</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            {vigentes.length} vigente{vigentes.length === 1 ? "" : "s"} · {formatearImporte(totalBase)} sin IVA
           </p>
         </div>
-        <span className="text-xs text-[var(--muted)] whitespace-nowrap">
-          {vigentes.length} vigente{vigentes.length === 1 ? "" : "s"} · {formatearImporte(totalBase)} sin IVA
-        </span>
+        {ordenCancelada ? (
+          <span className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevos gastos.</span>
+        ) : (
+          <button type="button" className={BOTON_PRIMARIO} onClick={() => setCapturando(true)}>
+            + Agregar gasto
+          </button>
+        )}
       </div>
 
-      {ordenCancelada ? (
-        <p className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevos gastos.</p>
-      ) : capturando ? (
-        <FormularioGasto resumen={resumen} beneficiariosIniciales={beneficiarios} onListo={() => setCapturando(false)} />
-      ) : (
-        <Button type="button" onClick={() => setCapturando(true)}>
-          + Registrar gasto
-        </Button>
-      )}
+      <PanelLateral abierto={capturando && !ordenCancelada} onCerrar={cerrar} titulo="Agregar gasto adicional" contexto={resumen.folio}>
+        <FormularioGasto resumen={resumen} beneficiariosIniciales={beneficiarios} onListo={cerrar} />
+      </PanelLateral>
 
       {resumen.gastos.length === 0 ? (
         <p className="text-sm text-[var(--muted)]">Sin gastos adicionales registrados.</p>
@@ -112,10 +113,10 @@ function FormularioGasto({
   const previa = base && tratamiento && (tratamiento !== "GRAVADO" || tasaNormal) ? calcularImpuesto(base, tratamiento, tasaNormal) : null;
 
   return (
-    <form action={formAction} className="space-y-3 rounded-lg border border-[var(--border)] p-4">
+    <form action={formAction} className="space-y-4">
       <input type="hidden" name="clave" value={claveRegistro} />
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <label className="block md:col-span-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Concepto</span>
           <Input name="concepto" value={concepto} onChange={(ev) => setConcepto(ev.target.value)} maxLength={200} placeholder="Flete, maniobra, servicio externo…" required />
         </label>
@@ -123,10 +124,10 @@ function FormularioGasto({
           <span className="mb-1.5 block text-sm font-medium">Fecha del gasto</span>
           <Input type="date" name="fecha" value={fecha} max={resumen.hoy} onChange={(ev) => setFecha(ev.target.value)} required />
         </label>
-        <div className="block md:col-span-3">
+        <div className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Beneficiario o proveedor</span>
           <div className="flex flex-wrap items-center gap-3">
-            <select name="beneficiarioId" value={beneficiarioId} onChange={(ev) => setBeneficiarioId(ev.target.value)} className={`${claseSelect} max-w-md`} aria-label="Beneficiario o proveedor" required>
+            <select name="beneficiarioId" value={beneficiarioId} onChange={(ev) => setBeneficiarioId(ev.target.value)} className={claseSelect} aria-label="Beneficiario o proveedor" required>
               <option value="">Selecciona…</option>
               {beneficiarios.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -194,11 +195,11 @@ function FormularioGasto({
             <Input name="tasaIva" value={tasa} onChange={(ev) => setTasa(ev.target.value)} inputMode="decimal" placeholder="Ej. 16" required />
           </label>
         )}
-        <label className="block md:col-span-3">
+        <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Observaciones (opcional)</span>
           <Input name="observaciones" value={observaciones} onChange={(ev) => setObservaciones(ev.target.value)} maxLength={1000} />
         </label>
-        <label className="block md:col-span-3">
+        <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-sm font-medium">Comprobante (opcional, PDF/JPG/PNG)</span>
           <input
             type="file"
@@ -228,17 +229,19 @@ function FormularioGasto({
           {state.error}
         </p>
       )}
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pendiente || !previa || !beneficiarioId || !concepto.trim() || Boolean(comprobante.exceso)}>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="submit" className={BOTON_PRIMARIO} disabled={pendiente || !previa || !beneficiarioId || !concepto.trim() || Boolean(comprobante.exceso)}>
           {pendiente ? "Guardando…" : "Guardar gasto"}
-        </Button>
-        <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>
+        </button>
+        <button type="button" onClick={onListo} className={BOTON_SECUNDARIO} disabled={pendiente}>
           Cancelar
         </button>
       </div>
     </form>
   );
 }
+
+const contextoGasto = (g: GastoDetalle) => `Gasto ${g.numero} · ${g.concepto} · ${g.beneficiarioNombre}`;
 
 function Gasto({ g }: { g: GastoDetalle }) {
   const router = useRouter();
@@ -336,7 +339,18 @@ function Gasto({ g }: { g: GastoDetalle }) {
           {error && <span className="text-sm text-red-700">{error}</span>}
         </div>
       )}
-      {!anulado && g.cuenta && <CuentaComercialView cuenta={g.cuenta} />}
+      {!anulado && g.cuenta && (
+        // Plegado para no desplegar todos los calendarios juntos; un enlace
+        // #gasto-… (avisos, bloqueos) lo abre automáticamente.
+        <details className="group rounded-xl border border-[var(--border)] bg-[var(--c-suave)] px-4 py-3" data-abrir-con-ancla>
+          <summary className="cursor-pointer text-sm font-medium">
+            Pagos del gasto {g.numero} · saldo {formatearImporte(g.cuenta.estado.saldo)}
+          </summary>
+          <div className="mt-3">
+            <CuentaComercialView cuenta={g.cuenta} contexto={contextoGasto(g)} />
+          </div>
+        </details>
+      )}
     </li>
   );
 }

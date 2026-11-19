@@ -22,11 +22,8 @@ export function ResultadoOrdenView({ resultado: r }: { resultado: ResultadoEstim
   return (
     <Card id="resultado" className="scroll-mt-6 space-y-3 p-5" data-estado-resultado={r.estado}>
       <div>
-        <h2 className="text-base font-semibold text-[var(--foreground)]">Resultado estimado</h2>
-        <p className="text-xs text-[var(--muted)]">
-          Solo administración. Importes sin IVA con los registros capturados: venta − compras confirmadas − gastos adicionales vigentes. No usa cobros ni
-          pagos, no es utilidad fiscal ni dinero disponible para retirar.
-        </p>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">Resultado estimado</h2>
+        <p className="text-sm text-[var(--muted)]">Sin IVA: venta − compras confirmadas − gastos vigentes. No usa cobros ni pagos; no es utilidad fiscal ni dinero disponible.</p>
       </div>
 
       <dl className="max-w-md">
@@ -56,6 +53,11 @@ export function ResultadoOrdenView({ resultado: r }: { resultado: ResultadoEstim
             <p className="text-xs">La orden no tiene materiales.</p>
           )}
           <p className="text-xs">Lo que falta comprar no se toma como costo cero: no se muestra una cifra final ni la simulación de reparto.</p>
+          {r.ordenCancelada && (
+            <p className="text-xs font-medium" data-simulacion-cancelada>
+              Orden de venta cancelada: no tiene simulación de reparto ni admite nuevas compras; estas cifras quedan como consulta.
+            </p>
+          )}
         </div>
       ) : (
         <>

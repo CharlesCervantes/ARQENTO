@@ -11,17 +11,18 @@ import { SinAccesoComercial } from "@/components/comercializacion/sin-acceso";
 import { FormularioCotizacion } from "@/components/comercializacion/formulario-cotizacion";
 import { CotizacionEmitidaView } from "@/components/comercializacion/cotizacion-emitida";
 import { resumenComprasOrden } from "@/lib/server/comercializacion/compras";
-import { detalleCuentaDeOrden, resumenFinancieroOrden } from "@/lib/server/comercializacion/cuentas";
+import { detalleCuentaDeOrden, estadoPagoDeCompras, resumenFinancieroOrden } from "@/lib/server/comercializacion/cuentas";
 import { resumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 import { listarBeneficiariosGasto, resultadoOrden, resumenGastosOrden } from "@/lib/server/comercializacion/gastos";
 import { surtidoDeOrden } from "@/lib/server/comercializacion/surtido";
 import { estadoCancelacionOrden } from "@/lib/server/comercializacion/cancelaciones";
 import { CotizacionCanceladaBorradorView } from "@/components/comercializacion/cotizacion-cancelada-borrador";
-import { CerrarCotizacion } from "@/components/comercializacion/cancelaciones";
+import { AccionesBorrador } from "@/components/comercializacion/cancelaciones";
 
 // Detalle único: un BORRADOR se consulta y edita en el formulario; una
 // cotización EMITIDA/ACEPTADA se muestra de solo lectura desde su copia
-// histórica, con sus acciones (PDF, aceptación, duplicar). Fuera del alcance
+// histórica, con sus acciones (PDF, aceptación, duplicar). Con OV es el
+// expediente de la operación con vistas internas (?vista=…). Fuera del alcance
 // del usuario (otra Empresa u otro vendedor) responde 404.
 export default async function CotizacionPage(props: PageProps<"/comercializacion/cotizaciones/[id]">) {
   const usuario = await requireSession();
@@ -42,7 +43,17 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
 
   // B8B: un borrador cancelado (nunca emitido) se consulta de solo lectura.
   if (cotizacion.estatus === "CANCELADA" && !cotizacion.emision) {
-    return <CotizacionCanceladaBorradorView cotizacion={cotizacion} esAdmin={esAdmin} hoy={hoy} />;
+    // Nombres actuales de cliente y obra (el borrador no tiene copia emitida).
+    const { clientes, obras } = await listarClientesYObras(usuario);
+    return (
+      <CotizacionCanceladaBorradorView
+        cotizacion={cotizacion}
+        esAdmin={esAdmin}
+        hoy={hoy}
+        clienteNombre={clientes.find((c) => c.id === cotizacion.clienteId)?.nombre ?? null}
+        obraNombre={obras.find((o) => o.id === cotizacion.obraId)?.nombre ?? null}
+      />
+    );
   }
 
   if (cotizacion.estatus !== "BORRADOR" && cotizacion.emision) {
@@ -59,10 +70,13 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
       : [null, null, null, null];
     // B8B: bloqueos para «Cancelar OV» — solo administración.
     const cancelacionOrden = ovId ? await estadoCancelacionOrden(usuario, ovId) : null;
+    // Rediseño: estado de pago de cada compra para «Cobros y pagos» — solo administración.
+    const pagosCompras = compras ? await estadoPagoDeCompras(usuario, compras.compras.filter((c) => c.estatus !== "BORRADOR").map((c) => c.id)) : null;
     // B6A: entregas — administración y el vendedor asignado (alcance en el servicio).
     const entregas = cotizacion.orden ? await resumenEntregasOrden(usuario, cotizacion.orden.id) : null;
     return (
-      <CotizacionEmitidaView cotizacion={cotizacion} esAdmin={esAdmin} hoy={hoy} compras={compras} cuenta={cuenta} financiero={financiero}
+      <CotizacionEmitidaView cotizacion={cotizacion} esAdmin={esAdmin} hoy={hoy} vistaInicial={typeof sp.vista === "string" ? sp.vista : "resumen"} compras={compras} cuenta={cuenta} financiero={financiero}
+        pagosCompras={pagosCompras}
         entregas={entregas}
         gastos={gastosOrden && beneficiarios ? { resumen: gastosOrden, beneficiarios } : null}
         resultado={resultado}
@@ -100,8 +114,8 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
         productos={productos}
         hoy={hoy}
         cotizacion={cotizacion}
+        accionesEncabezado={esAdmin && cotizacion.estatus === "BORRADOR" ? <AccionesBorrador cotizacionId={cotizacion.id} folio={cotizacion.folio} /> : null}
       />
-      {esAdmin && <CerrarCotizacion cotizacionId={cotizacion.id} folio={cotizacion.folio} estatus={cotizacion.estatus} />}
     </div>
   );
 }

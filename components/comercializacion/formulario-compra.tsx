@@ -198,12 +198,20 @@ export function FormularioCompra({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <Link href={`/comercializacion/cotizaciones/${compra.orden.cotizacionId}`} className={claseSecundaria}>
-            ← Orden de venta {compra.orden.folio}
+          {/* Regreso a la operación de origen, en su vista de compras. */}
+          <Link href={`/comercializacion/cotizaciones/${compra.orden.cotizacionId}?vista=compras`} className={`${claseSecundaria} inline-flex min-h-9 items-center`}>
+            ← {compra.orden.descripcion ?? `Operación ${compra.orden.folio}`}
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold text-[var(--foreground)]">Compra {compra.folio}</h1>
+          <h1 className="mt-1 text-[26px] font-semibold leading-tight tracking-tight text-[var(--foreground)] sm:text-3xl">
+            {nombreProveedor ? `Compra a ${nombreProveedor}` : "Compra a proveedor"} <span className="font-normal text-[var(--muted)]">· {compra.folio}</span>
+          </h1>
+          <p className="mt-1 text-base text-[var(--foreground)]">
+            Para la venta {compra.orden.folio}
+            {compra.orden.clienteNombre && ` · ${compra.orden.clienteNombre}`}
+            {compra.orden.obraNombre && <span className="text-[var(--muted)]"> · {compra.orden.obraNombre}</span>}
+          </p>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Para la orden {compra.orden.folio} ({compra.orden.cotizacionFolio}) · capturó {compra.creadaPorNombre}.
+            Cotización {compra.orden.cotizacionFolio} · capturó {compra.creadaPorNombre}.
             {compra.confirmada && ` Confirmada el ${formatoFechaHora.format(new Date(compra.confirmada.en))} por ${compra.confirmada.porNombre}.`}
           </p>
         </div>
