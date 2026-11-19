@@ -15,6 +15,7 @@ import { calcularImpuesto, normalizarImporte, normalizarTasa, TRATAMIENTOS_IMPUE
 import { dateAFecha, fechaADate, normalizarFecha } from "@/lib/comercializacion/fechas";
 import { MAX_BYTES_POR_CARGA, MB_POR_CARGA, formatearTamano } from "@/lib/comercializacion/cargas";
 import { calcularResultado, type ResultadoEstimado } from "@/lib/comercializacion/resultado";
+import { exigirOrdenVigenteTx } from "@/lib/server/comercializacion/orden-vigente";
 import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
 
 // Gastos adicionales de una OV y resultado estimado — B7 (noviembre 2026).
@@ -52,7 +53,7 @@ async function ordenDeEmpresa(empresaId: string, ordenVentaId: unknown) {
   if (typeof ordenVentaId !== "string" || !ordenVentaId) throw new RegistroNoEncontradoError("La orden de venta");
   const ov = await db.ordenVenta.findFirst({
     where: { id: ordenVentaId, empresaId, cotizacion: { estatus: "ACEPTADA" } },
-    select: { id: true, folio: true, cotizacionId: true, subtotal: true },
+    select: { id: true, folio: true, cotizacionId: true, subtotal: true, estatus: true },
   });
   if (!ov) throw new RegistroNoEncontradoError("La orden de venta");
   return ov;
@@ -147,12 +148,14 @@ export async function resultadoOrden(usuario: UsuarioSesion, ordenVentaId: strin
     db.gastoComercial.findMany({ where: { empresaId, ordenVentaId: ov.id, estatus: "VIGENTE" }, select: { subtotal: true } }),
     cantidadesDeOrden(db, empresaId, ov.cotizacionId),
   ]);
-  return calcularResultado({
+  const r = calcularResultado({
     venta: ov.subtotal.toFixed(2),
     compras: compras.map((c) => c.subtotal.toFixed(2)),
     gastos: gastos.map((g) => g.subtotal.toFixed(2)),
     partidas: partidas.map((p) => ({ codigo: p.codigo, descripcion: p.descripcion, unidad: p.unidad, vendido: p.vendido, comprado: p.comprado })),
   });
+  // B8B: una OV cancelada no muestra simulación de reparto.
+  return ov.estatus === "CANCELADA" ? { ...r, simulacion: null, ordenCancelada: true } : r;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +241,7 @@ export async function registrarGastoComercial(
   try {
     return await db.$transaction(async (tx) => {
       // Bloqueo de la OV: numeración consecutiva de sus gastos sin choques.
-      await tx.$queryRaw`SELECT id FROM ordenes_venta WHERE id = ${ov.id} AND "empresaId" = ${empresaId} FOR UPDATE`;
+      await exigirOrdenVigenteTx(tx, empresaId, ov.id); // bloquea la OV (B8B: y exige que siga vigente)
       const ultimo = await tx.gastoComercial.aggregate({ where: { ordenVentaId: ov.id }, _max: { numero: true } });
       const numero = (ultimo._max.numero ?? 0) + 1;
       const gasto = await tx.gastoComercial.create({

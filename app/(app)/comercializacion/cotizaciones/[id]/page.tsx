@@ -15,6 +15,9 @@ import { detalleCuentaDeOrden, resumenFinancieroOrden } from "@/lib/server/comer
 import { resumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 import { listarBeneficiariosGasto, resultadoOrden, resumenGastosOrden } from "@/lib/server/comercializacion/gastos";
 import { surtidoDeOrden } from "@/lib/server/comercializacion/surtido";
+import { estadoCancelacionOrden } from "@/lib/server/comercializacion/cancelaciones";
+import { CotizacionCanceladaBorradorView } from "@/components/comercializacion/cotizacion-cancelada-borrador";
+import { CerrarCotizacion } from "@/components/comercializacion/cancelaciones";
 
 // Detalle único: un BORRADOR se consulta y edita en el formulario; una
 // cotización EMITIDA/ACEPTADA se muestra de solo lectura desde su copia
@@ -37,6 +40,11 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
   const esAdmin = esAdministradorComercial(usuario);
   const hoy = hoyNegocio();
 
+  // B8B: un borrador cancelado (nunca emitido) se consulta de solo lectura.
+  if (cotizacion.estatus === "CANCELADA" && !cotizacion.emision) {
+    return <CotizacionCanceladaBorradorView cotizacion={cotizacion} esAdmin={esAdmin} hoy={hoy} />;
+  }
+
   if (cotizacion.estatus !== "BORRADOR" && cotizacion.emision) {
     // Compras (B4): solo se consultan para administración; el vendedor nunca
     // recibe proveedores, costos ni documentos de compra.
@@ -49,6 +57,8 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
     const [gastosOrden, beneficiarios, resultado, surtido] = ovId
       ? await Promise.all([resumenGastosOrden(usuario, ovId), listarBeneficiariosGasto(usuario), resultadoOrden(usuario, ovId), surtidoDeOrden(usuario, ovId)])
       : [null, null, null, null];
+    // B8B: bloqueos para «Cancelar OV» — solo administración.
+    const cancelacionOrden = ovId ? await estadoCancelacionOrden(usuario, ovId) : null;
     // B6A: entregas — administración y el vendedor asignado (alcance en el servicio).
     const entregas = cotizacion.orden ? await resumenEntregasOrden(usuario, cotizacion.orden.id) : null;
     return (
@@ -57,6 +67,7 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
         gastos={gastosOrden && beneficiarios ? { resumen: gastosOrden, beneficiarios } : null}
         resultado={resultado}
         surtido={surtido}
+        cancelacionOrden={cancelacionOrden}
       />
     );
   }
@@ -90,6 +101,7 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
         hoy={hoy}
         cotizacion={cotizacion}
       />
+      {esAdmin && <CerrarCotizacion cotizacionId={cotizacion.id} folio={cotizacion.folio} estatus={cotizacion.estatus} />}
     </div>
   );
 }

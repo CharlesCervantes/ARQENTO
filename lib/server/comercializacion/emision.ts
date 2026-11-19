@@ -150,6 +150,9 @@ export async function emitirCotizacionVenta(
       where: { id: cotizacionId, ...alcance(usuario, empresaId) },
       select: { ...SELECT_PARA_DOCUMENTO, clienteId: true, obraId: true },
     });
+    if (c.estatus === "RECHAZADA" || c.estatus === "CANCELADA") {
+      throw new ValidacionError(`Esta cotización está ${c.estatus === "RECHAZADA" ? "rechazada" : "cancelada"}: no se emite. Duplícala para una nueva venta.`);
+    }
     if (c.estatus !== "BORRADOR") throw new ValidacionError("Esta cotización ya fue emitida.");
     if (c.version !== version) throw new ConflictoEdicionError();
 
@@ -235,7 +238,8 @@ export async function duplicarCotizacionVenta(
     },
   });
   if (!o) throw new RegistroNoEncontradoError("La cotización");
-  if (o.estatus === "BORRADOR") throw new ValidacionError("Un borrador se edita directamente; solo se duplican cotizaciones emitidas o aceptadas.");
+  // B8B: también se duplican las rechazadas y canceladas (el original no cambia).
+  if (o.estatus === "BORRADOR") throw new ValidacionError("Un borrador se edita directamente; solo se duplican cotizaciones emitidas, aceptadas, rechazadas o canceladas.");
 
   const esAdmin = esAdministradorComercial(usuario);
   const omitidos = o.partidas.filter((p) => !p.producto.activo).map((p) => p.codigo);
@@ -295,5 +299,7 @@ export async function obtenerDocumentoParaPdf(
   });
   if (!c) throw new RegistroNoEncontradoError("La cotización");
   if (c.estatus === "BORRADOR") return { documento: await documentoDeBorrador(usuario, cotizacionId), borrador: true };
+  // B8B: un borrador cancelado nunca se emitió; no tiene documento.
+  if (!c.documentoEmitido) throw new RegistroNoEncontradoError("El documento de la cotización");
   return { documento: leerDocumentoEmitido(c.documentoEmitido), borrador: false };
 }

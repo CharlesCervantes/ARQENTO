@@ -43,7 +43,15 @@ function Etiqueta({ texto, estilo }: { texto: string; estilo: string }) {
 const cant = (c: string, unidad: string) => `${formatearCantidad(c)} ${unidad}`;
 
 // `surtido` (B8A) solo llega para administración; el vendedor no lo recibe.
-export function EntregasOrden({ resumen, surtido }: { resumen: ResumenEntregasOrden; surtido?: Record<string, SurtidoEntrega> | null }) {
+export function EntregasOrden({
+  resumen,
+  surtido,
+  ordenCancelada = false,
+}: {
+  resumen: ResumenEntregasOrden;
+  surtido?: Record<string, SurtidoEntrega> | null;
+  ordenCancelada?: boolean;
+}) {
   const [registrando, setRegistrando] = useState(false);
   const hayPendiente = resumen.partidas.some((p) => !p.completa);
   const sinOrigen = surtido ? Object.values(surtido).filter((x) => x.vigente && x.pendienteTotal).length : 0;
@@ -92,7 +100,9 @@ export function EntregasOrden({ resumen, surtido }: { resumen: ResumenEntregasOr
         </table>
       </div>
 
-      {registrando ? (
+      {ordenCancelada ? (
+        <p className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevas entregas.</p>
+      ) : registrando ? (
         <FormularioEntrega resumen={resumen} onListo={() => setRegistrando(false)} />
       ) : hayPendiente ? (
         <Button type="button" onClick={() => setRegistrando(true)}>

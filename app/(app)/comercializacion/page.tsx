@@ -151,6 +151,8 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
           <option value="BORRADOR">Borrador</option>
           <option value="EMITIDA">Emitida</option>
           <option value="ACEPTADA">Aceptada (OV)</option>
+          <option value="RECHAZADA">Rechazada</option>
+          <option value="CANCELADA">Cancelada</option>
         </select>
         {esAdmin ? (
           <select name="vendedor" defaultValue={filtros.vendedorId ?? ""} className={`${claseSelect} ${claseFiltro}`} aria-label="Vendedor">
@@ -219,7 +221,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
                   {c.partidas > 0 ? formatearImporte(c.total) : <span className="text-[var(--muted)]">—</span>}
                 </Td>
                 <Td className="whitespace-nowrap">
-                  <EstatusCotizacionBadge estatus={c.estatus} vencida={c.vencida} />
+                  <EstatusCotizacionBadge estatus={c.estatus} vencida={c.vencida} ordenCancelada={c.ordenCancelada} />
                 </Td>
                 {/* Mientras sea cotización, cobro y entrega no aplican. En una OV
                     todavía no existen (B4+): se muestra "—", nunca una cifra. */}
@@ -227,6 +229,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
                   <Td className="whitespace-nowrap text-[var(--muted)]">
                     {(() => {
                       if (!c.ordenFolio) return "No aplica";
+                      if (c.ordenCancelada) return "Cuenta anulada";
                       const e = cobroPorCotizacion.get(c.id);
                       if (!e) return "—";
                       if (e.situacion === "SIN_CALENDARIO") return "Condiciones por definir";
@@ -243,6 +246,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
                 <Td className="whitespace-nowrap text-[var(--muted)]">
                   {(() => {
                     if (!c.ordenFolio) return "No aplica";
+                    if (c.ordenCancelada) return "OV cancelada";
                     const e = entregaPorCotizacion.get(c.id);
                     if (!e) return "—";
                     return (

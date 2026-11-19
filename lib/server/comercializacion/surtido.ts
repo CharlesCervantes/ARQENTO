@@ -9,6 +9,7 @@ import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructu
 import { requerirAdministracionComercial } from "@/lib/server/comercializacion/acceso";
 import { aMilesimas, formatearCantidad, normalizarCantidad } from "@/lib/comercializacion/importes";
 import { milesimasATexto } from "@/lib/comercializacion/entregas";
+import { exigirOrdenVigenteTx } from "@/lib/server/comercializacion/orden-vigente";
 import { dateAFecha } from "@/lib/comercializacion/fechas";
 
 // Surtido directo a obra — B8A (noviembre 2026). docs/negocio/
@@ -345,7 +346,7 @@ export async function vincularSurtido(usuario: UsuarioSesion, entregaId: unknown
   try {
     return await db.$transaction(async (tx) => {
       // OV primero (mismo orden que entregas y compras), después validaciones.
-      await tx.$queryRaw`SELECT id FROM ordenes_venta WHERE id = ${base.ordenVentaId} AND "empresaId" = ${empresaId} FOR UPDATE`;
+      await exigirOrdenVigenteTx(tx, empresaId, base.ordenVentaId);
       const entrega = await tx.entregaComercial.findFirstOrThrow({ where: { id: entregaId }, select: { estatus: true } });
       if (entrega.estatus !== "CONFIRMADA") throw new ValidacionError("La entrega está anulada: no se le vinculan compras.");
       const { partidasEntrega, partidasCompra } = await cargarSurtidoDeOrden(tx, empresaId, base.ordenVentaId);

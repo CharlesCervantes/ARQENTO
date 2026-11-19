@@ -667,8 +667,8 @@ export async function actualizarCotizacionVenta(
 // Lectura
 // ---------------------------------------------------------------------------
 
-export type EstatusCotizacion = "BORRADOR" | "EMITIDA" | "ACEPTADA";
-const ESTATUS: readonly EstatusCotizacion[] = ["BORRADOR", "EMITIDA", "ACEPTADA"];
+export type EstatusCotizacion = "BORRADOR" | "EMITIDA" | "ACEPTADA" | "RECHAZADA" | "CANCELADA";
+const ESTATUS: readonly EstatusCotizacion[] = ["BORRADOR", "EMITIDA", "ACEPTADA", "RECHAZADA", "CANCELADA"];
 
 export type FiltrosCotizaciones = { busqueda?: string; clienteId?: string; obraId?: string; vendedorId?: string; estatus?: string };
 
@@ -679,6 +679,7 @@ export type FilaCotizacion = {
   // Una cotización aceptada se muestra como su orden (OV) — una sola fila
   // por operación, con la referencia COT visible.
   ordenFolio: string | null;
+  ordenCancelada: boolean; // B8B
   vencida: boolean;
   descripcion: string | null;
   clienteNombre: string | null;
@@ -735,7 +736,7 @@ export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: F
       cliente: { select: { nombre: true } },
       obra: { select: { nombre: true } },
       vendedor: { select: { nombre: true } },
-      ordenVenta: { select: { folio: true } },
+      ordenVenta: { select: { folio: true, estatus: true } },
       _count: { select: { partidas: true } },
     },
   });
@@ -747,6 +748,7 @@ export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: F
       folio: c.folio,
       estatus: c.estatus,
       ordenFolio: c.ordenVenta?.folio ?? null,
+      ordenCancelada: c.ordenVenta?.estatus === "CANCELADA",
       vencida: estaVencida(c.estatus, vigenciaHasta, hoy),
       descripcion: c.descripcion,
       clienteNombre: c.cliente?.nombre ?? null,
@@ -795,6 +797,9 @@ export type OrdenVentaResumen = {
   evidenciaNombre: string;
   registradaPorNombre: string;
   registradaEn: string;
+  // B8B — cancelación básica (definitiva).
+  estatus: "VIGENTE" | "CANCELADA";
+  cancelacion: { en: string; porNombre: string; motivo: string } | null;
 };
 
 export type CotizacionDetalle = {
@@ -819,6 +824,8 @@ export type CotizacionDetalle = {
   emision: { emitidaEn: string; emitidaPorNombre: string; documento: DocumentoCotizacion } | null;
   orden: OrdenVentaResumen | null;
   origen: { id: string; folio: string } | null;
+  // B8B — rechazo o cancelación de la cotización.
+  cierre: { en: string; porNombre: string; motivo: string } | null;
 };
 
 export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionId: string): Promise<CotizacionDetalle> {
@@ -843,9 +850,16 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
       documentoEmitido: true,
       emitidaPor: { select: { nombre: true } },
       origen: { select: { id: true, folio: true } },
+      cerradaEn: true,
+      motivoCierre: true,
+      cerradaPor: { select: { nombre: true } },
       ordenVenta: {
         select: {
           id: true,
+          estatus: true,
+          canceladaEn: true,
+          motivoCancelacion: true,
+          canceladaPor: { select: { nombre: true } },
           folio: true,
           fechaAceptacion: true,
           referenciaOcCliente: true,
@@ -918,8 +932,13 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
           evidenciaNombre: c.ordenVenta.evidenciaNombre,
           registradaPorNombre: c.ordenVenta.registradaPor.nombre,
           registradaEn: c.ordenVenta.createdAt.toISOString(),
+          estatus: c.ordenVenta.estatus,
+          cancelacion: c.ordenVenta.canceladaEn
+            ? { en: c.ordenVenta.canceladaEn.toISOString(), porNombre: c.ordenVenta.canceladaPor?.nombre ?? "—", motivo: c.ordenVenta.motivoCancelacion ?? "" }
+            : null,
         }
       : null,
     origen: c.origen,
+    cierre: c.cerradaEn ? { en: c.cerradaEn.toISOString(), porNombre: c.cerradaPor?.nombre ?? "—", motivo: c.motivoCierre ?? "" } : null,
   };
 }

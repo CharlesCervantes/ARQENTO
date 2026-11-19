@@ -380,6 +380,8 @@ model Usuario {
   partidasPrecioAjustado            PartidaCotizacionVenta[]  @relation("PartidaPrecioAjustado")
   cotizacionesVentaEmitidas         CotizacionVenta[]         @relation("CotizacionVentaEmitida")
   ordenesVentaRegistradas           OrdenVenta[]              @relation("OrdenVentaRegistrada")
+  cotizacionesVentaCerradas         CotizacionVenta[]         @relation("CotizacionVentaCerrada")
+  ordenesVentaCanceladas            OrdenVenta[]              @relation("OrdenVentaCancelada")
   comprasComercialesCreadas         CompraComercial[]         @relation("CompraComercialCreada")
   comprasComercialesActualizadas    CompraComercial[]         @relation("CompraComercialActualizada")
   comprasComercialesConfirmadas     CompraComercial[]         @relation("CompraComercialConfirmada")
@@ -2938,10 +2940,21 @@ model ObraComercial {
 // BORRADOR (editable) → EMITIDA (copia histórica congelada, ya no se edita)
 // → ACEPTADA (con su OrdenVenta). Rechazada/Cancelada no se han definido
 // todavía (agregar un valor de enum es una migración aditiva).
+// B8B: RECHAZADA (solo desde EMITIDA) y CANCELADA (desde BORRADOR o EMITIDA)
+// son terminales: no se editan, emiten ni aceptan; se conservan partidas,
+// folio, copia emitida e historial, y se puede Duplicar.
 enum EstatusCotizacionVenta {
   BORRADOR
   EMITIDA
   ACEPTADA
+  RECHAZADA
+  CANCELADA
+}
+
+// B8B: cancelación básica de la OV (definitiva, sin dinero registrado).
+enum EstatusOrdenVenta {
+  VIGENTE
+  CANCELADA
 }
 
 // Cotización de venta. NO es la Cotizacion de Compras (oferta de un
@@ -3008,6 +3021,13 @@ model CotizacionVenta {
   emitidaPorId     String?
   documentoEmitido Json?
 
+  // B8B — rechazo o cancelación (estado terminal): autor, fecha y motivo.
+  // Se escriben una sola vez; un reintento no los sobrescribe.
+  cerradaEn    DateTime?
+  cerradaPor   Usuario?  @relation("CotizacionVentaCerrada", fields: [cerradaPorId], references: [id])
+  cerradaPorId String?
+  motivoCierre String?
+
   // B3 — una cotización emitida no se edita; se corrige con "Duplicar", que
   // crea un borrador nuevo (folio nuevo) vinculado a su origen.
   origen     CotizacionVenta?  @relation("CotizacionVentaDuplicada", fields: [origenId], references: [id])
@@ -3060,6 +3080,14 @@ model OrdenVenta {
   registradaPor   Usuario  @relation("OrdenVentaRegistrada", fields: [registradaPorId], references: [id])
   registradaPorId String
   createdAt       DateTime @default(now())
+
+  // B8B — cancelación básica: definitiva, solo sin dinero ni dependencias
+  // vigentes; la cuenta por cobrar se anula en la misma transacción.
+  estatus           EstatusOrdenVenta @default(VIGENTE)
+  canceladaEn       DateTime?
+  canceladaPor      Usuario?          @relation("OrdenVentaCancelada", fields: [canceladaPorId], references: [id])
+  canceladaPorId    String?
+  motivoCancelacion String?
 
   // Copia de los totales emitidos (para listar sin leer el documento).
   subtotal Decimal @db.Decimal(14, 2)

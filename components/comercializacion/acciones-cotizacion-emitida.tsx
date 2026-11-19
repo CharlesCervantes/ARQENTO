@@ -12,6 +12,7 @@ import {
 } from "@/app/(app)/comercializacion/actions";
 import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
+import { CerrarCotizacion } from "./cancelaciones";
 
 // Acciones de una cotización emitida/aceptada (B3): ver PDF, duplicar y —solo
 // si está EMITIDA y vigente— registrar la aceptación con evidencia. El
@@ -28,13 +29,19 @@ export function AccionesCotizacionEmitida({
   cotizacionId,
   folio,
   estatus,
+  esAdmin = false,
+  sinPdf = false,
   vencida,
   fechaMinima,
   hoy,
 }: {
   cotizacionId: string;
   folio: string;
-  estatus: "BORRADOR" | "EMITIDA" | "ACEPTADA";
+  estatus: "BORRADOR" | "EMITIDA" | "ACEPTADA" | "RECHAZADA" | "CANCELADA";
+  /** B8B: rechazo y cancelación solo para administración. */
+  esAdmin?: boolean;
+  /** B8B: un borrador cancelado nunca se emitió (no tiene PDF). */
+  sinPdf?: boolean;
   vencida: boolean;
   fechaMinima: string;
   hoy: string;
@@ -142,10 +149,13 @@ export function AccionesCotizacionEmitida({
         <Button type="button" variant="outline" onClick={duplicar} disabled={duplicando}>
           {duplicando ? "Duplicando…" : "Duplicar"}
         </Button>
-        <a href={`/api/comercializacion/cotizaciones/${cotizacionId}/pdf`} target="_blank" rel="noopener" className={claseEnlace}>
-          Ver PDF de la cotización
-        </a>
+        {!sinPdf && (
+          <a href={`/api/comercializacion/cotizaciones/${cotizacionId}/pdf`} target="_blank" rel="noopener" className={claseEnlace}>
+            Ver PDF de la cotización
+          </a>
+        )}
       </div>
+      {esAdmin && !aceptando && <CerrarCotizacion cotizacionId={cotizacionId} folio={folio} estatus={estatus} />}
     </div>
   );
 }

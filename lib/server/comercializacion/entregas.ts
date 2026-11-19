@@ -22,6 +22,7 @@ import {
   estadoEntrega,
   type EstadoEntrega,
 } from "@/lib/comercializacion/entregas";
+import { exigirOrdenVigenteTx } from "@/lib/server/comercializacion/orden-vigente";
 import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
 
 // Entregas parciales al cliente/obra — B6A (noviembre 2026).
@@ -249,7 +250,7 @@ export async function estadoEntregaDeOrdenes(usuario: UsuarioSesion, ordenIds: s
 export async function contarOrdenesConEntregaPendiente(usuario: UsuarioSesion): Promise<number> {
   const empresaId = requerirAdministracionComercial(usuario);
   const ordenes = await db.ordenVenta.findMany({
-    where: { empresaId },
+    where: { empresaId, estatus: "VIGENTE" }, // B8B: una OV cancelada no tiene entregas pendientes
     select: {
       cotizacion: {
         select: {
@@ -383,6 +384,7 @@ export async function registrarEntregaComercial(
           AND (${veTodaLaEmpresa}::boolean OR c."vendedorId" = ${usuario.id})
         FOR UPDATE OF ov`;
       if (filas.length === 0) throw new RegistroNoEncontradoError("La orden de venta");
+      await exigirOrdenVigenteTx(tx, empresaId, ov.id);
 
       const avance = new Map((await avanceDeOrden(tx, empresaId, ov.cotizacionId)).map((p) => [p.partidaVentaId, p]));
       for (const l of lineas) {

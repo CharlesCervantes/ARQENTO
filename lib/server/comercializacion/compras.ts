@@ -28,6 +28,7 @@ import {
 } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
 import { nombreSeguroDeArchivo, tipoArchivoDetectado } from "@/lib/contabilidad/tipo-archivo";
+import { exigirOrdenVigenteTx, MENSAJE_ORDEN_CANCELADA } from "@/lib/server/comercializacion/orden-vigente";
 import { MAX_BYTES_POR_CARGA, MB_POR_CARGA, formatearTamano } from "@/lib/comercializacion/cargas";
 
 // Compras a proveedores de una orden de venta — B4 (noviembre 2026).
@@ -242,6 +243,8 @@ export async function crearCompraComercial(
 
   try {
     return await db.$transaction(async (tx) => {
+      // B8B: OV primero (bloqueada) y vigente.
+      await exigirOrdenVigenteTx(tx, empresaId, ov.id);
       const { ultimoFolioCompraComercial: numero } = await tx.empresa.update({
         where: { id: empresaId },
         data: { ultimoFolioCompraComercial: { increment: 1 } },
@@ -403,7 +406,7 @@ async function bloquearCompra(tx: Prisma.TransactionClient, empresaId: string, c
   return tx.compraComercial.findFirstOrThrow({
     where: { id: compraId, empresaId },
     include: {
-      ordenVenta: { select: { id: true, folio: true, cotizacionId: true } },
+      ordenVenta: { select: { id: true, folio: true, cotizacionId: true, estatus: true } },
       partidas: { orderBy: { orden: "asc" } },
     },
   });
@@ -422,6 +425,7 @@ export async function guardarBorradorCompra(
   return db.$transaction(async (tx) => {
     const actual = await bloquearCompra(tx, empresaId, compraId);
     if (actual.estatus !== "BORRADOR") throw new ValidacionError("Solo se edita una compra en borrador.");
+    if (actual.ordenVenta.estatus === "CANCELADA") throw new ValidacionError(MENSAJE_ORDEN_CANCELADA);
     if (actual.version !== version) throw new ConflictoEdicionError();
 
     if (datos.proveedorId) {
@@ -537,6 +541,7 @@ export async function confirmarCompraComercial(
     // Idempotente: confirmar una compra ya confirmada devuelve éxito sin cambios.
     if (c.estatus === "CONFIRMADA") return { version: c.version, yaConfirmada: true };
     if (c.estatus !== "BORRADOR") throw new ValidacionError("Una compra anulada no se puede confirmar.");
+    if (c.ordenVenta.estatus === "CANCELADA") throw new ValidacionError(MENSAJE_ORDEN_CANCELADA);
     if (c.version !== version) throw new ConflictoEdicionError();
 
     const faltan: string[] = [];
@@ -627,8 +632,10 @@ export async function confirmarCompraComercial(
  * - B8A: cantidades vinculadas a entregas vigentes, o entregas vigentes de
  *   sus materiales con cantidades sin vincular (se llama con la OV bloqueada).
  */
-async function motivosQueImpidenAnular(tx: Prisma.TransactionClient, compraId: string): Promise<string[]> {
+async function motivosQueImpidenAnular(tx: Prisma.TransactionClient, compraId: string, estatus: string): Promise<string[]> {
   const motivos: string[] = [];
+  // Descartar un borrador (B8B) no depende de pagos ni del surtido: no tiene cuenta ni vínculos.
+  if (estatus !== "CONFIRMADA") return motivos;
   if (await compraTuvoPagosTx(tx, compraId)) motivos.push("la compra tiene historial de pagos al proveedor (aunque estén anulados)");
   for (const b of await bloqueosSurtidoDeCompraTx(tx, compraId)) {
     motivos.push(`${b.texto} (${b.entregas.map((e) => `Entrega ${e.numero}`).join(", ")})`);
@@ -655,7 +662,7 @@ export async function anularCompraComercial(
     // Bloquea también la cuenta (orden OV → compra → cuenta): un pago
     // simultáneo espera y, al continuar, encuentra la cuenta anulada.
     await tx.$queryRaw`SELECT id FROM cuentas_comerciales WHERE "compraId" = ${c.id} FOR UPDATE`;
-    const bloqueos = await motivosQueImpidenAnular(tx, c.id);
+    const bloqueos = await motivosQueImpidenAnular(tx, c.id, c.estatus);
     if (bloqueos.length > 0) throw new ValidacionError(`No se puede anular: ${bloqueos.join("; ")}.`);
     // La cuenta por pagar se anula junto con la compra (misma transacción).
     await anularCuentaDeCompraTx(tx, empresaId, c.id, usuario.id, motivo);

@@ -16,6 +16,8 @@ import type { ResultadoEstimado } from "@/lib/comercializacion/resultado";
 import { GastosOrden } from "./gastos-orden";
 import { ResultadoOrdenView } from "./resultado-orden";
 import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
+import type { EstadoCancelacionOrden } from "@/lib/server/comercializacion/cancelaciones";
+import { CancelarOrdenVenta } from "./cancelaciones";
 
 // Vista de una cotización EMITIDA o ACEPTADA (B3). Solo lectura y armada con
 // la COPIA HISTÓRICA (documentoEmitido): lo que se ve aquí es lo que dice el
@@ -25,7 +27,17 @@ import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
 const claseEnlace = "text-sm font-medium text-[var(--brand)] hover:underline";
 const formatoFechaHora = new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Monterrey" });
 
-export function EstatusCotizacionBadge({ estatus, vencida }: { estatus: CotizacionDetalle["estatus"]; vencida?: boolean }) {
+export function EstatusCotizacionBadge({ estatus, vencida, ordenCancelada }: { estatus: CotizacionDetalle["estatus"]; vencida?: boolean; ordenCancelada?: boolean }) {
+  // B8B: OV cancelada (la cotización sigue aceptada), rechazada y cancelada.
+  if (estatus === "ACEPTADA" && ordenCancelada) {
+    return <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">OV cancelada</span>;
+  }
+  if (estatus === "RECHAZADA") {
+    return <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">Rechazada</span>;
+  }
+  if (estatus === "CANCELADA") {
+    return <span className="rounded-full bg-black/[0.06] px-2.5 py-1 text-xs font-medium text-[var(--foreground)]">Cancelada</span>;
+  }
   if (estatus === "ACEPTADA") {
     return <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">Aceptada</span>;
   }
@@ -38,6 +50,18 @@ export function EstatusCotizacionBadge({ estatus, vencida }: { estatus: Cotizaci
     );
   }
   return <span className="rounded-full bg-black/[0.06] px-2.5 py-1 text-xs font-medium text-[var(--muted)]">Borrador</span>;
+}
+
+export function AvisoCierre({ titulo, cierre, nota }: { titulo: string; cierre: { en: string; porNombre: string; motivo: string }; nota?: string }) {
+  return (
+    <Card className="space-y-1 border-red-200 bg-red-50/40 p-4" data-aviso-cierre>
+      <p className="text-sm font-semibold text-red-800">{titulo}</p>
+      <p className="text-sm text-[var(--foreground)]">Motivo: {cierre.motivo}</p>
+      <p className="text-xs text-[var(--muted)]">
+        Registró {cierre.porNombre} el {formatoFechaHora.format(new Date(cierre.en))}. {nota}
+      </p>
+    </Card>
+  );
 }
 
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
@@ -60,6 +84,7 @@ export function CotizacionEmitidaView({
   surtido,
   financiero,
   entregas,
+  cancelacionOrden,
 }: {
   cotizacion: CotizacionDetalle;
   esAdmin: boolean;
@@ -76,9 +101,12 @@ export function CotizacionEmitidaView({
   resultado?: ResultadoEstimado | null;
   // B8A — surtido a obra por entrega, solo administración.
   surtido?: Record<string, SurtidoEntrega> | null;
+  // B8B — solo administración.
+  cancelacionOrden?: EstadoCancelacionOrden | null;
 }) {
   const doc = cotizacion.emision!.documento;
   const orden = cotizacion.orden;
+  const ordenCancelada = orden?.estatus === "CANCELADA";
 
   return (
     <div className="space-y-6">
@@ -108,8 +136,17 @@ export function CotizacionEmitidaView({
             )}
           </p>
         </div>
-        <EstatusCotizacionBadge estatus={cotizacion.estatus} vencida={cotizacion.vencida} />
+        <EstatusCotizacionBadge estatus={cotizacion.estatus} vencida={cotizacion.vencida} ordenCancelada={ordenCancelada} />
       </div>
+
+      {cotizacion.cierre && <AvisoCierre titulo={cotizacion.estatus === "RECHAZADA" ? "Rechazada por el cliente" : "Cotización cancelada"} cierre={cotizacion.cierre} />}
+      {orden?.cancelacion && (
+        <AvisoCierre
+          titulo={`Orden de venta ${orden.folio} cancelada`}
+          cierre={orden.cancelacion}
+          nota="La cotización conserva su aceptación y no genera otra OV; para una nueva venta, duplícala."
+        />
+      )}
 
       {orden && (
         <Card className="space-y-3 border-emerald-200 p-5">
@@ -149,11 +186,12 @@ export function CotizacionEmitidaView({
           </p>
         </Card>
       )}
-      {orden && entregas && <EntregasOrden resumen={entregas} surtido={esAdmin ? surtido : null} />}
+      {orden && entregas && <EntregasOrden resumen={entregas} surtido={esAdmin ? surtido : null} ordenCancelada={ordenCancelada} />}
       {orden && esAdmin && cuenta && <CuentaComercialView cuenta={cuenta} />}
-      {orden && esAdmin && compras && <ComprasOrden resumen={compras} />}
-      {orden && esAdmin && gastos && <GastosOrden resumen={gastos.resumen} beneficiarios={gastos.beneficiarios} />}
+      {orden && esAdmin && compras && <ComprasOrden resumen={compras} ordenCancelada={ordenCancelada} />}
+      {orden && esAdmin && gastos && <GastosOrden resumen={gastos.resumen} beneficiarios={gastos.beneficiarios} ordenCancelada={ordenCancelada} />}
       {orden && esAdmin && resultado && <ResultadoOrdenView resultado={resultado} />}
+      {orden && esAdmin && cancelacionOrden && !ordenCancelada && <CancelarOrdenVenta ordenId={orden.id} folio={orden.folio} estado={cancelacionOrden} />}
 
       <Card className="space-y-4 p-5">
         <h2 className="text-base font-semibold text-[var(--foreground)]">Datos de la cotización</h2>
@@ -247,6 +285,7 @@ export function CotizacionEmitidaView({
         cotizacionId={cotizacion.id}
         folio={doc.folio}
         estatus={cotizacion.estatus}
+        esAdmin={esAdmin}
         vencida={cotizacion.vencida}
         fechaMinima={doc.fecha}
         hoy={hoy}

@@ -33,6 +33,7 @@ import {
 import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
 import { anularGastoComercial, registrarGastoComercial } from "@/lib/server/comercializacion/gastos";
 import { anularVinculoSurtido, vincularSurtido } from "@/lib/server/comercializacion/surtido";
+import { cancelarCotizacionVenta, cancelarOrdenVenta, rechazarCotizacionVenta } from "@/lib/server/comercializacion/cancelaciones";
 import { agregarEvidenciasEntrega, anularEntregaComercial, registrarEntregaComercial } from "@/lib/server/comercializacion/entregas";
 
 // Acciones de Comercialización — capa delgada: toda regla (permiso,
@@ -518,6 +519,36 @@ export async function anularEntregaAction(entrada: { entregaId: string; motivo: 
   } catch (error) {
     return { error: mensajeError(error) };
   }
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// B8B — rechazo/cancelación de cotizaciones y cancelación básica de la OV.
+// El servidor valida permisos (solo administración), estado y bloqueos.
+// ---------------------------------------------------------------------------
+
+export async function cerrarCotizacionAction(entrada: { id: string; accion: "RECHAZAR" | "CANCELAR"; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    if (entrada?.accion === "RECHAZAR") await rechazarCotizacionVenta(usuario, entrada?.id, entrada?.motivo);
+    else if (entrada?.accion === "CANCELAR") await cancelarCotizacionVenta(usuario, entrada?.id, entrada?.motivo);
+    else return { error: "Acción inválida." };
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+export async function cancelarOrdenVentaAction(entrada: { ordenId: string; motivo: string }): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    await cancelarOrdenVenta(usuario, entrada?.ordenId, entrada?.motivo);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  // Indicadores, «Por atender» y entregas pendientes dejan de contarla.
   revalidatePath("/comercializacion", "layout");
   return {};
 }

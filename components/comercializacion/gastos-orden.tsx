@@ -24,7 +24,15 @@ const claseSecundaria = "text-sm text-[var(--muted)] hover:text-[var(--foregroun
 const formatoFechaHora = new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Monterrey" });
 const clave = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 
-export function GastosOrden({ resumen, beneficiarios }: { resumen: ResumenGastosOrden; beneficiarios: { id: string; nombre: string }[] }) {
+export function GastosOrden({
+  resumen,
+  beneficiarios,
+  ordenCancelada = false,
+}: {
+  resumen: ResumenGastosOrden;
+  beneficiarios: { id: string; nombre: string }[];
+  ordenCancelada?: boolean;
+}) {
   const [capturando, setCapturando] = useState(false);
   const vigentes = resumen.gastos.filter((g) => g.estatus === "VIGENTE");
   const totalBase = deCentavos(vigentes.reduce((s, g) => s + aCentavos(g.subtotal), BigInt(0)));
@@ -43,7 +51,9 @@ export function GastosOrden({ resumen, beneficiarios }: { resumen: ResumenGastos
         </span>
       </div>
 
-      {capturando ? (
+      {ordenCancelada ? (
+        <p className="text-sm text-[var(--muted)]">OV cancelada: no admite nuevos gastos.</p>
+      ) : capturando ? (
         <FormularioGasto resumen={resumen} beneficiariosIniciales={beneficiarios} onListo={() => setCapturando(false)} />
       ) : (
         <Button type="button" onClick={() => setCapturando(true)}>

@@ -44,6 +44,10 @@ const esquemaAceptacion = z.object({
 
 export type ArchivoEvidencia = { nombre: string | null; bytes: Uint8Array };
 
+// B8B: una cotización rechazada o cancelada es terminal (no se acepta).
+const mensajeCerrada = (estatus: string) =>
+  `La cotización está ${estatus === "RECHAZADA" ? "rechazada" : "cancelada"}: no se registra su aceptación. Duplícala para una nueva venta.`;
+
 export type ResultadoAceptacion = { ordenId: string; folio: string; existente: boolean };
 
 function validarEvidencia(archivo: ArchivoEvidencia | null | undefined) {
@@ -93,6 +97,7 @@ export async function registrarAceptacionCotizacion(
     const ov = await ordenExistente(cotizacionId);
     if (ov) return ov;
   }
+  if (c.estatus === "RECHAZADA" || c.estatus === "CANCELADA") throw new ValidacionError(mensajeCerrada(c.estatus));
   if (c.estatus !== "EMITIDA") throw new ValidacionError("Solo se puede registrar la aceptación de una cotización emitida.");
 
   const { fechaAceptacion: fechaCruda, referenciaOcCliente } = esquemaAceptacion.parse(datosCrudos ?? {});
@@ -128,6 +133,7 @@ export async function registrarAceptacionCotizacion(
         const ov = await tx.ordenVenta.findFirstOrThrow({ where: { cotizacionId }, select: { id: true, folio: true } });
         return { ordenId: ov.id, folio: ov.folio, existente: true };
       }
+      if (filas[0].estatus === "RECHAZADA" || filas[0].estatus === "CANCELADA") throw new ValidacionError(mensajeCerrada(filas[0].estatus));
       if (filas[0].estatus !== "EMITIDA") throw new ValidacionError("Solo se puede registrar la aceptación de una cotización emitida.");
 
       const cot = await tx.cotizacionVenta.findUniqueOrThrow({

@@ -32,6 +32,7 @@ export type ResultadoEstimado = {
   faltantes: FaltanteCompra[];
   /** Solo con costos de materiales completos y resultado positivo. */
   simulacion: { socio1: string; socio2: string } | null;
+  ordenCancelada?: boolean; // B8B: OV cancelada (sin simulación)
 };
 
 const cero = BigInt(0);

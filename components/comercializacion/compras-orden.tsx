@@ -16,7 +16,7 @@ const ESTATUS: Record<string, { texto: string; clase: string }> = {
   ANULADA: { texto: "Anulada", clase: "bg-red-50 text-red-700" },
 };
 
-export function ComprasOrden({ resumen }: { resumen: ResumenComprasOrden }) {
+export function ComprasOrden({ resumen, ordenCancelada = false }: { resumen: ResumenComprasOrden; ordenCancelada?: boolean }) {
   const todoComprado = resumen.partidas.every((p) => Number(p.pendiente) === 0);
   return (
     <Card className="space-y-4 p-5">
@@ -28,7 +28,8 @@ export function ComprasOrden({ resumen }: { resumen: ResumenComprasOrden }) {
             significa pagado ni recibido.
           </p>
         </div>
-        {!todoComprado && <BotonNuevaCompra ordenVentaId={resumen.ordenVentaId} />}
+        {!todoComprado && !ordenCancelada && <BotonNuevaCompra ordenVentaId={resumen.ordenVentaId} />}
+        {ordenCancelada && <span className="text-xs text-[var(--muted)]">OV cancelada: no admite nuevas compras.</span>}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
