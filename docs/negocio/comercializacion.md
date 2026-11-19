@@ -1,7 +1,7 @@
 # ARQENTO — Módulo de Comercialización
 
-Versión: 0.13 · 19 de noviembre de 2026
-Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) y los ajustes de compras y crédito al proveedor (selector «Sin IVA» / «IVA 16 %» y mensualidades automáticas) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
+Versión: 0.14 · 19 de noviembre de 2026
+Estado: implementación incremental. B1 (módulo, permisos y catálogo), B2 (clientes, obras y cotizaciones en borrador) B3 (emisión, PDF, aceptación y orden de venta), B4 (compras a proveedores), B5 (cuentas por cobrar y por pagar, condiciones, cobros y pagos), B6A (entregas parciales al cliente con evidencias) B6B (recordatorios internos de cobros y pagos) el cierre de B6 (evidencias adicionales y límites de carga) B7 (resultado estimado, gastos adicionales y simulación 50/50) B8A (surtido directo a obra: vínculo entre entregas y compras, y protección de la anulación de compras) los ajustes de compras y crédito al proveedor (selector «Sin IVA» / «IVA 16 %» y mensualidades automáticas) y B8B (rechazo/cancelación de cotizaciones, cancelación básica de OV y cambios individuales de vencimiento) implementados en la rama `feature/comercializacion`, sin desplegar; ver §20. Inventario del alcance pendiente en §21.
 Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
 
 ## 1. Propósito y autoridad del documento
@@ -396,7 +396,7 @@ Decisiones confirmadas (noviembre 2026):
 3. **Cobros:** solo Administrador y Director los ven y registran. Es una regla para el bloque financiero; B3 no implementa cobros. El vendedor ve precios y totales de venta de sus cotizaciones, pero no cobranza, costos ni utilidad. En el listado, la columna «Cobro» solo aparece para administración.
 
 Reglas implementadas:
-- **Estados:** Borrador → Emitida → Aceptada. Rechazada/Cancelada no están definidas todavía.
+- **Estados:** Borrador → Emitida → Aceptada. Rechazada y Cancelada se implementaron en B8B (ver §20, B8B).
 - **Emitir** exige cliente, obra del cliente, vendedor elegible en ese momento, descripción, fecha, vigencia (no anterior a hoy) y al menos una partida, sin productos desactivados. Los datos fiscales del cliente no son obligatorios. Usa las reglas exactas de cálculo de B2 y comprueba que los totales guardados coincidan con el recálculo. Emitir guarda antes los cambios del formulario y pide confirmación. No envía correo ni WhatsApp ni significa aceptación. Lo pueden hacer administración y el vendedor asignado.
 - **Copia histórica** (`CotizacionVenta.documentoEmitido`): empresa (nombre, razón social y referencia del logo), cliente (nombre, contacto, teléfono), obra (nombre, ubicación), vendedor (nombre), descripción, fechas, condiciones, observaciones, partidas (código, descripción, unidad, cantidad, precio, importe, impuesto) y totales por tasa. No incluye costos, precio de catálogo ni marcas internas de ajuste. La vista y el PDF de una cotización emitida usan solo esta copia.
 - **Inmutabilidad:** una cotización emitida o aceptada no se edita. La base lo garantiza con dos triggers: las partidas no cambian, y los datos comerciales, la copia y los totales no cambian. Además, solo puede pasar de Emitida a Aceptada, nunca volver a Borrador.
@@ -562,7 +562,7 @@ Decisiones de B5 (P5 confirmada por el usuario para la primera versión el 17 no
 - P5: un movimiento se aplica a una sola OV o compra.
   - **Sí incluido — anticipo dentro del documento:** el calendario puede empezar con una cuota de anticipo; el dinero puede registrarse antes de su vencimiento y aplicarse a cuotas futuras de la misma cuenta (propuesta automática o distribución explícita). Verificado con pruebas de integración para cobro y pago (anticipo $3,000 + $9,000).
   - **Excluido:** anticipos sin documento asociado, saldo a favor, sobrepago, movimientos repartidos entre varios documentos, notas de crédito y ajustes.
-- La reprogramación del calendario de una cuenta con movimientos no está disponible (queda pendiente definir cómo reasignar aplicaciones con historial).
+- La reprogramación del calendario de una cuenta con movimientos no está disponible (queda pendiente definir cómo reasignar aplicaciones con historial). B8B solo permite cambiar el vencimiento de cuotas individuales.
 - Cobros y pagos sin IVA desglosado ni conciliación bancaria; el comprobante es opcional.
 
 ### B6A — Entregas parciales al cliente y evidencias (implementado, sin desplegar)
@@ -1028,7 +1028,80 @@ Con primer vencimiento el 31 ene 2027, el plazo de 3 meses vence el 31 ene, el 2
 **Limitaciones**
 - La tasa del selector es fija (16 %). Otra tasa solo se conserva en registros anteriores.
 - No se elige la base del plazo (compra, factura o recepción): se captura la fecha del primer vencimiento.
-- Sin reprogramación con pagos (B8B pendiente).
+- Sin reprogramación de importes con pagos; B8B solo cambia vencimientos individuales.
+
+### B8B — Rechazo/cancelación de cotizaciones, cancelación básica de OV y cambios de vencimiento (implementado, sin desplegar)
+
+Solicitado por el usuario el 19 de noviembre de 2026. Commits separados para cancelaciones y vencimientos. Migraciones, aplicadas solo a las bases locales de desarrollo y de pruebas de Comercialización:
+- `20261126090000_comercializacion_b8b_cancelaciones`
+- `20261126090100_comercializacion_b8b_cuenta_cobro_anulable`
+- `20261127090000_comercializacion_b8b_vencimientos`
+
+No modifican datos existentes: toda OV queda vigente y ninguna cotización cambia de estado.
+
+**Permisos:** solo Administrador y Director de la Empresa, con el módulo habilitado, ejecutan estas acciones; se valida en el servidor también por id directo. El vendedor consulta el estado (Rechazada, Cancelada, OV cancelada, con motivo) de sus documentos, pero no registra rechazos, no cancela ni cambia vencimientos, y sigue sin ver información financiera.
+
+**1. Cotizaciones: rechazo y cancelación**
+- «Registrar rechazo»: solo sobre una cotización Emitida. «Cancelar cotización»: sobre Borrador o Emitida. Ambos exigen motivo y registran autor y fecha.
+- Rechazada y Cancelada son terminales: no se editan, emiten ni aceptan; se conservan folio, partidas, la copia emitida (y su PDF) e historial. El folio no se reutiliza y el original no se reabre. «Duplicar» crea un borrador nuevo con las reglas actuales de productos y precios.
+- Un borrador cancelado nunca se emitió: se consulta de solo lectura y no tiene PDF.
+- Una cotización Aceptada se gestiona con su OV; estas acciones la rechazan.
+- La base solo admite BORRADOR → EMITIDA | CANCELADA y EMITIDA → ACEPTADA | RECHAZADA | CANCELADA, y nunca crea una OV de una cotización rechazada o cancelada.
+- Concurrencia: emitir, aceptar, rechazar y cancelar bloquean la cotización; la segunda operación ve el estado final. Un reintento devuelve el resultado existente sin repetir efectos ni cambiar el motivo original.
+
+**2. Cancelación básica de la OV**
+- «Cancelar OV» con motivo obligatorio, solo cuando no hay:
+  - historial de cobros o pagos, aunque estén anulados, en la cuenta de la OV, sus compras o sus gastos;
+  - compras confirmadas ni en borrador;
+  - gastos, entregas ni vínculos de surtido vigentes.
+- Las dependencias ya anuladas se conservan como historial. La pantalla muestra cada bloqueo con enlaces a la compra, gasto o entrega por atender. No cancela dependencias por su cuenta ni permite omitir controles.
+- Descartar un borrador de compra ya existía (B4, «Descartar borrador», con motivo e historial; no crea cuenta ni consume cantidades). B8B corrige que el surtido a obra (B8A) lo bloqueaba: esas reglas aplican solo a compras confirmadas.
+- En una sola transacción se cancela la OV y se anula su cuenta por cobrar. Se conservan el total, el calendario e historial; no se crean cobros ficticios ni devoluciones.
+- La cotización sigue Aceptada y no genera otra OV. La cancelación es definitiva: para una nueva venta se duplica la cotización.
+- Una OV cancelada:
+  - sigue consultable con estado, motivo y referencias;
+  - deja de sumar en indicadores, «Por atender» y «Entregas pendientes»;
+  - no muestra simulación de reparto;
+  - no admite nuevas compras, gastos, entregas, vínculos, cobros ni cambios de condiciones.
+- Defensa en profundidad: las acciones de servidor lo validan dentro de la transacción y la base lo vuelve a exigir con triggers. La base también impide anular una cuenta por cobrar sin cancelar su OV y reabrir o modificar una OV cancelada.
+- Orden de bloqueo (el mismo de B8A): OV → compra o entrega → cuenta. Una cancelación simultánea con el alta de una compra, entrega o gasto, o con un cobro, deja procedente solo a una de las dos.
+
+**3. Cambiar vencimiento**
+- Acción por cuota con saldo positivo en cuentas vigentes de OV, compras y gastos adicionales, aunque la cuenta tenga movimientos.
+- Solo cambia la fecha de esa cuota. La nueva fecha debe ser de hoy en adelante, en la zona de la Empresa (B5), y distinta de la vigente; el motivo es obligatorio.
+- Historial de cada cambio: fecha anterior, nueva, motivo, autor y fecha del registro. La fecha originalmente pactada se conserva y se muestra como «Pactada».
+- No cambia importes, número de cuotas, modalidad, pagos, aplicaciones, documentos ni el resultado de B7.
+- En mensualidades automáticas, cambiar una cuota no desplaza ni regenera las demás. Se mantiene la regla de B5: con movimientos no se sustituye el calendario completo.
+- Los cobros y pagos posteriores usan los vencimientos vigentes (B5). «Por atender» se calcula al consultar, así que refleja la fecha nueva sin datos obsoletos.
+- Se bloquean cuotas liquidadas y cuentas anuladas. Los cambios concurrentes se detectan con la fecha leída: el segundo se rechaza sin sobrescribir. Un pago simultáneo se serializa con el bloqueo de la cuenta y una cuota que ese pago liquidó ya no cambia.
+- La base exige que cada cambio de fecha tenga su registro de historial en la misma transacción. El historial no se edita ni se borra.
+
+**Ejemplo (verificado en pruebas):** cuenta de $12,000 con cuota 1 de $4,000 vencida, cuota 2 de $8,000 futura y un cobro de $1,500 aplicado a la cuota 1.
+
+| | Saldo | Vencido | Cuota 1 | Cuota 2 |
+|---|---|---|---|---|
+| Antes | $10,500 | $2,500 | vence hace 10 días, saldo $2,500 | futura, $8,000 |
+| Cuota 1 a hoy + 5 días | $10,500 | $0 | vence en 5 días, «Pactada» con la fecha anterior | sin cambios |
+
+La aplicación de $1,500 queda intacta.
+
+**«Sin IVA» y B7:** el importe completo de una compra «Sin IVA» cuenta como costo de materiales y su cuenta por pagar se genera por el mismo total. Pruebas: `comercializacion-b8b-vencimientos` («Sin IVA» y el resultado de B7) y `comercializacion-b7` («tasas mixtas…», con una partida Sin IVA).
+
+**Verificación**
+- Pruebas de integración `comercializacion-b8b-cancelaciones` (12) y `comercializacion-b8b-vencimientos` (7), además de las anteriores sin cambios.
+- Recorrido en navegador local (datos [PRUEBA]):
+  - rechazo de una emitida y cancelación de un borrador, de solo lectura y sin PDF;
+  - cancelación de una OV con calendario: cuenta anulada con su total, sin «Nueva compra», entregas ni gastos, sin simulación;
+  - bloqueos de otra OV con enlace a su compra en borrador;
+  - cambio de la cuota 1 con un cobro parcial: vencido de $250 a $0, saldo $850 sin cambio, «Pactada» e historial visibles;
+  - el vendedor ve estados sin acciones;
+  - sin errores en consola.
+
+**Limitaciones**
+- Sin devoluciones, notas de crédito, cancelaciones con dinero registrado ni reaperturas.
+- Una OV con cobros o pagos, aunque estén anulados, no se cancela con la acción básica.
+- Cambiar vencimientos no redistribuye importes ni aplicaciones, y no cambia varias cuotas a la vez.
+- Rechazo y cancelación no tienen reversión: una captura equivocada se corrige duplicando.
 
 ### Defecto funcional de sesión (fuera de Comercialización) — corregido
 
@@ -1041,7 +1114,7 @@ Con primer vencimiento el 31 ene 2027, el plazo de 3 meses vence el 31 ene, el 2
 
 ### Pendientes para B6 y posteriores
 
-- Prórroga o reprogramación de cuotas con pagos (pendiente). Saldo a favor, pagos agrupados entre documentos y ajustes quedan fuera de la primera versión por P5 (confirmada).
+- Reprogramación de importes o aplicaciones con pagos (pendiente; B8B solo cambia vencimientos individuales). Saldo a favor, pagos agrupados entre documentos y ajustes quedan fuera de la primera versión por P5 (confirmada).
 - Pantalla para editar la zona horaria de la Empresa (hoy se usa America/Monterrey si no está definida).
 - Verificar en un despliegue aislado (no PRD) las cargas cerca del límite, el 413 de Vercel, las descargas de archivos anteriores de más de 4.5 MB y la corrección de sesión.
 - Decidir si se necesitan archivos de más de 4 MB (carga directa protegida a R2; propuesta en «Cargas de archivos»).
@@ -1049,12 +1122,11 @@ Con primer vencimiento el 31 ene 2027, el plazo de 3 meses vence el 31 ene, el 2
 - Otros módulos siguen aceptando hasta 10 MB por archivo (y 55 MB por solicitud en la carga de documentos de Contabilidad), por encima de lo que admite Vercel. Se dejó sin cambiar; requiere decisión aparte.
 - P7 (importación del catálogo) sigue pendiente.
 - P8: la simulación 50/50 está implementada; retiros reales, reparto autorizado o pagado, deudas y reservas siguen pospuestos por el usuario.
-- Cancelación de OV y rechazo o cancelación de cotizaciones (ver §21).
-- Estados Rechazada/Cancelada de una cotización: no definidos.
+- Cancelación de una OV con dinero registrado, devoluciones, notas de crédito y reaperturas (fuera de B8B).
 - Ajustes visuales y navegación móvil.
 - Detalle del estado de cada función (implementadas en B7 y B8A y pendientes): ver el inventario de §21.
 
-## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7 y B8A)
+## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7, B8A y B8B)
 
 Revisión del documento contra la implementación. Las recomendaciones son **propuestas**; ninguna fila convierte una propuesta en acuerdo confirmado.
 
@@ -1066,10 +1138,10 @@ Revisión del documento contra la implementación. Las recomendaciones son **pro
 | Gastos adicionales de la operación (fletes, maniobras, comisiones) | **Implementado (B7)** | Edición y corrección de gastos con pagos | Decisión del usuario | Salir así: un gasto con pagos no se anula con la acción simple |
 | Reparto entre socios (referencia 50/50, P8) | **Parcial: simulación 50/50 implementada (B7)** | Socios y porcentajes configurables, reparto autorizado y pagado, retiros reales | Pospuesto por el usuario | Fuera de la primera salida. Consecuencia: los retiros se registran fuera del sistema |
 | Amortización o abono a deuda y reservas (§12) | Pendiente; pospuesto por el usuario (17 nov 2026) | Movimientos y saldos separados de deuda, reserva y reparto; base del descuento | Pospuesto por el usuario | Fuera de la primera salida |
-| Rechazo o cancelación de cotizaciones | Pendiente | Estados Rechazada y Cancelada (§4), con motivo; hoy una cotización que no prospera queda Borrador o Emitida, y vencida por fecha | Decisión del usuario | Agregar «Cancelada con motivo» para borradores y emitidas si se necesita limpiar el listado. Consecuencia sin ella: el listado acumula cotizaciones muertas |
-| Cancelación de una OV | Pendiente | No existe. Hay que definir qué pasa con su cuenta, sus compras, entregas, cobros y pagos | Decisión del usuario | No incluirla en la primera salida; una OV registrada por error se corrige con soporte técnico. Consecuencia: riesgo operativo bajo pero real |
+| Rechazo o cancelación de cotizaciones | **Implementado (B8B)** | Reversión de un rechazo o cancelación | Decisión del usuario | Salir así: se corrige duplicando |
+| Cancelación de una OV | **Parcial: cancelación básica (B8B)** | Cancelación con dinero registrado, devoluciones, notas de crédito, reaperturas | Decisión del usuario | Salir con la básica (sin dinero ni dependencias vigentes) |
 | Importación del catálogo (P7) | Parcial: alta manual (B1) | Archivo del negocio (columnas, responsable, volumen), validación de duplicados y resumen de errores | Decisión del usuario (archivo) | Si el catálogo es de decenas de productos, alta manual. Consecuencia: tiempo de captura inicial |
-| Reprogramación de cuotas con movimientos | Pendiente | B5 solo reemplaza el calendario si la cuenta nunca tuvo movimientos. §8 pide cambiar vencimientos con permiso, motivo e historial | Decisión del usuario (regla) y después corrección técnica | Recomiendo una versión mínima antes de salir: cambiar la **fecha** de cuotas con saldo, sin mover aplicaciones, con motivo y conservando la fecha original. Consecuencia sin ella: una prórroga pactada deja la cuota como vencida en «Por atender» |
+| Reprogramación de cuotas con movimientos | **Parcial: cambio individual de vencimiento (B8B)** | Redistribuir importes o aplicaciones de un calendario con pagos | Decisión del usuario | Salir con el cambio de fecha por cuota |
 | Pantalla de zona horaria de la Empresa | Pendiente | Hoy se usa America/Monterrey si no está definida | Corrección técnica | Salir con el valor predeterminado si todas las empresas están en esa zona |
 | Navegación móvil y ajustes visuales | Pendiente | Revisión en celular; §14.15 pide adjuntos desde móvil | Corrección técnica y de diseño | Antes de salir, al menos registrar entregas y agregar evidencia desde un celular real. Consecuencia sin ella: uso en obra no comprobado |
 | Archivos de más de 4 MB | Pendiente | Carga directa protegida a R2 (propuesta en §20, «Cargas de archivos») | Decisión del usuario | Salir con 4 MB por carga si las fotos y remisiones habituales caben. Consecuencia: fotos grandes se reducen antes de subirlas |

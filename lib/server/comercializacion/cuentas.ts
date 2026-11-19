@@ -130,6 +130,11 @@ export const INCLUIR_CUENTA = {
       vigente: true,
       sustituidaEn: true,
       aplicaciones: { select: { importe: true, movimiento: { select: { estatus: true } } } },
+      // B8B — historial de cambios de vencimiento de la cuota.
+      cambiosVencimiento: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, fechaAnterior: true, fechaNueva: true, motivo: true, createdAt: true, registradoPor: { select: { nombre: true } } },
+      },
     },
   },
   movimientos: {
@@ -185,6 +190,8 @@ export type MovimientoDetalle = {
 
 export type OrigenCuenta = "ORDEN" | "COMPRA" | "GASTO";
 
+export type CambioVencimientoDetalle = { id: string; fechaAnterior: string; fechaNueva: string; motivo: string; porNombre: string; en: string };
+
 export type DetalleCuenta = {
   id: string;
   tipo: "POR_COBRAR" | "POR_PAGAR";
@@ -197,6 +204,8 @@ export type DetalleCuenta = {
   hoy: string;
   estado: EstadoCuenta;
   calendariosAnteriores: { numero: number; fechaVencimiento: string; importe: string; sustituidaEn: string }[];
+  // B8B — por cuota vigente: fecha originalmente pactada y cambios de vencimiento.
+  vencimientos: Record<string, { fechaPactada: string; cambios: CambioVencimientoDetalle[] }>;
   movimientos: MovimientoDetalle[];
   motivoAnulacion: string | null;
 };
@@ -225,6 +234,24 @@ function aDetalle(c: CuentaCargada, hoy: string): DetalleCuenta {
     calendariosAnteriores: c.cuotas
       .filter((q) => !q.vigente)
       .map((q) => ({ numero: q.numero, fechaVencimiento: dateAFecha(q.fechaVencimiento), importe: q.importe.toFixed(2), sustituidaEn: q.sustituidaEn!.toISOString() })),
+    vencimientos: Object.fromEntries(
+      c.cuotas
+        .filter((q) => q.vigente)
+        .map((q) => [
+          q.id,
+          {
+            fechaPactada: dateAFecha(q.cambiosVencimiento[0]?.fechaAnterior ?? q.fechaVencimiento),
+            cambios: q.cambiosVencimiento.map((h) => ({
+              id: h.id,
+              fechaAnterior: dateAFecha(h.fechaAnterior),
+              fechaNueva: dateAFecha(h.fechaNueva),
+              motivo: h.motivo,
+              porNombre: h.registradoPor.nombre,
+              en: h.createdAt.toISOString(),
+            })),
+          },
+        ])
+    ),
     movimientos: c.movimientos.map((m) => ({
       id: m.id,
       importe: m.importe.toFixed(2),
@@ -367,6 +394,101 @@ export async function definirCondicionesCuenta(usuario: UsuarioSesion, cuentaId:
     });
     return { version: nuevaVersion };
   });
+}
+
+// ---------------------------------------------------------------------------
+// B8B — cambiar el vencimiento de UNA cuota
+// ---------------------------------------------------------------------------
+// - Cuotas con saldo de cuentas VIGENTES (OV, compras y gastos), aunque la
+//   cuenta tenga movimientos. Solo administración.
+// - Solo cambia la fecha: importes, número de cuotas, modalidad, pagos,
+//   aplicaciones y las demás cuotas no se tocan; no regenera mensualidades.
+// - Nueva fecha de hoy (zona de la Empresa, B5) en adelante y distinta de la
+//   vigente; motivo obligatorio; historial con fecha anterior, nueva, autor y
+//   fecha del registro (la pactada originalmente se conserva).
+// - Concurrencia: bloquea la cuenta (como un pago) y exige la fecha que leyó
+//   el usuario: si otro la cambió, se rechaza sin sobrescribir. Una cuota que
+//   un pago simultáneo liquidó ya no cambia.
+// - Reintento con la misma clave: devuelve el registro existente.
+
+const esquemaCambioVencimiento = z.strictObject({
+  fechaLeida: z.unknown(),
+  nuevaFecha: z.unknown(),
+  motivo: z.string({ error: "Indica el motivo del cambio." }).trim().min(3, "Indica el motivo del cambio.").max(500, "El motivo admite máximo 500 caracteres."),
+});
+
+export async function cambiarVencimientoCuota(
+  usuario: UsuarioSesion,
+  cuotaId: unknown,
+  datosCrudos: unknown,
+  claveCruda: unknown
+): Promise<{ cambioId: string; reintento: boolean }> {
+  const empresaId = requerirAdministracionComercial(usuario);
+  if (typeof cuotaId !== "string" || !cuotaId) throw new RegistroNoEncontradoError("La cuota");
+  const clave = z.string({ error: "Clave de registro inválida. Recarga la página." }).trim().min(8).max(200).parse(claveCruda);
+  const d = esquemaCambioVencimiento.parse(datosCrudos);
+  const fechaLeida = normalizarFecha(d.fechaLeida);
+  const nuevaFecha = normalizarFecha(d.nuevaFecha);
+  if (!fechaLeida) throw new ValidacionError("Fecha vigente inválida. Recarga la página.");
+  if (!nuevaFecha) throw new ValidacionError("Indica la nueva fecha de vencimiento (AAAA-MM-DD).");
+
+  const previo = async () => {
+    const h = await db.cambioVencimientoCuota.findFirst({ where: { empresaId, claveRegistro: clave }, select: { id: true, cuotaId: true } });
+    if (!h) return null;
+    if (h.cuotaId !== cuotaId) throw new ValidacionError("Clave de registro inválida. Recarga la página.");
+    return { cambioId: h.id, reintento: true };
+  };
+  const repetido = await previo();
+  if (repetido) return repetido;
+
+  const cuota = await db.cuotaCuentaComercial.findFirst({ where: { id: cuotaId, empresaId }, select: { cuentaId: true } });
+  if (!cuota) throw new RegistroNoEncontradoError("La cuota");
+
+  try {
+    return await db.$transaction(async (tx) => {
+      const c = await bloquearCuenta(tx, empresaId, cuota.cuentaId);
+      if (c.estatus !== "VIGENTE") throw new ValidacionError("La cuenta está anulada: no se cambian vencimientos.");
+      const hoy = await hoyDeEmpresa(tx, empresaId);
+      const q = estadoDe(c, hoy).cuotas.find((x) => x.id === cuotaId);
+      if (!q) throw new ValidacionError("La cuota ya no forma parte del calendario vigente.");
+      if (aCentavos(q.saldo) <= BigInt(0)) throw new ValidacionError("La cuota está liquidada: su vencimiento ya no cambia.");
+      if (q.fechaVencimiento !== fechaLeida) throw new ConflictoEdicionError();
+      if (nuevaFecha === q.fechaVencimiento) throw new ValidacionError("La nueva fecha es igual al vencimiento vigente.");
+      if (nuevaFecha < hoy) throw new ValidacionError("La nueva fecha debe ser de hoy en adelante.");
+      const h = await tx.cambioVencimientoCuota.create({
+        data: {
+          empresaId,
+          cuentaId: c.id,
+          cuotaId,
+          fechaAnterior: fechaADate(q.fechaVencimiento),
+          fechaNueva: fechaADate(nuevaFecha),
+          motivo: d.motivo,
+          registradoPorId: usuario.id,
+          claveRegistro: clave,
+        },
+        select: { id: true },
+      });
+      await tx.cuotaCuentaComercial.update({ where: { id: cuotaId }, data: { fechaVencimiento: fechaADate(nuevaFecha) } });
+      const nuevaVersion = c.version + 1;
+      await tx.cuentaComercial.update({ where: { id: c.id }, data: { version: nuevaVersion } });
+      await registrarAuditoriaTx(tx, {
+        empresaId,
+        usuarioId: usuario.id,
+        entidad: ENTIDAD_CUENTA,
+        entidadId: c.id,
+        accion: "EDITAR",
+        valorAnterior: { cuota: q.numero, fechaVencimiento: q.fechaVencimiento, version: c.version },
+        valorNuevo: { cuota: q.numero, fechaVencimiento: nuevaFecha, motivo: d.motivo, saldo: q.saldo, version: nuevaVersion },
+      });
+      return { cambioId: h.id, reintento: false };
+    });
+  } catch (error) {
+    if (esUnica(error)) {
+      const ganador = await previo();
+      if (ganador) return ganador;
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------

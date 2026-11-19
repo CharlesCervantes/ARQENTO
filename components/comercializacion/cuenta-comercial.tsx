@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment, useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/comercializacion/cuentas";
 import {
   anularMovimientoAction,
+  cambiarVencimientoAction,
   definirCondicionesAction,
   registrarMovimientoAction,
   type MovimientoState,
@@ -53,6 +54,7 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
   const e = cuenta.estado;
   const [editandoCondiciones, setEditandoCondiciones] = useState(false);
   const [registrando, setRegistrando] = useState(false);
+  const [cambiandoCuota, setCambiandoCuota] = useState<string | null>(null);
   const activa = cuenta.estatus === "VIGENTE";
   const sinCalendario = e.situacion === "SIN_CALENDARIO";
 
@@ -129,13 +131,20 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
                     <th className="border-b border-[var(--border)] px-3 py-2 text-right">{esCobro ? "Cobrado" : "Pagado"}</th>
                     <th className="border-b border-[var(--border)] px-3 py-2 text-right">Saldo</th>
                     <th className="border-b border-[var(--border)] px-3 py-2">Situación</th>
+                    {activa && <th className="border-b border-[var(--border)] px-3 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
                   {e.cuotas.map((q) => (
-                    <tr key={q.id} className="border-b border-[var(--border)] last:border-0">
+                    <Fragment key={q.id}>
+                    <tr className="border-b border-[var(--border)] last:border-0" data-cuota={q.numero}>
                       <td className="px-3 py-2">{q.numero}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{formatearFechaCalendario(q.fechaVencimiento)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {formatearFechaCalendario(q.fechaVencimiento)}
+                        {cuenta.vencimientos[q.id]?.cambios.length > 0 && (
+                          <span className="block text-xs text-[var(--muted)]">Pactada: {formatearFechaCalendario(cuenta.vencimientos[q.id].fechaPactada)}</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatearImporte(q.importe)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatearImporte(q.aplicado)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatearImporte(q.saldo)}</td>
@@ -145,7 +154,24 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
                           estilo={ESTILO_SITUACION[q.situacion]}
                         />
                       </td>
+                      {activa && (
+                        <td className="px-3 py-2 text-right">
+                          {aCentavos(q.saldo) > BigInt(0) && cambiandoCuota !== q.id && (
+                            <button type="button" onClick={() => setCambiandoCuota(q.id)} className="text-xs font-medium text-[var(--brand)] hover:underline whitespace-nowrap">
+                              Cambiar vencimiento
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
+                    {cambiandoCuota === q.id && (
+                      <tr>
+                        <td colSpan={7} className="bg-black/[0.02] px-3 py-3">
+                          <FormularioVencimiento cuenta={cuenta} cuota={q} onListo={() => setCambiandoCuota(null)} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -154,8 +180,26 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
         )}
         {cuenta.tuvoMovimientos && activa && (
           <p className="text-xs text-[var(--muted)]">
-            El calendario ya no se modifica porque la cuenta tiene {esCobro ? "cobros" : "pagos"} registrados (la reprogramación con pagos está pendiente).
+            El calendario completo ya no se sustituye porque la cuenta tiene {esCobro ? "cobros" : "pagos"} registrados; sí puedes cambiar el vencimiento de
+            una cuota con saldo (sin cambiar importes ni aplicaciones).
           </p>
+        )}
+        {Object.values(cuenta.vencimientos).some((v) => v.cambios.length > 0) && (
+          <details className="text-xs text-[var(--muted)]" data-historial-vencimientos>
+            <summary className="cursor-pointer">
+              Cambios de vencimiento ({Object.values(cuenta.vencimientos).reduce((s, v) => s + v.cambios.length, 0)})
+            </summary>
+            <ul className="mt-1 ml-4 list-disc">
+              {e.cuotas.flatMap((q) =>
+                (cuenta.vencimientos[q.id]?.cambios ?? []).map((h) => (
+                  <li key={h.id}>
+                    Cuota {q.numero}: {formatearFechaCalendario(h.fechaAnterior)} → {formatearFechaCalendario(h.fechaNueva)} · {h.motivo} · {h.porNombre},{" "}
+                    {formatoFechaHora.format(new Date(h.en))}
+                  </li>
+                ))
+              )}
+            </ul>
+          </details>
         )}
         {cuenta.calendariosAnteriores.length > 0 && (
           <details className="text-xs text-[var(--muted)]">
@@ -194,6 +238,59 @@ export function CuentaComercialView({ cuenta }: { cuenta: DetalleCuenta }) {
         )}
       </div>
     </Card>
+  );
+}
+
+// B8B — cambiar el vencimiento de UNA cuota con saldo. Solo la fecha; el
+// servidor valida (hoy en adelante, distinta, motivo) y detecta cambios
+// simultáneos con la fecha leída.
+function FormularioVencimiento({ cuenta, cuota, onListo }: { cuenta: DetalleCuenta; cuota: DetalleCuenta["estado"]["cuotas"][number]; onListo: () => void }) {
+  const router = useRouter();
+  const [nuevaFecha, setNuevaFecha] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [claveRegistro] = useState(clave);
+  const [error, setError] = useState<string | null>(null);
+  const [pendiente, start] = useTransition();
+  return (
+    <div className="flex flex-col gap-2 text-sm" data-formulario-vencimiento>
+      <p className="text-xs text-[var(--muted)]">
+        Cuota {cuota.numero}: vence {formatearFechaCalendario(cuota.fechaVencimiento)}, saldo {formatearImporte(cuota.saldo)}. Solo cambia esta fecha: el importe,
+        las demás cuotas y los {cuenta.tipo === "POR_COBRAR" ? "cobros" : "pagos"} aplicados no cambian.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium">Nueva fecha</span>
+          <Input type="date" value={nuevaFecha} min={cuenta.hoy} onChange={(ev) => setNuevaFecha(ev.target.value)} aria-label={`Nueva fecha de la cuota ${cuota.numero}`} className="w-44" />
+        </label>
+        <label className="block min-w-[16rem] flex-1">
+          <span className="mb-1 block text-xs font-medium">Motivo</span>
+          <Input value={motivo} onChange={(ev) => setMotivo(ev.target.value)} maxLength={500} placeholder="Motivo (obligatorio)" aria-label={`Motivo del cambio de la cuota ${cuota.numero}`} />
+        </label>
+        <Button
+          type="button"
+          disabled={pendiente || !nuevaFecha || motivo.trim().length < 3}
+          onClick={() =>
+            start(async () => {
+              setError(null);
+              const r = await cambiarVencimientoAction({ cuotaId: cuota.id, fechaLeida: cuota.fechaVencimiento, nuevaFecha, motivo, clave: claveRegistro });
+              if (r.error) return setError(r.error);
+              onListo();
+              router.refresh();
+            })
+          }
+        >
+          {pendiente ? "Guardando…" : "Guardar vencimiento"}
+        </Button>
+        <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>
+          Cancelar
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

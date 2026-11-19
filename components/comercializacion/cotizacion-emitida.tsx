@@ -58,7 +58,7 @@ export function AvisoCierre({ titulo, cierre, nota }: { titulo: string; cierre: 
       <p className="text-sm font-semibold text-red-800">{titulo}</p>
       <p className="text-sm text-[var(--foreground)]">Motivo: {cierre.motivo}</p>
       <p className="text-xs text-[var(--muted)]">
-        Registró {cierre.porNombre} el {formatoFechaHora.format(new Date(cierre.en))}. {nota}
+        Registró {cierre.porNombre} · {formatoFechaHora.format(new Date(cierre.en))}{nota ? ` · ${nota}` : ""}
       </p>
     </Card>
   );

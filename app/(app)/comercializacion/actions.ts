@@ -30,7 +30,7 @@ import {
   crearProveedorComercial,
   guardarBorradorCompra,
 } from "@/lib/server/comercializacion/compras";
-import { anularMovimientoCuenta, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
+import { anularMovimientoCuenta, cambiarVencimientoCuota, definirCondicionesCuenta, registrarMovimientoCuenta } from "@/lib/server/comercializacion/cuentas";
 import { anularGastoComercial, registrarGastoComercial } from "@/lib/server/comercializacion/gastos";
 import { anularVinculoSurtido, vincularSurtido } from "@/lib/server/comercializacion/surtido";
 import { cancelarCotizacionVenta, cancelarOrdenVenta, rechazarCotizacionVenta } from "@/lib/server/comercializacion/cancelaciones";
@@ -549,6 +549,20 @@ export async function cancelarOrdenVentaAction(entrada: { ordenId: string; motiv
     return { error: mensajeError(error) };
   }
   // Indicadores, «Por atender» y entregas pendientes dejan de contarla.
+  revalidatePath("/comercializacion", "layout");
+  return {};
+}
+
+/** B8B — cambiar el vencimiento de una cuota (solo administración; el servidor valida todo). */
+export async function cambiarVencimientoAction(entrada: { cuotaId: string; fechaLeida: string; nuevaFecha: string; motivo: string; clave: string }): Promise<{ error?: string; conflicto?: boolean }> {
+  const usuario = await requireSession();
+  try {
+    await cambiarVencimientoCuota(usuario, entrada?.cuotaId, { fechaLeida: entrada?.fechaLeida, nuevaFecha: entrada?.nuevaFecha, motivo: entrada?.motivo }, entrada?.clave);
+  } catch (error) {
+    if (error instanceof ConflictoEdicionError) return { error: "Otra persona cambió este vencimiento mientras lo editabas. Recarga para ver la fecha vigente.", conflicto: true };
+    return { error: mensajeError(error) };
+  }
+  // «Por atender» y los saldos vencidos se recalculan con la fecha nueva.
   revalidatePath("/comercializacion", "layout");
   return {};
 }

@@ -156,6 +156,7 @@ model Empresa {
   cargasEvidenciaEntrega  CargaEvidenciaEntrega[]
   gastosComerciales       GastoComercial[]
   vinculosSurtido         VinculoSurtidoComercial[]
+  cambiosVencimiento      CambioVencimientoCuota[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -396,6 +397,7 @@ model Usuario {
   gastosComercialesAnulados         GastoComercial[]          @relation("GastoComercialAnulado")
   vinculosSurtidoRegistrados        VinculoSurtidoComercial[] @relation("VinculoSurtidoRegistrado")
   vinculosSurtidoAnulados           VinculoSurtidoComercial[] @relation("VinculoSurtidoAnulado")
+  cambiosVencimientoRegistrados     CambioVencimientoCuota[]  @relation("CambioVencimientoRegistrado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -3348,6 +3350,7 @@ model CuentaComercial {
 
   cuotas      CuotaCuentaComercial[]
   movimientos MovimientoComercial[]
+  cambiosVencimiento CambioVencimientoCuota[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3378,12 +3381,47 @@ model CuotaCuentaComercial {
   sustituidaEn     DateTime?
 
   aplicaciones AplicacionMovimientoComercial[]
+  // B8B — historial de cambios individuales de vencimiento. La fecha
+  // originalmente pactada es la fecha anterior del primer cambio (o la
+  // vigente si nunca cambió).
+  cambiosVencimiento CambioVencimientoCuota[]
 
   createdAt DateTime @default(now())
 
   @@unique([id, empresaId])
   @@index([cuentaId, vigente])
   @@map("cuotas_cuenta_comercial")
+}
+
+// B8B — cambio individual del vencimiento de UNA cuota con saldo (aunque la
+// cuenta tenga movimientos). Solo cambia la fecha: importe, número de cuotas,
+// modalidad, aplicaciones y las demás cuotas no se tocan. No se edita ni se
+// borra; cada cambio queda con fecha anterior, nueva, motivo, autor y fecha.
+model CambioVencimientoCuota {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cuenta   CuentaComercial      @relation(fields: [cuentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuentaId String
+  cuota    CuotaCuentaComercial @relation(fields: [cuotaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuotaId  String
+
+  fechaAnterior DateTime @db.Date
+  fechaNueva    DateTime @db.Date
+  motivo        String
+
+  registradoPor   Usuario  @relation("CambioVencimientoRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  createdAt       DateTime @default(now())
+
+  // Idempotencia: el formulario envía una clave por intento.
+  claveRegistro String
+
+  @@unique([empresaId, claveRegistro])
+  @@index([cuotaId])
+  @@index([cuentaId])
+  @@map("cambios_vencimiento_cuota")
 }
 
 // Cobro (cuenta por cobrar) o pago (cuenta por pagar) REAL. No se edita ni
