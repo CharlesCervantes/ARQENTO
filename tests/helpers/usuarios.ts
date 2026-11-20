@@ -9,8 +9,19 @@ export function usuarioDePrueba(opciones: {
   privadoHabilitado?: boolean;
   // Otra Empresa (pruebas de aislamiento multiempresa).
   empresaId?: string;
+  // Comercialización: marca de vendedor y módulos concedidos por override
+  // de Empresa (sin Plan). Por omisión: sin marca y sin módulos.
+  vendedorComercial?: boolean;
+  modulos?: string[];
 }): UsuarioSesion {
-  const { rol, vistaPrivadaActiva = true, privadoHabilitado = true, empresaId = "empresa-prueba" } = opciones;
+  const {
+    rol,
+    vistaPrivadaActiva = true,
+    privadoHabilitado = true,
+    empresaId = "empresa-prueba",
+    vendedorComercial = false,
+    modulos = [],
+  } = opciones;
   const esMaster = rol === "MASTER";
   return {
     id: `usuario-${rol.toLowerCase()}`,
@@ -21,6 +32,7 @@ export function usuarioDePrueba(opciones: {
     empresaId: esMaster ? null : empresaId,
     vistaPrivadaActiva,
     debeCambiarPassword: false,
+    vendedorComercial,
     empresa: esMaster
       ? null
       : {
@@ -33,7 +45,7 @@ export function usuarioDePrueba(opciones: {
           activa: true,
           privadoHabilitado,
           plan: null,
-          modulosOverride: [],
+          modulosOverride: modulos.map((clave) => ({ habilitado: true, modulo: { clave, nombre: clave } })),
         },
   } as UsuarioSesion;
 }

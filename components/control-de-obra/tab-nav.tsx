@@ -25,15 +25,21 @@ export function TabNav({
   tabs,
   variante = "principal",
 }: {
-  tabs: { href: string; label: string; coincideSubrutas?: boolean }[];
+  // `activaEn`: prefijos adicionales que también activan la pestaña, cuando
+  // sus sub-rutas no cuelgan de su propio href (p. ej. Comercialización:
+  // el listado vive en /comercializacion y su detalle en
+  // /comercializacion/cotizaciones/…, pero /comercializacion/productos es
+  // otra pestaña, así que coincideSubrutas no sirve).
+  tabs: { href: string; label: string; coincideSubrutas?: boolean; activaEn?: string[] }[];
   variante?: "principal" | "secundaria";
 }) {
   const pathname = usePathname();
 
-  function activo(tab: { href: string; coincideSubrutas?: boolean }): boolean {
+  function activo(tab: { href: string; coincideSubrutas?: boolean; activaEn?: string[] }): boolean {
     return (
       pathname === tab.href ||
-      (tab.coincideSubrutas === true && pathname.startsWith(`${tab.href}/`))
+      (tab.coincideSubrutas === true && pathname.startsWith(`${tab.href}/`)) ||
+      (tab.activaEn ?? []).some((prefijo) => pathname.startsWith(prefijo))
     );
   }
 

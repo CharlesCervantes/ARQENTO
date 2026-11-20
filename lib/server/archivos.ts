@@ -4,6 +4,8 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -41,6 +43,45 @@ function cliente(): S3Client {
     endpoint: ENDPOINT,
     credentials: { accessKeyId: ACCESS_KEY_ID, secretAccessKey: SECRET_ACCESS_KEY },
   });
+}
+
+// true = el almacenamiento tiene su configuración completa. Quien recibe
+// archivos sin intervención de una persona (WhatsApp) lo consulta ANTES de
+// descargar nada, para fallar de forma controlada si falta.
+export function almacenamientoConfigurado(): boolean {
+  return Boolean(BUCKET && ENDPOINT && ACCESS_KEY_ID && SECRET_ACCESS_KEY);
+}
+
+// Sube bytes a una clave EXACTA, decidida por quien llama (Fase 2A WhatsApp,
+// noviembre 2026). Repetir la subida a la misma clave la sobrescribe con el
+// mismo contenido: así una recepción interrumpida se reanuda sin dejar
+// objetos huérfanos. La clave debe venir ya saneada.
+export async function subirBytes(ref: string, bytes: Uint8Array, tipoMime: string): Promise<void> {
+  if (esReferenciaRemota(ref) || !/^[A-Za-z0-9_\-./]+$/.test(ref) || ref.includes("..")) {
+    throw new Error("Referencia de archivo no válida.");
+  }
+  await cliente().send(new PutObjectCommand({ Bucket: BUCKET, Key: ref, Body: bytes, ContentType: tipoMime }));
+}
+
+// true = el objeto existe en el almacenamiento privado.
+export async function existeArchivo(ref: string): Promise<boolean> {
+  if (esReferenciaRemota(ref)) return false;
+  try {
+    await cliente().send(new HeadObjectCommand({ Bucket: BUCKET, Key: ref }));
+    return true;
+  } catch (error) {
+    const e = error as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+    if (e?.name === "NotFound" || e?.name === "NoSuchKey" || e?.message === "NotFound" || e?.$metadata?.httpStatusCode === 404) return false;
+    throw error;
+  }
+}
+
+// Elimina un objeto privado. Idempotente (eliminar uno que ya no existe no
+// falla). Nunca toca referencias históricas remotas. Quien llama es
+// responsable de haber verificado que ningún otro registro lo usa.
+export async function eliminarArchivo(ref: string): Promise<void> {
+  if (esReferenciaRemota(ref)) throw new Error("Una referencia remota histórica no se puede eliminar.");
+  await cliente().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: ref }));
 }
 
 function sufijoAleatorio(): string {

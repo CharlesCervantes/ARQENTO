@@ -32,6 +32,15 @@ const { default: pg } = await import("pg");
 let url;
 try {
   ({ url } = prepararEntornoDePruebas(process.env, process.cwd()));
+  // Almacenamiento R2 SIMULADO: cualquier credencial real de R2 ya se retiró
+  // del proceso (prepararEntornoDePruebas); estos valores son ficticios y
+  // solo satisfacen la configuración de lib/server/archivos.ts — el cliente
+  // S3 está sustituido por un bucket en memoria (servicios-externos-stub.cjs)
+  // y nunca abre una conexión.
+  process.env.R2_BUCKET_NAME = "arqento-pruebas-simulado";
+  process.env.R2_ENDPOINT = "http://r2-simulado.invalid";
+  process.env.R2_ACCESS_KEY_ID = "simulado";
+  process.env.R2_SECRET_ACCESS_KEY = "simulado";
   const cliente = new pg.Client({ connectionString: url, connectionTimeoutMillis: 5000 });
   await cliente.connect();
   try {

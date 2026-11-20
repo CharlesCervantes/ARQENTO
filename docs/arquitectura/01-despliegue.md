@@ -41,3 +41,35 @@ predeterminado (`npm run build`), no `next build` directo.
 Nunca usar `prisma migrate reset`, `prisma migrate dev` ni `prisma db push` contra
 producción. Las migraciones deben ser aditivas/compatibles con el código anterior,
 porque entre los pasos 4 y 7 el código viejo sigue atendiendo usuarios.
+
+## Objetos manuales que Prisma no representa
+
+Algunas migraciones agregan a mano objetos que `schema.prisma` no puede expresar:
+CHECK, triggers, índices parciales y por expresión. Prisma ignora los CHECK y los
+triggers, pero **sí** detecta un índice único escrito a mano y, al comparar con el
+esquema, propone eliminarlo:
+
+- `ordenes_venta_cotizacion_unica` — una sola orden de venta por cotización
+  (Comercialización B3). `prisma migrate diff` lo reporta como
+  *Removed unique index on columns (cotizacionId)*. **Es intencional: no se elimina
+  para que coincida el esquema.**
+
+Reglas:
+
+1. Al generar una migración con `prisma migrate dev` (solo en bases locales), revisar
+   el SQL antes de confirmarla y quitar cualquier `DROP INDEX` / `DROP TRIGGER` /
+   `DROP CONSTRAINT` sobre estos objetos que no sea parte deliberada del cambio.
+2. Las pruebas lo vigilan: `tests/comercializacion/objetos-manuales-migraciones.test.ts`
+   (ninguna migración puede borrar los índices protegidos) y
+   `tests/integracion/comercializacion-objetos-manuales.test.ts` (existen después
+   de migrar).
+3. Para agregar un objeto manual nuevo, sumarlo a esas pruebas y a esta lista.
+
+## Estado conocido de producción (19-nov-2026)
+
+PRD tiene aplicadas dos migraciones de WhatsApp (`20261020120000_whatsapp_v1_vinculacion`
+y `20261110120000_whatsapp_fase2a_recepcion_documentos`) cuyo código todavía no está
+en `main`. Son aditivas (tablas nuevas y columnas con valor por defecto), el código
+de `main` funciona con ellas y `prisma migrate status` las tolera. Por eso
+`prisma migrate diff` contra PRD lista tablas y columnas de WhatsApp como
+«eliminadas»: **nunca** aplicar ese diff. Se integran al llegar WhatsApp a `main`.

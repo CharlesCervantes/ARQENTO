@@ -127,10 +127,14 @@ describe("Lectura de identidad y limpieza (consultas simuladas)", () => {
 });
 
 describe("Servicios externos simulados", () => {
-  test("OpenAI y S3/R2 simulados fallan al usarse, sin red", async () => {
+  test("OpenAI falla al usarse; S3/R2 es un bucket en memoria (sin red); sin URLs firmadas", async () => {
     const stub = createRequire(import.meta.url)("../setup/servicios-externos-stub.cjs");
     assert.throws(() => new stub.OpenAI().responses.parse({}), /deshabilitado/);
-    await assert.rejects(new stub.S3Client().send(new stub.PutObjectCommand({})), /deshabilitado/);
+    const s3 = new stub.S3Client();
+    await s3.send(new stub.PutObjectCommand({ Key: "prueba/a.png", Body: new Uint8Array([1, 2, 3]) }));
+    const leido = await s3.send(new stub.GetObjectCommand({ Key: "prueba/a.png" }));
+    assert.deepEqual([...(await leido.Body.transformToByteArray())], [1, 2, 3]);
+    await assert.rejects(s3.send(new stub.GetObjectCommand({ Key: "no-existe" })), /inexistente/);
     await assert.rejects(stub.getSignedUrl(), /deshabilitado/);
   });
 });

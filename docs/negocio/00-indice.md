@@ -18,6 +18,7 @@ módulo relacionado.
 | `02-control-de-obra.md` | Control de obra (versión supervisor vs. privada), Reporte General, Recibo de Pago, Préstamos, Gastos Semanales, Requisición de Materiales |
 | `03-modulo-reporte-general.md` | Especificación detallada del módulo Reporte General (entidades, flujos, reglas) — primer módulo a construir |
 | `05-modulo-contabilidad.md` | Rediseño del módulo Contabilidad: los cuatro ejes (inclusión/reconocimiento/CFDI/movimiento de dinero), Estado de Resultados, Cuentas por Cobrar/Pagar, Bancos/Tesorería |
+| `comercializacion.md` | Módulo de Comercialización (v0.2): cotización de venta → OC de cliente, catálogo de productos y precios, función Vendedor, compras a proveedor, créditos con cuotas para cliente y proveedor, avisos internos, entregas y resultado. Incluye pendientes P1–P8 |
 
 ## Principios no negociables (aplican a todo el sistema)
 1. **No eliminar información histórica.** Todo cambio de estado o monto se preserva; los rechazos se conservan con motivo.

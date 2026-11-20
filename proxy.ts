@@ -16,9 +16,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (tieneSesion && esRutaPublica) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
+  // Con cookie en /login NO se redirige aquí: la presencia de la cookie no
+  // demuestra que la sesión sea válida (sesión borrada o vencida, usuario o
+  // Empresa desactivados, cookie de otro entorno). Redirigir a /dashboard por
+  // la sola cookie provocaba un ciclo infinito /dashboard ⇄ /login con una
+  // cookie inválida. /login verifica la sesión real (app/login/layout.tsx) y
+  // solo entonces envía a /dashboard.
 
   return NextResponse.next();
 }

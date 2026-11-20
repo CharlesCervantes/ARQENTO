@@ -98,8 +98,20 @@ model Empresa {
 
   // Gastos de Obra (sección "Gastos de Obra" de 04-modulo-control-de-obra.md)
   // — mismo mecanismo atómico que ultimoFolioRecibo, folio único por empresa.
-  ultimoFolioReposicion  Int @default(0)
-  ultimoFolioOrdenCompra Int @default(0)
+  ultimoFolioReposicion      Int     @default(0)
+  ultimoFolioOrdenCompra     Int     @default(0)
+  // Comercialización B2 — consecutivo PROPIO de cotizaciones de venta
+  // (COT-000001), independiente del de OC de Compras. Mismo mecanismo
+  // atómico (increment dentro de la transacción que crea la cotización).
+  ultimoFolioCotizacionVenta Int     @default(0)
+  // Comercialización B3 — consecutivo propio de órdenes de venta (OV-000001).
+  ultimoFolioOrdenVenta      Int     @default(0)
+  // Comercialización B4 — consecutivo propio de compras comerciales (COC-000001),
+  // separado de las OC de Compras de construcción.
+  ultimoFolioCompraComercial Int     @default(0)
+  // Comercialización B5 — zona horaria IANA de la Empresa para decidir "hoy"
+  // (vencimientos, fechas no futuras). null = America/Monterrey.
+  zonaHoraria                String?
 
   dominiosCorreo         DominioCorreo[]
   usuarios               Usuario[]
@@ -126,6 +138,25 @@ model Empresa {
   consumoInteligencia    RegistroConsumoInteligencia[]
   documentosEgreso       DocumentoEgreso[]
   capacidadesInteligencia EmpresaCapacidadInteligencia[]
+  productosComerciales    ProductoComercial[]
+  clientesComerciales     ClienteComercial[]
+  obrasComerciales        ObraComercial[]
+  cotizacionesVenta       CotizacionVenta[]
+  partidasCotizacionVenta PartidaCotizacionVenta[]
+  ordenesVenta            OrdenVenta[]
+  comprasComerciales      CompraComercial[]
+  partidasCompraComercial PartidaCompraComercial[]
+  cuentasComerciales      CuentaComercial[]
+  cuotasCuentaComercial   CuotaCuentaComercial[]
+  movimientosComerciales  MovimientoComercial[]
+  aplicacionesMovimiento  AplicacionMovimientoComercial[]
+  entregasComerciales     EntregaComercial[]
+  partidasEntrega         PartidaEntregaComercial[]
+  evidenciasEntrega       EvidenciaEntregaComercial[]
+  cargasEvidenciaEntrega  CargaEvidenciaEntrega[]
+  gastosComerciales       GastoComercial[]
+  vinculosSurtido         VinculoSurtidoComercial[]
+  cambiosVencimiento      CambioVencimientoCuota[]
 
   // Administración de ARQENTO IA por Empresa (Master → Empresa → ARQENTO IA,
   // octubre 2026) — switch maestro, independiente de cada capacidad
@@ -330,6 +361,43 @@ model Usuario {
   // el cambio de contraseña. Default `false` — ningún usuario existente
   // queda bloqueado al migrar.
   debeCambiarPassword Boolean @default(false)
+
+
+  // Comercialización, B1 (noviembre 2026) — función "Vendedor" dentro del
+  // módulo, SIN rol global nuevo: solo tiene efecto para rol SUPERVISOR de
+  // una Empresa con el módulo `comercializacion` habilitado (ver
+  // esVendedorComercial en lib/server/permisos.ts). No cambia ningún permiso
+  // de construcción del Supervisor. La activa/desactiva un Administrador/
+  // Director de SU Empresa. Default false: nadie queda marcado al migrar.
+  vendedorComercial Boolean @default(false)
+
+  productosComercialesCreados       ProductoComercial[]       @relation("ProductoComercialCreado")
+  productosComercialesActualizados  ProductoComercial[]       @relation("ProductoComercialActualizado")
+  clientesComercialesCreados        ClienteComercial[]        @relation("ClienteComercialCreado")
+  obrasComercialesCreadas           ObraComercial[]           @relation("ObraComercialCreada")
+  cotizacionesVentaCreadas          CotizacionVenta[]         @relation("CotizacionVentaCreada")
+  cotizacionesVentaActualizadas     CotizacionVenta[]         @relation("CotizacionVentaActualizada")
+  cotizacionesVentaVendidas         CotizacionVenta[]         @relation("CotizacionVentaVendedor")
+  partidasPrecioAjustado            PartidaCotizacionVenta[]  @relation("PartidaPrecioAjustado")
+  cotizacionesVentaEmitidas         CotizacionVenta[]         @relation("CotizacionVentaEmitida")
+  ordenesVentaRegistradas           OrdenVenta[]              @relation("OrdenVentaRegistrada")
+  cotizacionesVentaCerradas         CotizacionVenta[]         @relation("CotizacionVentaCerrada")
+  ordenesVentaCanceladas            OrdenVenta[]              @relation("OrdenVentaCancelada")
+  comprasComercialesCreadas         CompraComercial[]         @relation("CompraComercialCreada")
+  comprasComercialesActualizadas    CompraComercial[]         @relation("CompraComercialActualizada")
+  comprasComercialesConfirmadas     CompraComercial[]         @relation("CompraComercialConfirmada")
+  comprasComercialesAnuladas        CompraComercial[]         @relation("CompraComercialAnulada")
+  cuentasComercialesAnuladas        CuentaComercial[]         @relation("CuentaComercialAnulada")
+  movimientosComercialesRegistrados MovimientoComercial[]     @relation("MovimientoComercialRegistrado")
+  movimientosComercialesAnulados    MovimientoComercial[]     @relation("MovimientoComercialAnulado")
+  entregasComercialesRegistradas    EntregaComercial[]        @relation("EntregaComercialRegistrada")
+  entregasComercialesAnuladas       EntregaComercial[]        @relation("EntregaComercialAnulada")
+  cargasEvidenciaEntrega            CargaEvidenciaEntrega[]   @relation("CargaEvidenciaEntregaRegistrada")
+  gastosComercialesRegistrados      GastoComercial[]          @relation("GastoComercialRegistrado")
+  gastosComercialesAnulados         GastoComercial[]          @relation("GastoComercialAnulado")
+  vinculosSurtidoRegistrados        VinculoSurtidoComercial[] @relation("VinculoSurtidoRegistrado")
+  vinculosSurtidoAnulados           VinculoSurtidoComercial[] @relation("VinculoSurtidoAnulado")
+  cambiosVencimientoRegistrados     CambioVencimientoCuota[]  @relation("CambioVencimientoRegistrado")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -561,6 +629,11 @@ model Beneficiario {
   ordenesCompra          OrdenCompra[]
   cotizaciones           Cotizacion[]
   gastosRecurrentes      GastoRecurrente[]
+  // Comercialización B4: compras comerciales a este proveedor (no afecta
+  // nada de construcción).
+  comprasComerciales     CompraComercial[]
+  // Comercialización B7: gastos adicionales de una OV.
+  gastosComerciales      GastoComercial[]
 
   // Vínculo opcional y explícito con el Usuario que inicia sesión como esta
   // misma persona real (ej. Andrés es Usuario/Supervisor y también
@@ -586,6 +659,9 @@ model Beneficiario {
   mismaPersonaQueId String?
   alias             Beneficiario[] @relation("BeneficiarioMismaPersona")
 
+  // Destino de FK compuesta (id, empresaId) de compras comerciales (B4):
+  // garantiza en la base que el proveedor sea de la misma Empresa.
+  @@unique([id, empresaId])
   @@index([empresaId, tipo])
   @@index([mismaPersonaQueId])
   @@map("beneficiarios")
@@ -2738,4 +2814,916 @@ model DocumentoEgreso {
   @@index([egresoId])
   @@index([trabajoProcesamientoId])
   @@map("documentos_egreso")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo Comercialización — B1: catálogo de productos (noviembre 2026).
+// Ver docs/negocio/comercializacion.md. Deliberadamente SIN relación con
+// Cotizacion/OrdenCompra/Requisicion de Compras (esas son compras a
+// proveedor dentro del ciclo semanal de obra, otra función de negocio).
+// ---------------------------------------------------------------------------
+
+// Tratamiento de impuesto por producto. TASA_CERO (IVA 0 %) y EXENTO (no
+// causa IVA) son fiscalmente distintos aunque ambos sumen $0 de IVA — nunca
+// se colapsan en uno solo. Solo GRAVADO usa ProductoComercial.tasaIva.
+// SIN_IVA: SOLO partidas de compra a proveedor (selector «Sin IVA»): el cálculo
+// no agrega impuesto; no declara exención ni tasa 0 %. La base lo rechaza en
+// catálogo, cotizaciones y gastos.
+enum TratamientoImpuestoComercial {
+  GRAVADO
+  TASA_CERO
+  EXENTO
+  SIN_IVA
+}
+
+// Producto del catálogo comercial de una Empresa. Precios SIEMPRE sin IVA.
+// Un producto nunca se borra: se desactiva (activo = false) conservando su
+// historial (bitácora RegistroAuditoria, entidad "ProductoComercial").
+// El código es único por Empresa sin distinguir mayúsculas — índice único
+// por expresión lower(codigo) en la migración, no representable en este DSL.
+model ProductoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  codigo      String
+  descripcion String
+  unidad      String
+
+  // Precio de venta autorizado, sin IVA. Solo Administrador/Director lo
+  // modifican (el vendedor lo consulta, nunca lo edita).
+  precioVenta Decimal @db.Decimal(14, 2)
+
+  // PRIVADO: costo de referencia opcional (no es costo confirmado de
+  // compra). Nunca se selecciona en consultas hechas para un vendedor.
+  costoReferencia Decimal? @db.Decimal(14, 2)
+
+  tratamientoImpuesto TratamientoImpuestoComercial @default(GRAVADO)
+  // Porcentaje (16.00 = 16 %). Obligatorio con GRAVADO y null en los demás
+  // tratamientos (CHECK en la migración). 16 es solo el valor inicial del
+  // formulario, editable por producto — nunca una regla fija del sistema.
+  tasaIva             Decimal?                     @db.Decimal(5, 2)
+
+  activo Boolean @default(true)
+
+  creadoPor        Usuario  @relation("ProductoComercialCreado", fields: [creadoPorId], references: [id])
+  creadoPorId      String
+  actualizadoPor   Usuario? @relation("ProductoComercialActualizado", fields: [actualizadoPorId], references: [id])
+  actualizadoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partidasCotizacion PartidaCotizacionVenta[]
+
+  // Destino de llaves foráneas compuestas (id, empresaId): una partida solo
+  // puede referir un producto de SU misma Empresa, garantizado por la base.
+  @@unique([id, empresaId])
+  @@index([empresaId, activo])
+  @@map("productos_comerciales")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B2: clientes, obras comerciales y cotizaciones en
+// borrador (noviembre 2026). Entidades PROPIAS del módulo: no crean
+// Proyecto, contratos ni semanas de construcción. La pertenencia a la misma
+// Empresa (y de la obra a su cliente) la garantiza la base con llaves
+// foráneas compuestas, además de la validación del servicio.
+// ---------------------------------------------------------------------------
+
+// Cliente comercial — mínimos para identificarlo al cotizar. Nombre único
+// por Empresa sin distinguir mayúsculas ni espacios extremos (índice por
+// expresión en la migración).
+model ClienteComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  nombre   String
+  contacto String?
+  telefono String?
+
+  creadoPor   Usuario  @relation("ClienteComercialCreado", fields: [creadoPorId], references: [id])
+  creadoPorId String
+  createdAt   DateTime @default(now())
+
+  obras        ObraComercial[]
+  cotizaciones CotizacionVenta[]
+
+  @@unique([id, empresaId])
+  @@index([empresaId])
+  @@map("clientes_comerciales")
+}
+
+// Obra (destino de entrega) de un cliente comercial. No es un Proyecto de
+// construcción. Nombre único por cliente sin distinguir mayúsculas.
+model ObraComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cliente   ClienteComercial @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  clienteId String
+
+  nombre    String
+  ubicacion String?
+
+  creadoPor   Usuario  @relation("ObraComercialCreada", fields: [creadoPorId], references: [id])
+  creadoPorId String
+  createdAt   DateTime @default(now())
+
+  cotizaciones CotizacionVenta[]
+
+  @@unique([id, clienteId, empresaId])
+  @@index([empresaId, clienteId])
+  @@map("obras_comerciales")
+}
+
+// BORRADOR (editable) → EMITIDA (copia histórica congelada, ya no se edita)
+// → ACEPTADA (con su OrdenVenta). Rechazada/Cancelada no se han definido
+// todavía (agregar un valor de enum es una migración aditiva).
+// B8B: RECHAZADA (solo desde EMITIDA) y CANCELADA (desde BORRADOR o EMITIDA)
+// son terminales: no se editan, emiten ni aceptan; se conservan partidas,
+// folio, copia emitida e historial, y se puede Duplicar.
+enum EstatusCotizacionVenta {
+  BORRADOR
+  EMITIDA
+  ACEPTADA
+  RECHAZADA
+  CANCELADA
+}
+
+// B8B: cancelación básica de la OV (definitiva, sin dinero registrado).
+enum EstatusOrdenVenta {
+  VIGENTE
+  CANCELADA
+}
+
+// Cotización de venta. NO es la Cotizacion de Compras (oferta de un
+// proveedor sobre una Requisición). Un borrador nunca crea OC, compra,
+// cobro ni deuda. Importes SIEMPRE calculados por el servidor (ver
+// lib/comercializacion/importes.ts) — nunca se aceptan del navegador.
+model CotizacionVenta {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  // COT-000001 — consecutivo por Empresa (Empresa.ultimoFolioCotizacionVenta).
+  folio       String
+  numeroFolio Int
+
+  estatus EstatusCotizacionVenta @default(BORRADOR)
+
+  // Opcionales mientras sea borrador. La obra, si existe, debe ser del
+  // cliente de la cotización (FK compuesta + CHECK obra ⇒ cliente).
+  cliente   ClienteComercial? @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  clienteId String?
+  obra      ObraComercial?    @relation(fields: [obraId, clienteId, empresaId], references: [id, clienteId, empresaId], onDelete: Restrict)
+  obraId    String?
+
+  descripcion String?
+
+  // Responsable comercial (define el alcance del vendedor) — distinto de
+  // quien capturó el documento.
+  vendedor         Usuario  @relation("CotizacionVentaVendedor", fields: [vendedorId], references: [id])
+  vendedorId       String
+  creadoPor        Usuario  @relation("CotizacionVentaCreada", fields: [creadoPorId], references: [id])
+  creadoPorId      String
+  actualizadoPor   Usuario? @relation("CotizacionVentaActualizada", fields: [actualizadoPorId], references: [id])
+  actualizadoPorId String?
+
+  // Fechas de calendario (sin hora): nunca se desplazan por zona horaria.
+  fecha         DateTime  @db.Date
+  vigenciaHasta DateTime? @db.Date
+
+  condiciones   String?
+  observaciones String?
+
+  // Totales derivados, recalculados por el servidor en cada guardado (para
+  // listar sin recalcular). La fuente son las partidas.
+  subtotal Decimal @default(0) @db.Decimal(14, 2)
+  iva      Decimal @default(0) @db.Decimal(14, 2)
+  total    Decimal @default(0) @db.Decimal(14, 2)
+
+  // Control de concurrencia optimista: cada guardado exige la versión que
+  // leyó el usuario; si otro guardó antes, se rechaza (no se sobrescribe).
+  version Int @default(1)
+
+  // Idempotencia de creación: el formulario genera una clave por intento de
+  // alta; un doble clic o reintento con la misma clave devuelve la misma
+  // cotización en lugar de crear otra (índice único por Empresa).
+  claveCreacion String?
+
+  // B3 — emisión. `documentoEmitido` es la COPIA HISTÓRICA del documento al
+  // emitir (empresa, cliente, obra, vendedor, partidas, totales, textos):
+  // el PDF de una cotización emitida se arma SOLO con esta copia, nunca con
+  // datos actuales del catálogo, cliente, obra o empresa. Sin costos.
+  emitidaEn        DateTime?
+  emitidaPor       Usuario?  @relation("CotizacionVentaEmitida", fields: [emitidaPorId], references: [id])
+  emitidaPorId     String?
+  documentoEmitido Json?
+
+  // B8B — rechazo o cancelación (estado terminal): autor, fecha y motivo.
+  // Se escriben una sola vez; un reintento no los sobrescribe.
+  cerradaEn    DateTime?
+  cerradaPor   Usuario?  @relation("CotizacionVentaCerrada", fields: [cerradaPorId], references: [id])
+  cerradaPorId String?
+  motivoCierre String?
+
+  // B3 — una cotización emitida no se edita; se corrige con "Duplicar", que
+  // crea un borrador nuevo (folio nuevo) vinculado a su origen.
+  origen     CotizacionVenta?  @relation("CotizacionVentaDuplicada", fields: [origenId], references: [id])
+  origenId   String?
+  duplicadas CotizacionVenta[] @relation("CotizacionVentaDuplicada")
+
+  ordenVenta OrdenVenta?
+
+  partidas PartidaCotizacionVenta[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([empresaId, numeroFolio])
+  @@unique([empresaId, folio])
+  @@unique([empresaId, claveCreacion])
+  @@unique([id, empresaId])
+  @@index([empresaId, vendedorId])
+  @@index([empresaId, clienteId])
+  @@map("cotizaciones_venta")
+}
+
+// Orden de venta (B3) — la aceptación del cliente sobre UNA cotización
+// emitida. Folio interno OV-000001 con consecutivo propio por Empresa
+// (Empresa.ultimoFolioOrdenVenta); el número de OC que proporcione el cliente
+// es un dato aparte y opcional. NO es OrdenCompra de Compras de construcción.
+// Exactamente una por cotización (cotizacionId @unique). Sus datos
+// comerciales son los de la copia emitida de la cotización. Todavía no crea
+// compras, cuotas, cobros/pagos ni entregas.
+model OrdenVenta {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  folio       String
+  numeroFolio Int
+
+  cotizacion   CotizacionVenta @relation(fields: [cotizacionId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cotizacionId String
+
+  // Datos de la aceptación del cliente (registro interno de evidencia, no
+  // firma electrónica del cliente).
+  fechaAceptacion     DateTime @db.Date
+  referenciaOcCliente String?
+  evidenciaRef        String
+  evidenciaNombre     String
+  evidenciaTipo       String
+  evidenciaBytes      Int
+
+  registradaPor   Usuario  @relation("OrdenVentaRegistrada", fields: [registradaPorId], references: [id])
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  // B8B — cancelación básica: definitiva, solo sin dinero ni dependencias
+  // vigentes; la cuenta por cobrar se anula en la misma transacción.
+  estatus           EstatusOrdenVenta @default(VIGENTE)
+  canceladaEn       DateTime?
+  canceladaPor      Usuario?          @relation("OrdenVentaCancelada", fields: [canceladaPorId], references: [id])
+  canceladaPorId    String?
+  motivoCancelacion String?
+
+  // Copia de los totales emitidos (para listar sin leer el documento).
+  subtotal Decimal @db.Decimal(14, 2)
+  iva      Decimal @db.Decimal(14, 2)
+  total    Decimal @db.Decimal(14, 2)
+
+  // Exactamente una orden por cotización (cotizacionId es único por sí solo,
+  // ya que el id de la cotización es global).
+  compras  CompraComercial[]
+  cuenta   CuentaComercial?
+  entregas EntregaComercial[]
+  gastos   GastoComercial[]
+
+  @@unique([cotizacionId, empresaId])
+  @@unique([id, empresaId])
+  @@unique([empresaId, numeroFolio])
+  @@unique([empresaId, folio])
+  @@index([empresaId])
+  @@map("ordenes_venta")
+}
+
+// Partida de una cotización. Copia histórica de los datos comerciales del
+// producto al agregarse: cambiar el catálogo después no la altera, y
+// cambiar su precio no altera el catálogo.
+model PartidaCotizacionVenta {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cotizacion   CotizacionVenta @relation(fields: [cotizacionId, empresaId], references: [id, empresaId], onDelete: Cascade)
+  cotizacionId String
+  orden        Int
+
+  producto   ProductoComercial @relation(fields: [productoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  productoId String
+
+  // Copia histórica del catálogo al agregar la partida.
+  codigo              String
+  descripcion         String
+  unidad              String
+  tratamientoImpuesto TratamientoImpuestoComercial
+  tasaIva             Decimal?                     @db.Decimal(5, 2)
+  // Precio de catálogo vigente al agregar (base) y precio aplicado. Solo
+  // Administrador/Director pueden hacer que difieran.
+  precioBase          Decimal                      @db.Decimal(14, 2)
+  precioUnitario      Decimal                      @db.Decimal(14, 2)
+  precioAjustadoPor   Usuario?                     @relation("PartidaPrecioAjustado", fields: [precioAjustadoPorId], references: [id])
+  precioAjustadoPorId String?
+  precioAjustadoEn    DateTime?
+
+  // Hasta 3 decimales (metros, toneladas…), nunca redondeada a entero.
+  cantidad Decimal @db.Decimal(14, 3)
+  // round_half_up(cantidad × precioUnitario, 2) — calculado por el servidor.
+  importe  Decimal @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partidasCompra  PartidaCompraComercial[]
+  partidasEntrega PartidaEntregaComercial[]
+
+  @@unique([id, empresaId])
+  @@index([cotizacionId])
+  @@index([empresaId, productoId])
+  @@map("partidas_cotizacion_venta")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B4: compras a proveedores de una orden de venta
+// (noviembre 2026). NO son OrdenCompra de construcción: no generan semanas,
+// movimientos semanales, gastos ni ningún efecto financiero. Pagos, créditos
+// y cuotas llegan en B5; recepciones/entregas en B6.
+// ---------------------------------------------------------------------------
+
+enum EstatusCompraComercial {
+  BORRADOR
+  CONFIRMADA
+  ANULADA
+}
+
+// Compra comercial: pertenece a UNA orden de venta y a UN proveedor
+// (catálogo existente: Beneficiario tipo PROVEEDOR de la misma Empresa).
+// Folio COC-000001 por Empresa. Un borrador no consume cantidades ni crea
+// compromisos; solo una compra CONFIRMADA (no anulada) cuenta como comprada.
+model CompraComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  folio       String
+  numeroFolio Int
+
+  estatus EstatusCompraComercial @default(BORRADOR)
+
+  ordenVenta   OrdenVenta @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String
+
+  // Opcional en borrador; obligatorio para confirmar.
+  proveedor           Beneficiario? @relation(fields: [proveedorId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  proveedorId         String?
+  // Copia del proveedor al confirmar (nombre, razón social, RFC): cambiar el
+  // catálogo después no altera una compra confirmada.
+  proveedorConfirmado Json?
+
+  fecha               DateTime @db.Date
+  referenciaProveedor String?
+  notas               String?
+
+  // Documento del proveedor (cotización, remisión, factura…) — opcional,
+  // infraestructura de archivos existente; solo administración lo ve.
+  documentoRef    String?
+  documentoNombre String?
+  documentoTipo   String?
+  documentoBytes  Int?
+
+  // Totales derivados (servidor), con las reglas exactas de B2.
+  subtotal Decimal @default(0) @db.Decimal(14, 2)
+  iva      Decimal @default(0) @db.Decimal(14, 2)
+  total    Decimal @default(0) @db.Decimal(14, 2)
+
+  version       Int     @default(1)
+  claveCreacion String?
+
+  creadoPor        Usuario   @relation("CompraComercialCreada", fields: [creadoPorId], references: [id])
+  creadoPorId      String
+  actualizadoPor   Usuario?  @relation("CompraComercialActualizada", fields: [actualizadoPorId], references: [id])
+  actualizadoPorId String?
+  confirmadaEn     DateTime?
+  confirmadaPor    Usuario?  @relation("CompraComercialConfirmada", fields: [confirmadaPorId], references: [id])
+  confirmadaPorId  String?
+  anuladaEn        DateTime?
+  anuladaPor       Usuario?  @relation("CompraComercialAnulada", fields: [anuladaPorId], references: [id])
+  anuladaPorId     String?
+  motivoAnulacion  String?
+
+  partidas PartidaCompraComercial[]
+  cuenta   CuentaComercial?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, empresaId])
+  @@unique([empresaId, numeroFolio])
+  @@unique([empresaId, folio])
+  @@unique([empresaId, claveCreacion])
+  @@index([empresaId, ordenVentaId])
+  @@index([empresaId, proveedorId])
+  @@map("compras_comerciales")
+}
+
+// Partida comprada: vínculo con la partida VENDIDA de la misma OV y copia
+// histórica de descripción, unidad, cantidad, costo e impuesto DE COMPRA
+// (independiente del impuesto de venta). Se compra en la unidad de la
+// partida de venta. Costo e impuesto pueden faltar en borrador; se exigen al
+// confirmar (un costo faltante nunca se toma como cero).
+model PartidaCompraComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  compra   CompraComercial @relation(fields: [compraId, empresaId], references: [id, empresaId], onDelete: Cascade)
+  compraId String
+  orden    Int
+
+  partidaVenta   PartidaCotizacionVenta @relation(fields: [partidaVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaVentaId String
+
+  codigo      String
+  descripcion String
+  unidad      String
+
+  cantidad            Decimal                       @db.Decimal(14, 3)
+  costoUnitario       Decimal?                      @db.Decimal(14, 2)
+  tratamientoImpuesto TratamientoImpuestoComercial?
+  tasaIva             Decimal?                      @db.Decimal(5, 2)
+  importe             Decimal?                      @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vinculosSurtido VinculoSurtidoComercial[]
+
+  @@unique([id, empresaId])
+  @@unique([compraId, partidaVentaId])
+  @@index([empresaId, partidaVentaId])
+  @@map("partidas_compra_comercial")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B5: cuentas por cobrar y por pagar, condiciones
+// (contado/crédito), calendario de cuotas y cobros/pagos con aplicación por
+// cuota (noviembre 2026). Solo Administrador/Director. Ver
+// docs/negocio/comercializacion.md §20 (B5). No toca Contabilidad ni
+// construcción: son registros propios del módulo.
+// ---------------------------------------------------------------------------
+
+enum TipoCuentaComercial {
+  POR_COBRAR // de una OV (cliente)
+  POR_PAGAR // de una compra comercial (proveedor)
+}
+
+enum EstatusCuentaComercial {
+  VIGENTE
+  ANULADA // solo una cuenta por pagar, junto con su compra, si nunca tuvo pagos
+}
+
+enum ModalidadPagoComercial {
+  CONTADO
+  CREDITO
+}
+
+enum EstatusMovimientoComercial {
+  VIGENTE
+  ANULADO
+}
+
+enum MetodoPagoComercial {
+  TRANSFERENCIA
+  DEPOSITO
+  EFECTIVO
+  CHEQUE
+  TARJETA
+  OTRO
+}
+
+// Una cuenta por documento (OV o compra confirmada), creada en la misma
+// transacción que la aceptación/confirmación. total = total del documento
+// con impuestos (copia; nunca cambia). modalidad null = "Condiciones por
+// definir". tuvoMovimientos se vuelve true con el primer cobro/pago y nunca
+// regresa (aunque el movimiento se anule): bloquea cambiar el calendario y
+// anular la compra con la acción simple.
+model CuentaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  tipo TipoCuentaComercial
+
+  ordenVenta   OrdenVenta?      @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String?
+  compra       CompraComercial? @relation(fields: [compraId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  compraId     String?
+  // B7: cuenta por pagar de un gasto adicional. Un solo documento origen por
+  // cuenta (CHECK en la base).
+  gasto        GastoComercial?  @relation(fields: [gastoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  gastoId      String?
+
+  total           Decimal                 @db.Decimal(14, 2)
+  estatus         EstatusCuentaComercial  @default(VIGENTE)
+  modalidad       ModalidadPagoComercial?
+  tuvoMovimientos Boolean                 @default(false)
+  version         Int                     @default(1)
+
+  anuladaEn       DateTime?
+  anuladaPor      Usuario?  @relation("CuentaComercialAnulada", fields: [anuladaPorId], references: [id])
+  anuladaPorId    String?
+  motivoAnulacion String?
+
+  cuotas      CuotaCuentaComercial[]
+  movimientos MovimientoComercial[]
+  cambiosVencimiento CambioVencimientoCuota[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Una cuenta por documento (además, índices únicos por columna en la migración).
+  @@unique([ordenVentaId, empresaId])
+  @@unique([compraId, empresaId])
+  @@unique([gastoId, empresaId])
+  @@unique([id, empresaId])
+  @@index([empresaId, tipo, estatus])
+  @@map("cuentas_comerciales")
+}
+
+// Cuota del calendario. Al sustituir el calendario (solo sin movimientos),
+// las cuotas anteriores quedan vigente = false como historial.
+model CuotaCuentaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cuenta   CuentaComercial @relation(fields: [cuentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuentaId String
+
+  numero           Int
+  fechaVencimiento DateTime  @db.Date
+  importe          Decimal   @db.Decimal(14, 2)
+  vigente          Boolean   @default(true)
+  sustituidaEn     DateTime?
+
+  aplicaciones AplicacionMovimientoComercial[]
+  // B8B — historial de cambios individuales de vencimiento. La fecha
+  // originalmente pactada es la fecha anterior del primer cambio (o la
+  // vigente si nunca cambió).
+  cambiosVencimiento CambioVencimientoCuota[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([id, empresaId])
+  @@index([cuentaId, vigente])
+  @@map("cuotas_cuenta_comercial")
+}
+
+// B8B — cambio individual del vencimiento de UNA cuota con saldo (aunque la
+// cuenta tenga movimientos). Solo cambia la fecha: importe, número de cuotas,
+// modalidad, aplicaciones y las demás cuotas no se tocan. No se edita ni se
+// borra; cada cambio queda con fecha anterior, nueva, motivo, autor y fecha.
+model CambioVencimientoCuota {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cuenta   CuentaComercial      @relation(fields: [cuentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuentaId String
+  cuota    CuotaCuentaComercial @relation(fields: [cuotaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuotaId  String
+
+  fechaAnterior DateTime @db.Date
+  fechaNueva    DateTime @db.Date
+  motivo        String
+
+  registradoPor   Usuario  @relation("CambioVencimientoRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  createdAt       DateTime @default(now())
+
+  // Idempotencia: el formulario envía una clave por intento.
+  claveRegistro String
+
+  @@unique([empresaId, claveRegistro])
+  @@index([cuotaId])
+  @@index([cuentaId])
+  @@map("cambios_vencimiento_cuota")
+}
+
+// Cobro (cuenta por cobrar) o pago (cuenta por pagar) REAL. No se edita ni
+// se borra: se anula con motivo y sus aplicaciones dejan de contar.
+model MovimientoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  cuenta   CuentaComercial @relation(fields: [cuentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuentaId String
+
+  importe       Decimal             @db.Decimal(14, 2)
+  fecha         DateTime            @db.Date
+  metodo        MetodoPagoComercial
+  referencia    String?
+  observaciones String?
+
+  comprobanteRef    String?
+  comprobanteNombre String?
+  comprobanteTipo   String?
+  comprobanteBytes  Int?
+
+  estatus         EstatusMovimientoComercial @default(VIGENTE)
+  registradoPor   Usuario                    @relation("MovimientoComercialRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?                   @relation("MovimientoComercialAnulado", fields: [anuladoPorId], references: [id])
+  anuladoPorId    String?
+  motivoAnulacion String?
+
+  // Idempotencia: el formulario envía una clave por intento.
+  claveRegistro String?
+
+  aplicaciones AplicacionMovimientoComercial[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([id, empresaId])
+  @@unique([empresaId, claveRegistro])
+  @@index([cuentaId])
+  @@map("movimientos_comerciales")
+}
+
+// Aplicación de un movimiento a una cuota de la MISMA cuenta. La suma de
+// aplicaciones de un movimiento = su importe (la base lo verifica al cerrar
+// la transacción). Cuentan solo si el movimiento está vigente.
+model AplicacionMovimientoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  movimiento   MovimientoComercial  @relation(fields: [movimientoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  movimientoId String
+  cuota        CuotaCuentaComercial @relation(fields: [cuotaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  cuotaId      String
+
+  importe Decimal @db.Decimal(14, 2)
+
+  @@unique([movimientoId, cuotaId])
+  @@index([cuotaId])
+  @@map("aplicaciones_movimiento_comercial")
+}
+
+// ---------------------------------------------------------------------------
+// Comercialización — B6A: entregas parciales al cliente/obra con evidencias
+// (noviembre 2026). Ver docs/negocio/comercializacion.md §20 (B6A).
+// Una entrega acredita material ENTREGADO AL CLIENTE contra la OV; NO
+// acredita la recepción de una compra (COC) específica ni crea inventario.
+// Se registra confirmada (con al menos una evidencia) y nunca se edita ni se
+// borra: una captura errónea se ANULA con motivo (solo administración).
+// ---------------------------------------------------------------------------
+
+enum EstatusEntregaComercial {
+  CONFIRMADA
+  ANULADA
+}
+
+enum ClaseEvidenciaEntrega {
+  FOTOGRAFIA // JPG/PNG
+  REMISION // PDF
+}
+
+model EntregaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  ordenVenta   OrdenVenta @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String
+  // Consecutivo dentro de la OV (Entrega 1, 2, …), asignado con la OV bloqueada.
+  numero       Int
+
+  estatus       EstatusEntregaComercial @default(CONFIRMADA)
+  // Fecha REAL de la entrega (no futura); independiente de la de registro.
+  fechaEntrega  DateTime                @db.Date
+  recibidoPor   String?
+  observaciones String?
+
+  // Idempotencia: un reintento o doble clic con la misma clave devuelve la misma entrega.
+  claveRegistro String
+
+  registradaPor   Usuario  @relation("EntregaComercialRegistrada", fields: [registradaPorId], references: [id])
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  anuladaEn       DateTime?
+  anuladaPor      Usuario?  @relation("EntregaComercialAnulada", fields: [anuladaPorId], references: [id])
+  anuladaPorId    String?
+  motivoAnulacion String?
+
+  partidas   PartidaEntregaComercial[]
+  evidencias EvidenciaEntregaComercial[]
+  cargas     CargaEvidenciaEntrega[]
+
+  @@unique([id, empresaId])
+  @@unique([ordenVentaId, numero])
+  @@unique([empresaId, claveRegistro])
+  @@index([empresaId, ordenVentaId])
+  @@map("entregas_comerciales")
+}
+
+// Cantidad entregada de una partida VENDIDA de la misma OV (unidad de venta,
+// hasta 3 decimales). Una partida aparece una sola vez por entrega.
+model PartidaEntregaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  entrega   EntregaComercial @relation(fields: [entregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  entregaId String
+
+  partidaVenta   PartidaCotizacionVenta @relation(fields: [partidaVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaVentaId String
+
+  cantidad Decimal @db.Decimal(14, 3)
+
+  vinculosSurtido VinculoSurtidoComercial[]
+
+  @@unique([id, empresaId])
+  @@unique([entregaId, partidaVentaId])
+  @@index([empresaId, partidaVentaId])
+  @@map("partidas_entrega_comercial")
+}
+
+// Evidencia de entrega (fotografía o remisión). Separada de los documentos de
+// compra y de los comprobantes financieros: ruta, tabla y permisos propios.
+model EvidenciaEntregaComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  entrega   EntregaComercial @relation(fields: [entregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  entregaId String
+  orden     Int
+
+  clase  ClaseEvidenciaEntrega
+  ref    String
+  nombre String
+  tipo   String
+  bytes  Int
+
+  // Carga posterior al registro (B6 cierre). Nula = evidencia original,
+  // registrada junto con la entrega (autor y fecha de la entrega).
+  carga   CargaEvidenciaEntrega? @relation(fields: [cargaId], references: [id], onDelete: Restrict)
+  cargaId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entregaId])
+  @@index([cargaId])
+  @@map("evidencias_entrega_comercial")
+}
+
+// Incorporación de evidencias a una entrega VIGENTE ya registrada (cierre de
+// B6): solo agrega; no reemplaza ni elimina. Registra autor y fecha de cada
+// incorporación; la clave hace idempotentes los reintentos. Las reglas
+// (entrega confirmada, inmutable, al menos una evidencia, máximo acumulado)
+// las vuelve a exigir la base (migración 20261122090000).
+model CargaEvidenciaEntrega {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  entrega   EntregaComercial @relation(fields: [entregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  entregaId String
+
+  clave           String
+  registradaPor   Usuario  @relation("CargaEvidenciaEntregaRegistrada", fields: [registradaPorId], references: [id])
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  evidencias EvidenciaEntregaComercial[]
+
+  @@unique([empresaId, clave])
+  @@index([entregaId])
+  @@map("cargas_evidencia_entrega")
+}
+
+enum EstatusGastoComercial {
+  VIGENTE
+  ANULADO
+}
+
+// Gasto adicional de una OV aceptada (B7): flete, maniobra, servicio externo…
+// No es una partida de compra ni consume cantidades vendidas. Se registra
+// VIGENTE junto con su cuenta por pagar (B5) en una transacción. No se edita
+// ni se borra: sin historial de pagos se anula con motivo (junto con su
+// cuenta). Reglas también en la base (migración 20261123090000).
+model GastoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  ordenVenta   OrdenVenta @relation(fields: [ordenVentaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  ordenVentaId String
+  numero       Int // consecutivo dentro de la OV: «Gasto 1»
+
+  concepto           String
+  beneficiario       Beneficiario @relation(fields: [beneficiarioId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  beneficiarioId     String
+  // Copia del nombre al registrar: cambiar el catálogo no altera el gasto.
+  beneficiarioNombre String
+  fecha              DateTime     @db.Date
+
+  // Importes exactos con las reglas de importes.ts (servidor).
+  subtotal            Decimal                      @db.Decimal(14, 2)
+  tratamientoImpuesto TratamientoImpuestoComercial
+  tasaIva             Decimal?                     @db.Decimal(5, 2)
+  iva                 Decimal                      @db.Decimal(14, 2)
+  total               Decimal                      @db.Decimal(14, 2)
+
+  observaciones String?
+
+  comprobanteRef    String?
+  comprobanteNombre String?
+  comprobanteTipo   String?
+  comprobanteBytes  Int?
+
+  estatus         EstatusGastoComercial @default(VIGENTE)
+  claveRegistro   String
+  registradoPor   Usuario               @relation("GastoComercialRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  createdAt       DateTime              @default(now())
+
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?  @relation("GastoComercialAnulado", fields: [anuladoPorId], references: [id])
+  anuladoPorId    String?
+  motivoAnulacion String?
+
+  cuenta CuentaComercial?
+
+  @@unique([id, empresaId])
+  @@unique([ordenVentaId, numero])
+  @@unique([empresaId, claveRegistro])
+  @@index([empresaId, ordenVentaId])
+  @@map("gastos_comerciales")
+}
+
+enum EstatusVinculoSurtido {
+  VIGENTE
+  ANULADO
+}
+
+// B8A — surtido directo a obra: qué partida de compra (proveedor) surtió una
+// cantidad de una partida ENTREGADA al cliente (B6A). No es inventario ni
+// recepción en almacén. Ambas partidas son de la misma Empresa, OV y partida
+// de venta. Cuenta solo si el vínculo está VIGENTE, su entrega CONFIRMADA y
+// su compra CONFIRMADA. No se edita ni se borra: se anula con motivo.
+// entregaId, compraId, ordenVentaId y partidaVentaId son copias que la base
+// verifica contra las partidas (migración 20261124090000).
+model VinculoSurtidoComercial {
+  id        String  @id @default(cuid())
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  partidaEntrega   PartidaEntregaComercial @relation(fields: [partidaEntregaId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaEntregaId String
+  partidaCompra    PartidaCompraComercial  @relation(fields: [partidaCompraId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  partidaCompraId  String
+
+  ordenVentaId   String
+  entregaId      String
+  compraId       String
+  partidaVentaId String
+
+  cantidad Decimal               @db.Decimal(14, 3)
+  estatus  EstatusVinculoSurtido @default(VIGENTE)
+
+  claveRegistro   String
+  registradoPor   Usuario  @relation("VinculoSurtidoRegistrado", fields: [registradoPorId], references: [id])
+  registradoPorId String
+  createdAt       DateTime @default(now())
+
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?  @relation("VinculoSurtidoAnulado", fields: [anuladoPorId], references: [id])
+  anuladoPorId    String?
+  motivoAnulacion String?
+
+  @@unique([empresaId, claveRegistro])
+  @@index([empresaId, ordenVentaId])
+  @@index([partidaEntregaId])
+  @@index([partidaCompraId])
+  @@map("vinculos_surtido_comercial")
 }
