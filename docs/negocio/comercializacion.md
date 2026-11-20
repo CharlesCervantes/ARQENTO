@@ -1171,6 +1171,17 @@ Solicitado por el usuario el 19 de noviembre de 2026, sobre `design/design-syste
 - Ajustes visuales y navegación móvil.
 - Detalle del estado de cada función (implementadas en B7 y B8A y pendientes): ver el inventario de §21.
 
+### Salida a producción para escritorio (19 de noviembre de 2026)
+
+Rama `release/comercializacion`, creada desde `origin/main` con los commits de Comercialización (B1 a rediseño) aplicados con `cherry-pick -x`. `feature/comercializacion` queda intacta.
+
+- **Alcance:** solo Comercialización y la corrección de sesión `d82cd04`. No incluye WhatsApp (V1, Fase 2A), Captura Inteligente Fase 0 ni la preparación de Preview, que siguen en `develop`.
+- **Dependencias extraídas** de esos commits, sin su funcionalidad: utilidades de almacenamiento y tipo de archivo (`lib/server/archivos.ts`, `lib/contabilidad/tipo-archivo.ts`) y, solo para pruebas, el almacenamiento S3/R2 simulado en memoria y los archivos ficticios.
+- **Migraciones:** las 14 de Comercialización (`20261116120000` a `20261127090000`), aditivas. PRD ya tenía las 2 de WhatsApp; no se tocan.
+- **Habilitación:** el módulo queda registrado en el catálogo y **deshabilitado para todas las Empresas**. Master lo habilitará en la Empresa que indique el usuario.
+- **Uso:** escritorio. No validado en teléfono (sidebar global no responsivo).
+- **Pendiente de verificar en PRD:** detalle y PDF con la primera cotización real (no se crean cotizaciones ficticias en producción).
+
 ## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7, B8A y B8B)
 
 Revisión del documento contra la implementación. Las recomendaciones son **propuestas**; ninguna fila convierte una propuesta en acuerdo confirmado.
