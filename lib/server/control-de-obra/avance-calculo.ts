@@ -36,3 +36,29 @@ export async function sumaEjecutadaPorConcepto(
 
   return new Map(filas.map((f) => [f.conceptoId, Number(f._sum.cantidadEjecutada ?? 0)]));
 }
+
+// Avance aprobado en semanas HISTÓRICAS IMPORTADAS de este proyecto
+// (CierreSemanaProyecto.historicoImportado). Es obra ejecutada antes de
+// operar en ARQENTO y no está atribuida a ningún contratista: asignar
+// después un concepto no la vuelve del contratista nuevo ni la convierte en
+// cantidad por pagar (migración de obras desde Excel, noviembre 2026).
+// Proyecto sin semanas históricas → mapa vacío (comportamiento sin cambios).
+export async function sumaHistoricaImportadaPorConcepto(
+  proyectoId: string,
+  conceptoIds: string[],
+  cliente: Cliente = db
+): Promise<Map<string, number>> {
+  if (conceptoIds.length === 0) return new Map();
+
+  const filas = await cliente.avanceConcepto.groupBy({
+    by: ["conceptoId"],
+    where: {
+      conceptoId: { in: conceptoIds },
+      estatusAprobacion: "APROBADO",
+      semana: { cierresSemana: { some: { proyectoId, historicoImportado: true } } },
+    },
+    _sum: { cantidadEjecutada: true },
+  });
+
+  return new Map(filas.map((f) => [f.conceptoId, Number(f._sum.cantidadEjecutada ?? 0)]));
+}

@@ -1160,6 +1160,13 @@ model CierreSemanaProyecto {
   reabiertoEn      DateTime?
   motivoReapertura String?
 
+  // Semana de una obra migrada desde Excel (migración controlada por lote,
+  // noviembre 2026): su avance aprobado es histórico y su estimación se
+  // emitió fuera de ARQENTO. Un cierre así nunca se reabre ni se materializa,
+  // y no genera cortes ni estimación — de lo contrario un recierre cobraría o
+  // pagaría otra vez todo el histórico. Solo lo escribe el importador.
+  historicoImportado Boolean @default(false)
+
   cortes CorteSemanal[]
 
   createdAt DateTime @default(now())

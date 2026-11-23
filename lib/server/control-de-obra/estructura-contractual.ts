@@ -12,6 +12,7 @@ import type { UsuarioSesion } from "@/lib/server/session";
 import type { ConceptoEstatus, EsquemaContractual } from "@/lib/generated/prisma/enums";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { CLAVES_ICONOS_PARTIDA, CLAVES_COLORES_PARTIDA } from "@/lib/control-de-obra/iconos-partida";
+import { sumaHistoricaImportadaPorConcepto } from "./avance-calculo";
 
 export class RegistroNoEncontradoError extends Error {
   constructor(entidad: string) {
@@ -1031,11 +1032,24 @@ export async function asignarConcepto(
     );
   }
 
+  // Obra migrada: lo ejecutado en semanas históricas importadas no se asigna
+  // al contratista (no se le atribuye ni se vuelve saldo por pagar). Solo se
+  // asigna lo que falta por ejecutar. Sin histórico, la cantidad es la del
+  // concepto, como siempre.
+  const historico =
+    (await sumaHistoricaImportadaPorConcepto(contrato.beneficiarioProyecto.proyectoId, [concepto.id])).get(concepto.id) ?? 0;
+  const cantidad = new Prisma.Decimal(concepto.cantidadContratada).minus(historico).toDecimalPlaces(3);
+  if (cantidad.lte(0)) {
+    throw new ValidacionError(
+      `"${concepto.descripcion}" ya se ejecutó por completo en el histórico importado; no hay cantidad por asignar.`
+    );
+  }
+
   const asignacion = await db.contratoConcepto.create({
     data: {
       contratoContratistaId,
       conceptoId: datos.conceptoId,
-      cantidad: concepto.cantidadContratada,
+      cantidad,
       precioUnitarioContratista: concepto.precioUnitarioContratista,
     },
   });

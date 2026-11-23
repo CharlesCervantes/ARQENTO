@@ -970,11 +970,13 @@ export async function asegurarEstimacionDeSemanaCerradaTx(
   tx: Cliente,
   ctx: { empresaId: string; proyectoId: string; semanaId: string; usuarioId: string }
 ): Promise<boolean> {
-  const [cierre] = await tx.$queryRaw<{ estatus: string }[]>`
-    SELECT estatus::text AS estatus FROM cierres_semana_proyecto
+  const [cierre] = await tx.$queryRaw<{ estatus: string; historicoImportado: boolean }[]>`
+    SELECT estatus::text AS estatus, "historicoImportado" FROM cierres_semana_proyecto
     WHERE "proyectoId" = ${ctx.proyectoId} AND "semanaId" = ${ctx.semanaId}
     FOR UPDATE`;
   if (!cierre || cierre.estatus !== "CERRADA") return false;
+  // Semana histórica migrada: su estimación se emitió fuera de ARQENTO.
+  if (cierre.historicoImportado) return false;
 
   const existente = await tx.estimacionCliente.findUnique({
     where: { proyectoId_semanaId: { proyectoId: ctx.proyectoId, semanaId: ctx.semanaId } },
@@ -1159,6 +1161,13 @@ export async function materializarEstimacionHistorica(
   if (!cierre || cierre.estatus !== "CERRADA") {
     throw new ValidacionError(
       "Esta semana no está cerrada — solo se puede materializar una estimación histórica sobre una semana ya cerrada."
+    );
+  }
+  // Semana migrada desde Excel: su estimación ya se emitió fuera de ARQENTO;
+  // materializarla crearía un borrador por todo el histórico y consumiría folio.
+  if (cierre.historicoImportado) {
+    throw new ValidacionError(
+      "Esta semana es histórica (migrada desde Excel); su estimación se emitió fuera de ARQENTO."
     );
   }
 

@@ -153,7 +153,9 @@ export default async function ClienteGeneralEstimacionPage({
 
       {sinSnapshot ? (
         <Card className="p-6 text-sm text-[var(--muted)]">
-          Esta semana no tiene una estimación generada todavía.
+          {resumenCierre.historicoImportado
+            ? "Semana histórica migrada desde Excel: su estimación se emitió fuera de ARQENTO."
+            : "Esta semana no tiene una estimación generada todavía."}
         </Card>
       ) : (
         <>

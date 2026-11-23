@@ -1700,3 +1700,33 @@ acumulado/Saldo/comparación avance-vs-pagado/Estado de cuenta por contrato.
   `20260814041200_contrato_general_base`, totalmente aditiva, sin defaults
   que alteren proyectos/conceptos existentes).
   por Reporte General y Control de Obra, no propia de ningún módulo.
+## 49.10 Semanas históricas importadas (migración de obras desde Excel, noviembre 2026)
+
+Estado: **propuesta en revisión** (rama `feature/cierre-historico-importado`). Primera obra: MISSISSIPPI.
+
+- `CierreSemanaProyecto.historicoImportado` marca una semana cuyo avance aprobado se migró desde Excel y cuya estimación se emitió fuera de ARQENTO. Solo la escribe el importador.
+- Una semana así **no se reabre**, **no se materializa** su estimación y aprobar un gasto en ella no crea estimación. Así no se generan otra vez cortes, estimación ni folios por todo el histórico.
+- El avance histórico **no se atribuye a ningún contratista**. Al asignar un concepto, la cantidad asignada es la contratada menos lo ejecutado en semanas históricas importadas. Si ya se ejecutó todo, no se puede asignar.
+- En Contratistas, "Ejecutado" cuenta solo lo registrado en ARQENTO. El histórico se muestra aparte como "histórico sin atribuir".
+- La asignación del histórico a contratistas queda fuera de alcance. Sergio y Charles asignan manualmente el trabajo pendiente.
+- Una obra sin semanas históricas importadas se comporta exactamente igual que antes.
+
+### Procedimiento: ajustar solo el P.U. de una asignación (antes del primer cierre)
+
+La interfaz todavía no permite editar una asignación. Mientras tanto, el ajuste se hace con `scripts/mantenimiento/ajustar-pu-asignacion.ts`. El script cambia **únicamente** `ContratoConcepto.precioUnitarioContratista` de esa asignación.
+
+- **Lo que no toca:** la cantidad asignada, salvo que se indique `NUEVA_CANTIDAD`. Tampoco el P.U. General ni el Privado del concepto, otras asignaciones, avances, cortes, recibos, movimientos ni estimaciones.
+- **Cuándo hacerlo:** antes de cerrar la primera semana con avance de ese concepto. Un corte ya generado conserva el precio con que se generó; el nuevo precio aplica a los cortes siguientes.
+
+Pasos:
+
+1. Vista previa, sin escribir nada:
+   ```
+   PROYECTO_ID=… CONCEPTO_TEXTO="<inicio de la descripción>" NUEVO_PU=… USUARIO_EMAIL=<admin> \
+   MOTIVO="<acuerdo que lo respalda>" node --conditions=react-server --import tsx scripts/mantenimiento/ajustar-pu-asignacion.ts
+   ```
+2. Revisar que la vista previa diga `Cantidad: X → X` (sin cambio) y el P.U. esperado.
+3. Repetir con `APLICAR=1`. El cambio queda en bitácora (`ContratoConcepto`, EDITAR, con el motivo).
+4. Verificar en Contratistas el nuevo contrato vigente del contratista.
+
+Los precios que se usaron en las pruebas de la migración **no constituyen un acuerdo aprobado**. Cada ajuste requiere la confirmación de Sergio o Charles.

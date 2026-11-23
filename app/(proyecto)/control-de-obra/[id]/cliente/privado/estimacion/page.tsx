@@ -166,7 +166,11 @@ export default async function ClientePrivadoEstimacionPage({
       )}
 
       {sinSnapshot ? (
-        puedeMaterializarEstimacionHistorica(usuario) ? (
+        resumenCierre.historicoImportado ? (
+          <Card className="p-6 text-sm text-[var(--muted)]">
+            Semana histórica migrada desde Excel: su estimación se emitió fuera de ARQENTO.
+          </Card>
+        ) : puedeMaterializarEstimacionHistorica(usuario) ? (
           <MaterializarEstimacionHistorica
             proyectoId={id}
             semanaId={semana.id}

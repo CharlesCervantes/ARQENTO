@@ -11,7 +11,7 @@ import type {
   obtenerContratistasProyecto,
   listarContratistasDisponibles,
 } from "@/lib/server/control-de-obra/estructura-contractual";
-import type { AvanceCalculado } from "@/lib/server/control-de-obra/avance";
+import type { AvanceContratista } from "@/lib/server/control-de-obra/avance";
 import type {
   ResumenFinancieroContratista,
   CorteHistorial,
@@ -68,7 +68,7 @@ export function ContratistasView({
   partidas: Datos["partidas"];
   contratos: Datos["contratos"];
   contratistasDisponibles: ContratistasDisponibles;
-  avancePorConcepto: Map<string, AvanceCalculado>;
+  avancePorConcepto: Map<string, AvanceContratista>;
   puedeAdministrar: boolean;
   puedeVerRecibosFinancieros: boolean;
   resumenFinancieroPorBeneficiario: Map<string, ResumenFinancieroContratista>;
@@ -235,6 +235,11 @@ export function ContratistasView({
                                         <>
                                           <Td className="text-right tabular-nums">
                                             {avance.acumulado.toLocaleString("es-MX")}
+                                            {avance.historicoSinAtribuir > 0 && (
+                                              <span className="block text-[11px] text-[var(--muted)]">
+                                                + {avance.historicoSinAtribuir.toLocaleString("es-MX")} histórico sin atribuir
+                                              </span>
+                                            )}
                                           </Td>
                                           <Td className="text-right tabular-nums">
                                             {avance.pendiente.toLocaleString("es-MX")}
