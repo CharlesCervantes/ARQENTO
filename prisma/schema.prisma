@@ -790,6 +790,7 @@ model Semana {
 
   movimientos         MovimientoSemanal[]
   avancesConcepto     AvanceConcepto[]
+  estimadosCapa       EstimadoCapaConcepto[]
   cierresSemana       CierreSemanaProyecto[]
   cortesSemana        CorteSemanal[]
   estimacionesCliente EstimacionCliente[]
@@ -996,6 +997,7 @@ model Concepto {
 
   asignaciones           ContratoConcepto[]
   avances                AvanceConcepto[]
+  estimadosCapa          EstimadoCapaConcepto[]
   corteDetalles          CorteSemanalConcepto[]
   estimacionDetalles     EstimacionClienteConcepto[]
   estimacionCapaDetalles EstimacionClienteCapaConcepto[]
@@ -1565,8 +1567,69 @@ model EstimacionClienteCapaConcepto {
   importeAcumulado   Decimal  @db.Decimal(14, 2)
   importePorEjercer  Decimal  @db.Decimal(14, 2)
 
+  // Cantidades propias de ESTA capa, congeladas al emitir (cantidad estimada
+  // por capa, noviembre 2026). null = filas emitidas antes de este cambio: la
+  // capa usó las cantidades físicas compartidas de EstimacionClienteConcepto.
+  // Los textos se congelan aquí porque una capa puede estimar un concepto sin
+  // avance físico esa semana (sin fila en el detalle físico).
+  partidaNombre       String?
+  descripcionConcepto String?
+  unidad              String?
+  cantidadContratada  Decimal? @db.Decimal(18, 6)
+  cantidadAnterior    Decimal? @db.Decimal(18, 6)
+  cantidadEstaSemana  Decimal? @db.Decimal(18, 6)
+  cantidadAcumulada   Decimal? @db.Decimal(18, 6)
+  cantidadPorEjercer  Decimal? @db.Decimal(18, 6)
+  avancePorcentaje    Decimal? @db.Decimal(7, 2)
+
   @@unique([estimacionClienteCapaId, conceptoId])
   @@map("estimacion_cliente_capa_conceptos")
+}
+
+// ---------------------------------------------------------------------------
+// Cantidad e importe ESTIMADOS por capa (noviembre 2026). El avance físico
+// (AvanceConcepto) sigue siendo la única fuente de lo ejecutado, de lo
+// disponible para asignar, de los cortes y de los saldos de contratistas.
+// Esta tabla solo cambia lo que UNA capa estima al cliente en una semana:
+// - Semana normal: si hay fila, la capa estima esta cantidad en lugar del
+//   avance físico aprobado de esa semana; sin fila, estima el físico (igual
+//   que antes).
+// - Semana histórica importada (CierreSemanaProyecto.historicoImportado): la
+//   capa estima solo lo que diga esta tabla (lo que trae el Excel); el físico
+//   de esas semanas nunca se convierte en estimado.
+// importeBase (antes de administración/utilidad) guarda el importe exacto
+// cuando no debe recalcularse como cantidad × P.U. (p. ej. una valoración
+// histórica de $6,000 por 1.090909 visitas). null = cantidad × P.U. vigente.
+// En semanas normales solo se captura la capa PRIVADO; la capa OPERATIVO
+// solo tiene filas importadas de semanas históricas. Nunca genera cortes,
+// movimientos, cuentas por cobrar ni pagos.
+// ---------------------------------------------------------------------------
+model EstimadoCapaConcepto {
+  id         String         @id @default(cuid())
+  empresaId  String
+  proyectoId String
+  concepto   Concepto       @relation(fields: [conceptoId], references: [id])
+  conceptoId String
+  semana     Semana         @relation(fields: [semanaId], references: [id])
+  semanaId   String
+  capa       CapaEstimacion
+
+  cantidad    Decimal  @db.Decimal(18, 6)
+  importeBase Decimal? @db.Decimal(14, 2)
+
+  // Procedencia: celda/fila del Excel para lo importado, o el motivo de la
+  // captura manual. Obligatorio en el servicio.
+  origen             String
+  historicoImportado Boolean @default(false)
+
+  registradoPorId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([conceptoId, semanaId, capa])
+  @@index([proyectoId, capa])
+  @@index([semanaId])
+  @@map("estimados_capa_concepto")
 }
 
 // Gasto cobrable congelado dentro de la estimación de UNA capa — mismo

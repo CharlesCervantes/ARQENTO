@@ -184,6 +184,16 @@ export function puedeVerContratoGeneralPrivado(usuario: UsuarioSesion): boolean 
 }
 
 /**
+ * Capturar la cantidad/importe estimado PRIVADO de una semana, independiente
+ * del avance físico (noviembre 2026). Es información de la capa privada: mismo
+ * techo que verla (Administrador/Director con Vista privada y Empresa con
+ * Privado habilitado). Supervisor y Master nunca pasan.
+ */
+export function puedeCapturarEstimadoPrivado(usuario: UsuarioSesion): boolean {
+  return puedeVerInformacionPrivada(usuario);
+}
+
+/**
  * Recibos financieros (expediente de contratista: estimado/pagado acumulado,
  * saldo, historial de cortes/estimaciones, generar/ver/subir evidencia de
  * recibo) — deliberadamente SIN exigir Vista privada (mismo criterio que

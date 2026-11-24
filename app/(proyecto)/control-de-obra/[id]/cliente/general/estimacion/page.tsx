@@ -10,7 +10,6 @@ import { obtenerResumenCierreSemana } from "@/lib/server/control-de-obra/cierre-
 import {
   obtenerEstimacionSemanalEnVivo,
   obtenerEstimacionCliente,
-  soloOperativo,
   agruparPorPartida,
   type FilaEstimacionCapa,
 } from "@/lib/server/control-de-obra/estimacion-cliente";
@@ -23,40 +22,9 @@ import { ConfigurarIvaEstimacion } from "@/components/control-de-obra/configurar
 import { EmitirEstimacion } from "@/components/control-de-obra/emitir-estimacion";
 import { Card } from "@/components/ui/card";
 
-function aFilaTablaEnVivo(f: {
-  conceptoId: string;
-  descripcionConcepto: string;
-  unidad: string;
-  cantidadContratada: number;
-  precioUnitarioOperativo: number;
-  importeContratadoOperativo: number;
-  cantidadAnterior: number;
-  cantidadEstaSemana: number;
-  cantidadAcumulada: number;
-  importeEstaSemanaOperativo: number;
-  importeAcumuladoOperativo: number;
-  cantidadPorEjercer: number;
-  importePorEjercerOperativo: number;
-  avancePorcentaje: number;
-}): FilaTablaEstimacion {
-  return {
-    conceptoId: f.conceptoId,
-    descripcionConcepto: f.descripcionConcepto,
-    unidad: f.unidad,
-    cantidadContratada: f.cantidadContratada,
-    precioUnitario: f.precioUnitarioOperativo,
-    importeContratado: f.importeContratadoOperativo,
-    cantidadAnterior: f.cantidadAnterior,
-    cantidadEstaSemana: f.cantidadEstaSemana,
-    cantidadAcumulada: f.cantidadAcumulada,
-    importeEstaSemana: f.importeEstaSemanaOperativo,
-    importeAcumulado: f.importeAcumuladoOperativo,
-    cantidadPorEjercer: f.cantidadPorEjercer,
-    importePorEjercer: f.importePorEjercerOperativo,
-    avancePorcentaje: f.avancePorcentaje,
-  };
-}
-
+// Semana abierta y cerrada usan la misma fila de capa (cantidad estimada por
+// capa, noviembre 2026): las semanas históricas importadas aportan su
+// estimado del Excel al anterior, no el físico.
 function aFilaTablaCapa(f: FilaEstimacionCapa): FilaTablaEstimacion {
   return {
     conceptoId: f.conceptoId,
@@ -113,9 +81,9 @@ export default async function ClienteGeneralEstimacionPage({
         partidaNombre: p.partidaNombre,
         conceptos: p.conceptos.map(aFilaTablaCapa),
       }))
-    : agruparPorPartida(soloOperativo(enVivoCandidato.filas)).map((p) => ({
+    : agruparPorPartida(enVivoCandidato.capas.OPERATIVO).map((p) => ({
         partidaNombre: p.partidaNombre,
-        conceptos: p.conceptos.map(aFilaTablaEnVivo),
+        conceptos: p.conceptos.map(aFilaTablaCapa),
       }));
 
   const fechaAnterior = new Date(semana.fechaInicio);

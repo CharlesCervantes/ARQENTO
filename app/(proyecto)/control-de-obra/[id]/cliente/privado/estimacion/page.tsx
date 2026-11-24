@@ -16,7 +16,6 @@ import {
   obtenerEstimacionSemanalEnVivo,
   obtenerEstimacionCliente,
   agruparPorPartida,
-  type FilaEstimacion,
   type FilaEstimacionCapa,
 } from "@/lib/server/control-de-obra/estimacion-cliente";
 import { obtenerControlContractual } from "@/lib/server/control-de-obra/financiero-cliente";
@@ -28,28 +27,36 @@ import { ConfigurarIvaEstimacion } from "@/components/control-de-obra/configurar
 import { EmitirEstimacion } from "@/components/control-de-obra/emitir-estimacion";
 import { MaterializarEstimacionHistorica } from "@/components/control-de-obra/materializar-estimacion-historica";
 import { Card } from "@/components/ui/card";
+import { EstimadoPrivadoSemana } from "@/components/control-de-obra/estimado-privado-semana";
+import {
+  obtenerEstimadosPrivadosSemana,
+  listarConceptosParaEstimadoPrivado,
+} from "@/lib/server/control-de-obra/estimado-privado";
+import { puedeCapturarEstimadoPrivado } from "@/lib/server/permisos";
 
 // Semana abierta: capa base (antes de administración/utilidad), para que
 // cantidad × P.U. mostrado siempre cuadre con el importe mostrado en cada
 // columna — la administración/utilidad se ve únicamente en
 // ResumenEstimacionPrivada.
-function aFilaTablaEnVivo(f: FilaEstimacion): FilaTablaEstimacion {
+// Cantidades de la capa privada: pueden diferir del avance físico (cantidad
+// estimada privada, noviembre 2026).
+function aFilaTablaEnVivo(f: FilaEstimacionCapa): FilaTablaEstimacion {
   return {
     conceptoId: f.conceptoId,
     descripcionConcepto: f.descripcionConcepto,
     unidad: f.unidad,
     cantidadContratada: f.cantidadContratada,
-    precioUnitario: f.precioUnitarioBasePrivado,
-    importeContratado: f.importeContratadoBasePrivado,
+    precioUnitario: f.precioUnitarioBase,
+    importeContratado: f.importeContratadoBase,
     cantidadAnterior: f.cantidadAnterior,
     cantidadEstaSemana: f.cantidadEstaSemana,
     cantidadAcumulada: f.cantidadAcumulada,
-    importeEstaSemana: f.importeEstaSemanaBasePrivado,
-    importeAcumulado: f.importeAcumuladoBasePrivado,
+    importeEstaSemana: f.importeEstaSemanaBase,
+    importeAcumulado: f.importeAcumuladoBase,
     cantidadPorEjercer: f.cantidadPorEjercer,
-    importePorEjercer: f.importePorEjercerBasePrivado,
+    importePorEjercer: f.importePorEjercerBase,
     avancePorcentaje: f.avancePorcentaje,
-    porcentajeAplicado: f.porcentajeAplicadoPrivado,
+    porcentajeAplicado: f.porcentajeAplicado,
   };
 }
 
@@ -127,10 +134,21 @@ export default async function ClientePrivadoEstimacionPage({
         partidaNombre: p.partidaNombre,
         conceptos: p.conceptos.map(aFilaTablaCapa),
       }))
-    : agruparPorPartida(enVivoCandidato.filas).map((p) => ({
+    : agruparPorPartida(enVivoCandidato.capas.PRIVADO).map((p) => ({
         partidaNombre: p.partidaNombre,
         conceptos: p.conceptos.map(aFilaTablaEnVivo),
       }));
+
+  // Captura privada independiente: semana no histórica y capa privada sin emitir.
+  const capturaPrivada =
+    puedeCapturarEstimadoPrivado(usuario) && !resumenCierre.historicoImportado
+      ? await Promise.all([
+          obtenerEstimadosPrivadosSemana(usuario, id, semana.id),
+          listarConceptosParaEstimadoPrivado(usuario, id),
+        ])
+      : null;
+  const capturaEditable =
+    !!capturaPrivada && (semanaCerrada ? congelado?.estimacion.estatus === "BORRADOR" : true);
 
   const fechaAnterior = new Date(semana.fechaInicio);
   fechaAnterior.setDate(fechaAnterior.getDate() - 7);
@@ -239,6 +257,16 @@ export default async function ClientePrivadoEstimacionPage({
             </>
           )}
         </>
+      )}
+
+      {capturaPrivada && (capturaEditable || capturaPrivada[0].length > 0) && (
+        <EstimadoPrivadoSemana
+          proyectoId={id}
+          semanaId={semana.id}
+          conceptos={capturaPrivada[1]}
+          estimados={capturaPrivada[0]}
+          editable={capturaEditable}
+        />
       )}
     </div>
   );

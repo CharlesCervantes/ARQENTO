@@ -1730,3 +1730,29 @@ Pasos:
 4. Verificar en Contratistas el nuevo contrato vigente del contratista.
 
 Los precios que se usaron en las pruebas de la migración **no constituyen un acuerdo aprobado**. Cada ajuste requiere la confirmación de Sergio o Charles.
+
+## 49.11 Cantidad estimada por capa (noviembre 2026)
+
+Estado: **propuesta en revisión** (rama `feature/estimado-capa-independiente`, encima de `feature/cierre-historico-importado`). Decisión de Charles, 24-nov-2026: el Privado necesita cantidades estimadas propias, también en semanas nuevas.
+
+Cuatro datos distintos que no se mezclan:
+
+1. **Cantidad contratada por capa.** `Concepto.cantidadContratada` es el General; el Privado usa `cantidadContratadaPrivado` cuando existe. Esto aplica también al monto de contrato privado de Control Contractual.
+2. **Avance físico** (`AvanceConcepto`). Es lo único que decide lo ejecutado, lo disponible para asignar, los cortes y los saldos de contratistas. No cambia con esta regla.
+3. **Cantidad e importe estimados por capa** (`EstimadoCapaConcepto`). Es lo que una capa estima al cliente en una semana:
+   - **Semana normal:** sin captura, la capa estima el avance físico aprobado, igual que antes. Con captura, estima la cantidad capturada. `importeBase` opcional fija el importe exacto antes de administración.
+   - **Semana histórica importada:** la capa estima solo lo que trae el Excel por estimación, con su cantidad e importe originales. El físico de esas semanas nunca se convierte en estimado.
+   - El "anterior" de cada capa en una estimación nueva es la suma de lo que esa capa estimó en semanas anteriores.
+4. **Cobros y pagos.** Solo los movimientos registrados (`MovimientoFinancieroCliente`, movimientos semanales). Un importe estimado no es un cobro.
+
+Reglas de la captura privada (Cliente Priv. → Estimación):
+
+- Solo Administrador o Director con Vista privada activa y Privado habilitado en la Empresa. El servidor lo valida (`puedeCapturarEstimadoPrivado`).
+- Solo en semanas no históricas, y mientras la estimación privada de esa semana no esté emitida.
+- Requiere motivo, que queda en bitácora (`EstimadoCapaConcepto`, CREAR / EDITAR / ELIMINAR).
+- No crea cortes, movimientos, deuda de contratistas ni cuentas por cobrar.
+- Al emitir, la capa congela sus propias cantidades en `EstimacionClienteCapaConcepto` (columnas nuevas, nulas en las emisiones anteriores).
+- Una captura en 0 excluye el concepto solo de la estimación privada de esa semana. Por ejemplo, una semana de vigilancia ya cobrada en otra estimación privada.
+- La capa General solo tiene filas importadas de semanas históricas. No se captura en semanas nuevas.
+
+Una obra sin semanas históricas importadas y sin capturas privadas se comporta exactamente igual que antes.
