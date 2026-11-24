@@ -16,7 +16,11 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/contabilida
   const { id } = await ctx.params;
   try {
     const ref = await obtenerRefDocumentoRecibido(usuario, id);
-    return NextResponse.redirect(await obtenerUrlTemporal(ref));
+    // Sin caché: cada apertura (también desde el visor dentro de ARQENTO)
+    // vuelve a pasar por esta verificación y obtiene una URL temporal nueva.
+    const respuesta = NextResponse.redirect(await obtenerUrlTemporal(ref));
+    respuesta.headers.set("Cache-Control", "private, no-store");
+    return respuesta;
   } catch (error) {
     return manejarErrorApi(error);
   }

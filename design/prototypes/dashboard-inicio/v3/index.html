@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo Inicio V3</title>
+<!--
+  Prototipo V3 del Dashboard Inicio de ARQENTO — DATOS FICTICIOS, no forma parte
+  de la aplicación ni escribe en ninguna base. Propuesta de lenguaje visual sobre
+  el contenido ya acordado (Inicio V2): General (4 indicadores), Privado (3),
+  Supervisor (sin montos), obras (máx. 5) y pendientes (máx. 3).
+  Estado inicial por URL: index.html#vista=privado&rol=supervisor&marca=f2c94c&fotos=0
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Tokens — base neutral ("concreto"), semánticos y marca
+   ============================================================ */
+:root {
+  --canvas: #eff1ef;
+  --surface: #ffffff;
+  --surface-2: #f6f7f6;
+  --ink: #14181a;
+  --ink-2: #4a5256;
+  --ink-3: #6b7377;
+  --line: #e0e4e2;
+  --line-2: #cdd3d1;
+
+  --ok: #0f7a55;  --ok-soft: #e6f3ed;
+  --warn: #9a5a06; --warn-soft: #fbf0e0;
+  --bad: #b42318; --bad-soft: #fdecea;
+
+  /* Plataforma ARQENTO (login) — solo en elementos de plataforma. */
+  --arq-bosque: #152420;
+  --arq-dorado: #c99a63;
+
+  /* Marca de la Empresa — configurable; todo lo demás se deriva. */
+  --brand: #1f6f5c;
+
+  --r-card: 18px;
+  --r-ctl: 10px;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --font: "Archivo", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+}
+
+/* Derivados de marca con contraste asegurado:
+   - ink: texto/enlaces sobre blanco (luminosidad acotada a 0.32–0.47)
+   - fill: barras y arcos (0.42–0.66: nunca invisible ni negro)
+   - wash: fondos suaves
+   - on: texto sobre fill (blanco o tinta según su luminosidad) */
+.app {
+  --brand-ink: color-mix(in oklch, var(--brand) 70%, black);
+  --brand-fill: var(--brand);
+  --brand-wash: color-mix(in oklch, var(--brand) 9%, white);
+  --brand-on: #fff;
+}
+@supports (color: oklch(from red l c h)) {
+  .app {
+    --brand-ink: oklch(from var(--brand) clamp(0.32, l, 0.47) min(c, 0.16) h);
+    --brand-fill: oklch(from var(--brand) clamp(0.42, l, 0.66) c h);
+    --brand-wash: oklch(from var(--brand) 0.965 min(c, 0.03) h);
+    --brand-line: oklch(from var(--brand) 0.88 min(c, 0.05) h);
+    --brand-on: oklch(from var(--brand-fill) clamp(0, (0.64 - l) * 999, 1) 0 0);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font: 400 15px/22px var(--font);
+  font-variation-settings: "wdth" 100;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; border-radius: 6px; }
+.num { font-variant-numeric: tabular-nums; }
+svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ============================================================
+   Barra del prototipo (no es parte del diseño)
+   ============================================================ */
+.proto {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  padding: 8px 16px; font-size: 13px; line-height: 18px;
+  background: var(--arq-bosque); color: #e9efe9;
+}
+.proto b { font-weight: 600; }
+.proto .muted { color: #a9b7ae; }
+.proto .grp { display: flex; align-items: center; gap: 6px; }
+.proto .pb { border: 1px solid #3c4c46; background: transparent; color: inherit; border-radius: 8px; padding: 3px 9px; cursor: pointer; }
+.proto .pb[aria-pressed="true"] { background: #e9efe9; color: var(--arq-bosque); border-color: #e9efe9; }
+.proto .sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--arq-bosque); box-shadow: 0 0 0 1px #5b6b64; cursor: pointer; padding: 0; }
+.proto .sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--arq-dorado); }
+.proto input[type=color] { width: 24px; height: 22px; padding: 0; border: 1px solid #3c4c46; border-radius: 6px; background: none; cursor: pointer; }
+.proto :focus-visible { outline-color: var(--arq-dorado); }
+
+/* ============================================================
+   Shell de referencia (la navegación global real NO cambia)
+   ============================================================ */
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: calc(100vh - 38px); }
+.side { background: var(--surface); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 22px; min-height: calc(100vh - 38px); }
+.org { display: flex; gap: 10px; align-items: center; padding: 0 6px; }
+.org .mark { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--brand-fill); color: var(--brand-on); font-weight: 600; font-size: 13px; }
+.org b { font-weight: 600; font-size: 14px; line-height: 18px; display: block; }
+.org small { color: var(--ink-3); font-size: 12px; }
+.nav { display: grid; gap: 2px; }
+.nav a { padding: 8px 10px; border-radius: 9px; color: var(--ink-2); font-size: 14px; }
+.nav a[aria-current] { background: var(--brand-wash); color: var(--brand-ink); font-weight: 500; }
+.side .plat { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 8px 0; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12px; }
+.side .plat i { width: 8px; height: 8px; border-radius: 2px; background: var(--arq-dorado); display: inline-block; }
+
+main { padding: 36px 44px 72px; min-width: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; }
+.aviso-movil { display: none; }
+
+/* ============================================================
+   Encabezado
+   ============================================================ */
+.head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px 32px; align-items: end; margin-bottom: 28px; }
+.contexto { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--ink-3); font-size: 13px; margin-bottom: 6px; }
+.contexto .sem { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.contexto .sem::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--brand-fill); }
+h1 { margin: 0; font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -0.015em; font-variation-settings: "wdth" 108; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.vista { display: inline-grid; grid-auto-flow: column; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }
+.vista button { border: 0; background: none; cursor: pointer; padding: 7px 14px; border-radius: 9px; font-size: 14px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
+.vista button:hover { color: var(--ink); }
+.vista button[aria-pressed="true"] { background: var(--ink); color: #fff; font-weight: 500; }
+.vista button svg.i { width: 15px; height: 15px; }
+.periodo { display: inline-flex; border-bottom: 1px solid var(--line-2); gap: 4px; }
+.periodo button { border: 0; background: none; cursor: pointer; padding: 8px 10px 9px; font-size: 14px; color: var(--ink-3); position: relative; white-space: nowrap; }
+.periodo button:hover { color: var(--ink); }
+.periodo button[aria-pressed="true"] { color: var(--ink); font-weight: 500; }
+.periodo button[aria-pressed="true"]::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--brand-fill); }
+.alafecha { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-2); padding: 8px 4px; }
+
+/* ============================================================
+   Indicadores — cuatro tarjetas con composición propia
+   ============================================================ */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 28px; }
+.kpis.k3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpis.k2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
+.kpi { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 20px 20px 18px; display: flex; flex-direction: column; min-width: 0; transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease); }
+.kpi:hover { border-color: var(--line-2); box-shadow: 0 10px 28px -18px rgba(20, 24, 26, 0.35); }
+.kpi > a.cubre { position: absolute; inset: 0; border-radius: var(--r-card); z-index: 1; }
+.kpi > a.cubre:focus-visible { outline-offset: -2px; border-radius: var(--r-card); }
+.kpi-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 8px; margin-bottom: 14px; }
+.kpi-nombre { font-size: 14px; font-weight: 500; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.alcance { font-size: 12px; color: var(--ink-3); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.alcance svg.i { width: 13px; height: 13px; }
+.alcance.periodo-tag { color: var(--brand-ink); background: var(--brand-wash); border-radius: 999px; padding: 2px 9px; }
+
+.cifra { font-size: 30px; line-height: 34px; font-weight: 600; letter-spacing: -0.02em; font-variation-settings: "wdth" 112; white-space: nowrap; }
+.cifra .cts { font-size: 0.55em; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+.cifra.pos { color: var(--ok); } .cifra.neg { color: var(--bad); }
+.cifra.pos .cts, .cifra.neg .cts { color: inherit; opacity: .7; }
+.cifra-sub { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
+
+/* Ayuda — botón por encima del enlace de la tarjeta */
+.ayuda { display: inline-flex; }
+.ayuda button { position: relative; z-index: 2; }
+.ayuda button { border: 0; background: none; padding: 2px; margin: -2px; border-radius: 6px; color: var(--ink-3); cursor: help; display: inline-flex; }
+.ayuda button svg.i { width: 15px; height: 15px; }
+.ayuda button:hover { color: var(--ink); }
+.ayuda [role=tooltip] { position: absolute; top: 48px; left: 14px; right: 14px; z-index: 5; white-space: normal; background: var(--ink); color: #f2f4f3; font-size: 13px; line-height: 19px; font-weight: 400; padding: 10px 12px; border-radius: 10px; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity 150ms var(--ease), transform 150ms var(--ease), visibility 150ms; }
+.ayuda:hover [role=tooltip], .ayuda:focus-within [role=tooltip] { opacity: 1; visibility: visible; transform: none; }
+
+/* Por pagar — Obras protagonista, Empresa como renglón aparte */
+.pp-empresa { margin-top: auto; padding-top: 14px; border-top: 1px dashed var(--line-2); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pp-empresa span { color: var(--ink-2); font-size: 14px; }
+.pp-empresa b { font-weight: 600; font-size: 17px; font-variation-settings: "wdth" 108; }
+.edad { align-self: flex-start; margin: 10px 0 14px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.edad.critica { color: var(--bad); font-weight: 500; }
+.edad svg.i { width: 15px; height: 15px; }
+
+/* Por cobrar — conteo integrado en la frase */
+.estim { margin-top: auto; display: flex; align-items: center; gap: 10px; padding-top: 14px; }
+.estim .cuenta { flex: none; min-width: 40px; height: 40px; padding: 0 8px; border-radius: 11px; display: grid; place-items: center; background: var(--brand-wash); color: var(--brand-ink); font-weight: 600; font-size: 19px; font-variation-settings: "wdth" 112; }
+.estim p { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 19px; }
+.estim p b { color: var(--ink); font-weight: 600; }
+
+/* Flujo — balance + entradas/salidas como dos piezas */
+.flujo-par { margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--line-2); display: grid; gap: 10px; }
+.mov { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 0 10px; }
+.mov small { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink-2); }
+.mov small svg.i { width: 14px; height: 14px; }
+.mov b { font-weight: 600; font-size: 15px; font-variation-settings: "wdth" 100; white-space: nowrap; text-align: right; }
+.mov b .cts { font-size: 0.75em; font-weight: 500; color: var(--ink-3); }
+.mov .barra { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--surface-2); margin-top: 5px; overflow: hidden; }
+.mov .barra i { display: block; height: 100%; border-radius: 2px; background: var(--ink-2); }
+.mov.entra .barra i { background: var(--brand-fill); }
+
+/* Avance — arco graduado */
+.avance { position: relative; display: grid; justify-items: center; text-align: center; margin-top: -4px; }
+.arco { width: 100%; max-width: 210px; height: auto; display: block; }
+.avance .lectura { margin-top: -50px; display: grid; justify-items: center; gap: 4px; }
+.arco .pista { stroke: var(--line); }
+.arco .valor { stroke: var(--brand-fill); }
+.arco .tick { stroke: var(--line-2); }
+.arco .tick.mayor { stroke: var(--ink-3); }
+.avance .pct { font-size: 34px; line-height: 36px; font-weight: 600; letter-spacing: -0.02em; font-variation-settings: "wdth" 112; }
+.avance .pct small { font-size: 16px; font-weight: 500; color: var(--ink-3); margin-left: 1px; }
+.delta { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ok); font-weight: 500; }
+.delta.baja { color: var(--bad); }
+.delta svg.i { width: 14px; height: 14px; }
+.nota-kpi { margin-top: auto; padding-top: 12px; font-size: 13px; color: var(--ink-3); }
+
+/* Barra medida (Privado: costo cubierto) */
+.medida { margin-top: 14px; }
+.medida .riel { position: relative; height: 10px; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.medida .riel i { position: absolute; inset: 0 auto 0 0; background: var(--brand-fill); border-radius: 5px; }
+.medida .escala { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-top: 5px; }
+
+.adelantada { margin-top: auto; padding-top: 14px; display: flex; justify-content: space-between; gap: 10px; align-items: center; border-top: 1px dashed var(--line-2); font-size: 14px; }
+.adelantada span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adelantada b { color: var(--warn); font-weight: 600; white-space: nowrap; }
+
+/* ============================================================
+   Cuerpo: obras (principal) + pendientes
+   ============================================================ */
+.cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
+.sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 2px 12px; }
+.sec-h h2 { margin: 0; font-size: 20px; line-height: 26px; font-weight: 600; font-variation-settings: "wdth" 108; letter-spacing: -0.01em; }
+.sec-h h2 span { font-size: 14px; font-weight: 400; color: var(--ink-3); margin-left: 8px; font-variation-settings: "wdth" 100; letter-spacing: 0; }
+.enlace { font-size: 14px; font-weight: 500; color: var(--brand-ink); border-radius: 6px; }
+.enlace:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+/* Ficha de obra */
+.fichas { display: grid; gap: 10px; }
+.ficha { display: grid; grid-template-columns: 168px minmax(0, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease); }
+.ficha:hover { border-color: var(--line-2); box-shadow: 0 12px 30px -20px rgba(20, 24, 26, 0.4); }
+.ficha:focus-visible { outline-offset: 3px; border-radius: var(--r-card); }
+.foto { position: relative; min-height: 118px; background: var(--surface-2); }
+.foto img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Sin fotografía: "lámina" con retícula de dibujo técnico + iniciales */
+.lamina {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background-color: var(--brand-wash);
+  background-image:
+    linear-gradient(var(--brand-line, rgba(0,0,0,.06)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--brand-line, rgba(0,0,0,.06)) 1px, transparent 1px);
+  background-size: 14px 14px;
+  background-position: -1px -1px;
+}
+.lamina::after { content: ""; position: absolute; inset: 8px; border: 1px solid var(--brand-line, rgba(0,0,0,.12)); border-radius: 8px; pointer-events: none; }
+.lamina svg { position: absolute; right: 16px; top: 14px; width: 40px; height: 40px; stroke: var(--brand-ink); stroke-width: 1.5; fill: none; opacity: .5; }
+.lamina .ini { position: absolute; left: 18px; bottom: 14px; font-size: 34px; line-height: 34px; font-weight: 700; letter-spacing: 0.02em; font-variation-settings: "wdth" 125; color: var(--brand-ink); }
+.ficha-cuerpo { padding: 16px 18px 16px 20px; display: grid; gap: 12px; min-width: 0; }
+.ficha-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ficha-h h3 { margin: 0; font-size: 17px; line-height: 22px; font-weight: 600; font-variation-settings: "wdth" 104; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ficha-h p { margin: 3px 0 0; font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.ficha-h p.critico { color: var(--bad); font-weight: 500; }
+.ficha-h p.atencion { color: var(--warn); font-weight: 500; }
+.ficha-h p svg.i { width: 15px; height: 15px; }
+.estado { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; padding: 3px 10px 3px 8px; border-radius: 999px; white-space: nowrap; }
+.estado::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.estado.bad { background: var(--bad-soft); color: var(--bad); }
+.estado.warn { background: var(--warn-soft); color: var(--warn); }
+.estado.ok { background: var(--ok-soft); color: var(--ok); }
+.estado.neutral { background: var(--surface-2); color: var(--ink-3); }
+
+/* Reglas de avance — dos filas rotuladas, escala graduada */
+.reglas { display: grid; gap: 7px; }
+.regla { display: grid; grid-template-columns: 92px minmax(0, 1fr) 48px; align-items: center; gap: 12px; }
+.regla .rot { font-size: 13px; color: var(--ink-2); }
+.regla .val { font-size: 14px; font-weight: 600; text-align: right; font-variation-settings: "wdth" 108; }
+.riel-g { position: relative; height: 12px; border-radius: 3px; background:
+    repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--line-2) calc(10% - 1px) 10%),
+    var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.riel-g i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.riel-g i.fisico { background: var(--brand-fill); }
+.riel-g i.financiero { background: repeating-linear-gradient(135deg, var(--ink-2) 0 2px, transparent 2px 6px), color-mix(in oklch, var(--ink-2) 14%, white); box-shadow: inset 0 0 0 1px var(--ink-2); }
+.regla.mute .rot, .regla.mute .val { color: var(--ink-3); }
+.sin-precio { font-size: 14px; color: var(--ink-3); }
+
+/* Pendientes — lista de acciones */
+.pend { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 6px 0; }
+.pend ul { list-style: none; margin: 0; padding: 0; }
+.pend li + li { border-top: 1px solid var(--line); }
+.accion { display: grid; grid-template-columns: 36px minmax(0, 1fr) 16px; gap: 12px; align-items: start; padding: 14px 16px 14px 18px; transition: background-color 160ms var(--ease); }
+.accion .flecha { align-self: center; color: var(--ink-3); transition: transform 160ms var(--ease), color 160ms var(--ease); }
+.accion:hover .flecha { transform: translateX(2px); color: var(--ink); }
+.accion:hover { background: var(--surface-2); }
+.accion:focus-visible { outline-offset: -2px; border-radius: 4px; }
+.accion .ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+.accion.critica .ic { background: var(--bad-soft); color: var(--bad); }
+.accion b { display: block; font-weight: 500; font-size: 15px; line-height: 20px; }
+.accion .sev { display: block; font-size: 12px; font-weight: 600; color: var(--bad); line-height: 16px; margin-bottom: 1px; }
+.accion small { display: block; font-size: 13px; color: var(--ink-3); line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accion .ir { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 500; color: var(--brand-ink); }
+.accion .flecha svg.i { width: 16px; height: 16px; }
+.mas { display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer; padding: 12px 18px 10px; border-top: 1px solid var(--line); font-size: 14px; font-weight: 500; color: var(--brand-ink); }
+.mas:hover { text-decoration: underline; text-underline-offset: 4px; }
+.al-dia { display: flex; gap: 12px; align-items: center; padding: 16px 18px; color: var(--ink-2); }
+.al-dia .ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--ok-soft); color: var(--ok); }
+
+.pie { margin-top: 40px; font-size: 13px; color: var(--ink-3); max-width: 78ch; }
+
+/* Entrada orquestada — una sola vez, al cargar */
+@keyframes sube { from { opacity: 0; transform: translateY(8px); } }
+.entra > * { animation: sube 520ms var(--ease) both; }
+.entra > *:nth-child(2) { animation-delay: 50ms; }
+.entra > *:nth-child(3) { animation-delay: 100ms; }
+.entra > *:nth-child(4) { animation-delay: 150ms; }
+@keyframes traza { from { stroke-dashoffset: var(--largo); } }
+.entra .arco .valor { animation: traza 900ms var(--ease) 200ms both; }
+@keyframes crece { from { transform: scaleX(0); } }
+.entra .riel-g i, .entra .medida .riel i { transform-origin: left; animation: crece 700ms var(--ease) 200ms both; }
+
+/* ============================================================
+   Adaptable
+   ============================================================ */
+@media (max-width: 1279px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cuerpo { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1023px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none; }
+  .aviso-movil { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 18px; padding: 10px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 13px; line-height: 18px; }
+  main { padding: 24px 24px 56px; }
+}
+@media (max-width: 720px) {
+  main { padding: 18px 16px 48px; }
+  .head { grid-template-columns: minmax(0, 1fr); margin-bottom: 20px; }
+  h1 { font-size: 27px; line-height: 32px; }
+  .toolbar { justify-content: flex-start; }
+  .periodo { max-width: 100%; overflow-x: auto; }
+  .kpis, .kpis.k3, .kpis.k2 { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .cifra { font-size: 28px; }
+  .ficha { grid-template-columns: 96px minmax(0, 1fr); }
+  .foto { min-height: 0; }
+  .ficha-cuerpo { padding: 14px 14px 14px 14px; gap: 10px; }
+  .ficha-h { flex-direction: column; gap: 6px; }
+  .regla { grid-template-columns: minmax(0, 1fr) 44px; gap: 4px 10px; }
+  .regla .rot { grid-column: 1 / -1; font-size: 12px; margin-bottom: -2px; }
+  .lamina svg { width: 26px; height: 26px; right: 12px; top: 12px; }
+  .lamina .ini { font-size: 24px; line-height: 24px; left: 14px; bottom: 12px; }
+  .cuerpo > section:last-child { order: -1; }
+  .accion { padding: 13px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="proto" role="region" aria-label="Controles del prototipo">
+  <b>Prototipo Inicio V3</b><span class="muted">Datos ficticios. No escribe en ninguna base.</span>
+  <div class="grp" id="c-vista"></div>
+  <div class="grp" id="c-rol"></div>
+  <div class="grp" id="c-marca"></div>
+  <div class="grp" id="c-fotos"></div>
+</div>
+
+<div class="app" id="app">
+  <aside class="side" aria-label="Navegación de referencia">
+    <div class="org"><span class="mark">CD</span><div><b>Constructora Demo</b><small>Empresa ficticia</small></div></div>
+    <nav class="nav">
+      <a href="#" aria-current="page">Inicio</a><a href="#">Proyectos</a><a href="#">Reporte General</a><a href="#">Contabilidad</a><a href="#">Gastos</a>
+    </nav>
+    <div class="plat"><i></i>ARQENTO</div>
+  </aside>
+  <main id="contenido"><div class="wrap" id="root"></div></main>
+</div>
+
+<script>
+/* ======================= Datos ficticios ======================= */
+const MX = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Imágenes de obra FICTICIAS (ilustraciones), para el caso "con fotografía".
+const img = (svg) => "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" preserveAspectRatio="xMidYMid slice">${svg}</svg>`);
+const FOTOS = {
+  torre: img(`<defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fa7c9"/><stop offset=".7" stop-color="#dfe7ec"/></linearGradient><linearGradient id="v" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#46525d"/><stop offset="1" stop-color="#2f3942"/></linearGradient></defs><rect width="320" height="240" fill="url(#c)"/><rect x="0" y="196" width="320" height="44" fill="#8f826d"/><rect x="40" y="150" width="60" height="50" fill="#a9a191"/><rect x="118" y="44" width="92" height="156" fill="url(#v)"/>${Array.from({ length: 12 }, (_, r) => Array.from({ length: 5 }, (_, k) => `<rect x="${124 + k * 17}" y="${52 + r * 12}" width="11" height="7" fill="${(r + k) % 3 ? "#9dbbd3" : "#c8dbe8"}" opacity=".85"/>`).join("")).join("")}<rect x="196" y="20" width="4" height="180" fill="#e0a43a"/><rect x="150" y="20" width="110" height="4" fill="#e0a43a"/><line x1="240" y1="24" x2="240" y2="70" stroke="#3a3a3a" stroke-width="1.5"/><rect x="232" y="70" width="16" height="10" fill="#6d6d6d"/>`),
+  plaza: img(`<defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c7a98a"/><stop offset=".8" stop-color="#efe3d3"/></linearGradient></defs><rect width="320" height="240" fill="url(#c)"/><rect x="0" y="190" width="320" height="50" fill="#7c715f"/><rect x="24" y="108" width="272" height="86" fill="#d6cbb8"/><rect x="24" y="98" width="272" height="14" fill="#8a7d68"/>${Array.from({ length: 7 }, (_, k) => `<rect x="${36 + k * 37}" y="124" width="28" height="56" fill="#5f7f8e" opacity=".9"/><rect x="${36 + k * 37}" y="124" width="28" height="6" fill="#9fb9c4"/>`).join("")}<rect x="0" y="182" width="320" height="10" fill="#b8ad99"/>`),
+  bodega: img(`<defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7b77d"/><stop offset="1" stop-color="#f6e4cc"/></linearGradient></defs><rect width="320" height="240" fill="url(#c)"/><rect x="0" y="196" width="320" height="44" fill="#86775f"/><path d="M30 198V118l130-36 130 36v80z" fill="#76838b"/><path d="M30 118l130-36 130 36" fill="none" stroke="#56636b" stroke-width="5"/>${Array.from({ length: 14 }, (_, k) => `<line x1="${44 + k * 18}" y1="${122 - (k < 7 ? k * 4.6 : (13 - k) * 4.6)}" x2="${44 + k * 18}" y2="196" stroke="#94a1a8" stroke-width="2"/>`).join("")}<rect x="128" y="148" width="64" height="50" fill="#3f4a50"/>`),
+};
+
+const OBRAS = [
+  { id: "torre", nombre: "Torre Valle Oriente", foto: "torre", salud: "bad", motivo: ["critico", "Pago pendiente desde hace 16 días"], fis: 64, fac: 71, cub: 43, sinAvance: 1 },
+  { id: "bodega", nombre: "Bodega Industrial Apodaca", foto: "bodega", salud: "warn", motivo: ["atencion", "2 gastos por revisar"], fis: 38, fac: 40, cub: 54, sinAvance: 0 },
+  { id: "nave", nombre: "Nave Escobedo", foto: null, salud: "warn", motivo: ["atencion", "Pago pendiente desde hace 3 días"], fis: 47, fac: 31, cub: 12, sinAvance: 0 },
+  { id: "plaza", nombre: "Plaza Comercial Cumbres", foto: "plaza", salud: "warn", motivo: ["atencion", "Sin avance desde hace 3 semanas"], fis: 22, fac: 0, cub: 13, sinAvance: 3 },
+  { id: "casa", nombre: "Casa Chipinque", foto: null, salud: "ok", motivo: ["", "Sin pendientes"], fis: 91, fac: 88, cub: 71, sinAvance: 0 },
+  { id: "escuela", nombre: "Escuela Primaria Fase 2", foto: null, salud: "neutral", motivo: ["", "Por iniciar"], fis: null, sinPrecio: 3, sinAvance: 0 },
+];
+const ESTADO = { bad: "Requiere acción", warn: "Atención", ok: "Al día", neutral: "En seguimiento" };
+const RANGO = { bad: 0, warn: 1, ok: 2, neutral: 3 };
+
+const PEND_GENERAL = [
+  { sev: "bad", ic: "clock", t: "Semana 45 sin cerrar en Torre Valle Oriente", d: "Bloquea cortes y pagos de esa semana", ir: "Cerrar semana" },
+  { sev: "warn", ic: "doc", t: "2 estimaciones listas para emitir", d: "Torre Valle Oriente y Nave Escobedo", ir: "Emitir" },
+  { sev: "warn", ic: "receipt", t: "2 gastos pendientes de revisión", d: "Bodega Industrial Apodaca", ir: "Revisar" },
+  { sev: "warn", ic: "repeat", t: "1 gasto recurrente sin monto", d: "Renta de andamios", ir: "Capturar" },
+  { sev: "warn", ic: "invoice", t: "3 facturas pendientes", d: "Por recibir de proveedores", ir: "Ver" },
+];
+const PEND_PRIVADO = [
+  { sev: "bad", ic: "card", t: "$277,000 pendientes de pago", d: "2 obras con pagos autorizados sin liquidar", ir: "Ir a pagos" },
+  { sev: "bad", ic: "clock", t: "Semana 45 sin cerrar en Torre Valle Oriente", d: "Bloquea cortes y pagos de esa semana", ir: "Cerrar semana" },
+  { sev: "warn", ic: "coins", t: "$910,000 pendientes de cobro", d: "Estimaciones emitidas sin cubrir", ir: "Ver cobros" },
+  { sev: "warn", ic: "receipt", t: "2 gastos pendientes de revisión", d: "Bodega Industrial Apodaca", ir: "Revisar" },
+];
+const PEND_SUP = [{ sev: "warn", ic: "alert", t: "Plaza Comercial Cumbres sin avance", d: "Sin avance capturado en 3 semanas", ir: "Capturar avance" }];
+
+const PERIODOS = { semana: "Esta semana", mes: "Este mes", mes_anterior: "Mes anterior", acumulado: "Acumulado" };
+const FLUJO = { semana: [800000, 1350000], mes: [2430000, 1986250], mes_anterior: [4355500, 4317300], acumulado: [38140500, 35213400] };
+const DELTA = { semana: [3.0, "vs semana anterior"], mes: [8.4, "vs mes anterior"] };
+
+/* ======================= Iconos (trazos propios) ======================= */
+const ICONOS = {
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  up: '<path d="M7 17 17 7M9 7h8v8"/>', down: '<path d="M17 7 7 17M7 9v8h8"/>',
+  trendUp: '<path d="m4 16 6-6 4 4 6-6M14 8h6v6"/>',
+  doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h4"/>',
+  receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  repeat: '<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>',
+  invoice: '<path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/>',
+  card: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>',
+  coins: '<ellipse cx="9" cy="7" rx="5" ry="2.5"/><path d="M4 7v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5V7"/><path d="M10 15.5c.6 1.2 2.7 2 5 2 2.8 0 5-1.1 5-2.5v-4c0-1.4-2.2-2.5-5-2.5"/>',
+  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  chev: '<path d="m9 6 6 6-6 6"/>',
+  info2: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
+};
+const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONOS[n]}</svg>`;
+
+/* ======================= Estado ======================= */
+const MARCAS = [["Grafito (neutral)", "#3b4247"], ["Verde", "#1f6f5c"], ["Ámbar claro", "#f2c94c"], ["Marino oscuro", "#0b1f33"], ["Vino", "#8c1d3a"], ["Azul", "#2f5bd3"]];
+const S = { vista: "general", rol: "admin", periodo: "semana", marca: "#3b4247", fotos: true, verPend: false, primera: true };
+
+/* ======================= Piezas ======================= */
+function cifra(n, { signo = false, clase = "" } = {}) {
+  const t = MX.format(Math.abs(n)), p = t.lastIndexOf(".");
+  const pre = n < 0 ? "−" : signo && n > 0 ? "+" : "";
+  return `<span class="cifra num ${clase}">${pre}${t.slice(0, p)}<span class="cts">${t.slice(p)}</span></span>`;
+}
+function ayuda(id, texto) {
+  return `<span class="ayuda"><button type="button" aria-label="Qué incluye" aria-describedby="${id}">${ic("info")}</button><span role="tooltip" id="${id}">${esc(texto)}</span></span>`;
+}
+function tarjeta({ id, nombre, alcance, ayudaTxt, cuerpo }) {
+  const tag = alcance === "fecha"
+    ? `<span class="alcance">${ic("clock")}A la fecha</span>`
+    : `<span class="alcance periodo-tag">${ic("cal")}${alcance}</span>`;
+  return `<article class="kpi" aria-labelledby="k-${id}">
+    <a class="cubre" href="#" aria-label="${esc(nombre)}: ver detalle"></a>
+    <div class="kpi-top"><span class="kpi-nombre" id="k-${id}">${nombre}${ayudaTxt ? ayuda(`a-${id}`, ayudaTxt) : ""}</span>${tag}</div>
+    ${cuerpo}</article>`;
+}
+
+// Arco graduado de 180°: marcas cada 10 %, mayores en 0/50/100.
+function arco(pct) {
+  const r = 56, cx = 66, cy = 66, largo = Math.PI * r;
+  const p = Math.max(0, Math.min(100, pct)) / 100;
+  let ticks = "";
+  for (let k = 0; k <= 10; k++) {
+    const a = Math.PI * (1 - k / 10), mayor = k % 5 === 0;
+    const r1 = r + 6, r2 = r + (mayor ? 11 : 9);
+    ticks += `<line class="tick ${mayor ? "mayor" : ""}" x1="${cx + r1 * Math.cos(a)}" y1="${cy - r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cy - r2 * Math.sin(a)}" stroke-width="1.4"/>`;
+  }
+  const d = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+  return `<svg class="arco" viewBox="-6 -6 144 78" role="img" aria-label="Avance físico ${pct.toFixed(1)} %">
+    ${ticks}<path class="pista" d="${d}" fill="none" stroke-width="10" stroke-linecap="round"/>
+    <path class="valor" d="${d}" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${largo}" stroke-dashoffset="${largo * (1 - p)}" style="--largo:${largo}"/></svg>`;
+}
+
+/* ======================= Indicadores ======================= */
+const montoChico = (n) => { const t = MX.format(n), p = t.lastIndexOf("."); return `${t.slice(0, p)}<span class="cts">${t.slice(p)}</span>`; };
+
+function kpisGeneral() {
+  const [ent, sal] = FLUJO[S.periodo], neto = ent - sal, max = Math.max(ent, sal);
+  const dl = DELTA[S.periodo];
+  return `<section class="kpis" aria-label="Indicadores">
+  ${tarjeta({ id: "pp", nombre: "Por pagar", alcance: "fecha",
+    ayudaTxt: "Pagos autorizados que aún no se liquidan. Obras y Empresa van por separado; la antigüedad corresponde solo a Obras.",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">Obras</span>${cifra(277000)}
+      <span class="edad critica">${ic("clock")}El más antiguo lleva 16 días</span>
+      <div class="pp-empresa"><span>Empresa</span><b class="num">${MX.format(18450)}</b></div>` })}
+  ${tarjeta({ id: "pc", nombre: "Por cobrar", alcance: "fecha",
+    ayudaTxt: "Importe General de las estimaciones emitidas menos lo ya cobrado.",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">Saldo pendiente</span>${cifra(740000)}
+      <div class="estim"><span class="cuenta num" aria-hidden="true">2</span><p><b>Estimaciones con saldo</b><br>emitidas, sin cubrir por completo</p></div>` })}
+  ${tarjeta({ id: "fl", nombre: "Flujo neto de obras", alcance: PERIODOS[S.periodo],
+    ayudaTxt: "Cobros a valores General (con tope por estimación) y aportaciones, menos pagos de obra liquidados del periodo. No equivale al efectivo en banco.",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">Balance del periodo</span>${cifra(neto, { signo: true, clase: neto >= 0 ? "pos" : "neg" })}
+      <div class="flujo-par">
+        <div class="mov entra"><small>${ic("down")}Entradas</small><b class="num">${montoChico(ent)}</b><div class="barra"><i style="width:${(ent / max) * 100}%"></i></div></div>
+        <div class="mov"><small>${ic("up")}Pagos de obra</small><b class="num">${montoChico(sal)}</b><div class="barra"><i style="width:${(sal / max) * 100}%"></i></div></div>
+      </div>` })}
+  ${tarjetaAvance(dl)}
+  </section>`;
+}
+function tarjetaAvance(dl) {
+  return tarjeta({ id: "av", nombre: "Avance físico", alcance: "fecha",
+    ayudaTxt: "Avance aprobado de las obras activas, ponderado por el valor de cada concepto. Es el mismo en General y en Privado.",
+    cuerpo: `<div class="avance">${arco(38.2)}<div class="lectura"><div class="pct num">38.2<small>%</small></div>
+      ${dl ? `<span class="delta">${ic("trendUp")}+${dl[0].toFixed(1)} pp ${dl[1]}</span>` : `<span class="cifra-sub">Comparación disponible en Esta semana y Este mes</span>`}</div></div>
+      <p class="nota-kpi" style="text-align:center">1 obra fuera del cálculo por precios incompletos</p>` });
+}
+function kpisPrivado() {
+  return `<section class="kpis k3" aria-label="Indicadores privados">
+  ${tarjeta({ id: "ut", nombre: "Utilidad presupuestada", alcance: "fecha",
+    ayudaTxt: "Contratos General menos presupuesto de costo interno, obras activas y pausadas. La utilidad real no se muestra mientras se valida su fórmula (D6).",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">Línea base</span>${cifra(2184600)}
+      <div class="pp-empresa"><span>Margen sobre contratos</span><b class="num">14.2 %</b></div>` })}
+  ${tarjeta({ id: "cc", nombre: "Costo cubierto vs presupuesto", alcance: "fecha",
+    ayudaTxt: "Incluye pagos liquidados y pagos puente. No incluye gastos aprobados que aún no se pagan.",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">Cubierto</span>${cifra(1830000)}
+      <span class="cifra-sub">de <b class="num" style="color:var(--ink);font-weight:600">${MX.format(7544000)}</b> presupuestados</span>
+      <div class="medida"><div class="riel"><i style="width:24.3%"></i></div><div class="escala"><span>24.3 % cubierto</span><span>100 %</span></div></div>` })}
+  ${tarjeta({ id: "ad", nombre: "Obras con costo adelantado", alcance: "fecha",
+    ayudaTxt: "Obras cuyo % de costo cubierto supera su avance físico por más de 15 puntos.",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">Superan el umbral de 15 pp</span>
+      <span class="cifra num">1<span class="cts" style="font-size:.6em"> de 5 obras</span></span>
+      <div class="adelantada"><span>Bodega Industrial Apodaca</span><b class="num">+16 pp</b></div>` })}
+  </section>`;
+}
+function kpisSupervisor() {
+  return `<section class="kpis k2" aria-label="Indicadores de obra">
+  ${tarjetaAvance(DELTA[S.periodo])}
+  ${tarjeta({ id: "sa", nombre: "Obras sin avance reciente", alcance: "fecha",
+    ayudaTxt: "Obras en ejecución sin avance capturado en 2 semanas o más.",
+    cuerpo: `<span class="cifra-sub" style="margin:0 0 2px">2 semanas o más</span><span class="cifra num">1<span class="cts" style="font-size:.6em"> de 5 en ejecución</span></span>
+      <p class="nota-kpi">Plaza Comercial Cumbres lleva 3 semanas sin avance</p>` })}
+  </section>`;
+}
+
+/* ======================= Obras ======================= */
+const GLIFO = '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 54h48M14 54V24l18-12 18 12v30"/><path d="M24 54V38h16v16M20 28h6M38 28h6"/></svg>';
+function foto(o) {
+  if (S.fotos && o.foto) return `<div class="foto"><img src="${FOTOS[o.foto]}" alt=""></div>`;
+  const ini = o.nombre.split(/\s+/).filter((p) => /^[A-ZÁÉÍÓÚÑ0-9]/i.test(p)).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
+  return `<div class="foto"><div class="lamina">${GLIFO}<span class="ini">${ini}</span></div></div>`;
+}
+function regla(rotulo, pct, clase, mute = false) {
+  return `<div class="regla ${mute ? "mute" : ""}"><span class="rot">${rotulo}</span>
+    <span class="riel-g" role="img" aria-label="${rotulo} ${pct} %"><i class="${clase}" style="width:${pct}%"></i></span>
+    <span class="val num">${pct} %</span></div>`;
+}
+function ficha(o) {
+  const sup = S.rol === "supervisor";
+  const segundo = S.vista === "privado" ? ["Cubierto", o.cub] : ["Facturado", o.fac];
+  let detalle;
+  if (sup) {
+    detalle = o.fis === null ? `<p>Por iniciar</p>` : `<p class="${o.sinAvance >= 2 ? "atencion" : ""}">${o.sinAvance >= 2 ? ic("clock") : ""}Último avance ${o.sinAvance === 0 ? "esta semana" : o.sinAvance === 1 ? "hace 1 semana" : `hace ${o.sinAvance} semanas`}</p>`;
+  } else {
+    detalle = `<p class="${o.motivo[0]}">${o.motivo[0] === "critico" ? ic("alert") : ""}${esc(o.motivo[1])}</p>`;
+  }
+  const reglas = o.fis === null
+    ? `<p class="sin-precio">Sin avance todavía. ${o.sinPrecio} conceptos sin precio capturado.</p>`
+    : `<div class="reglas">${regla("Físico", o.fis, "fisico")}${sup ? "" : regla(segundo[0], segundo[1], "financiero", segundo[1] === 0)}</div>`;
+  return `<a class="ficha" href="#" aria-label="${esc(o.nombre)}: ver obra">
+    ${foto(o)}
+    <div class="ficha-cuerpo">
+      <div class="ficha-h"><div style="min-width:0"><h3>${esc(o.nombre)}</h3>${detalle}</div>${sup ? "" : `<span class="estado ${o.salud}">${ESTADO[o.salud]}</span>`}</div>
+      ${reglas}
+    </div></a>`;
+}
+function obras() {
+  const lista = [...OBRAS].sort((a, b) => S.rol === "supervisor" ? b.sinAvance - a.sinAvance : RANGO[a.salud] - RANGO[b.salud]).slice(0, 5);
+  return `<section aria-labelledby="h-obras">
+    <div class="sec-h"><h2 id="h-obras">Obras<span>6 activas y 1 pausada</span></h2><a class="enlace" href="#">Ver las 6</a></div>
+    <div class="fichas">${lista.map(ficha).join("")}</div></section>`;
+}
+
+/* ======================= Pendientes ======================= */
+function pendientes() {
+  const src = S.rol === "supervisor" ? PEND_SUP : S.vista === "privado" ? PEND_PRIVADO : PEND_GENERAL;
+  const vis = S.verPend ? src : src.slice(0, 3);
+  const item = (p) => `<li><a class="accion ${p.sev === "bad" ? "critica" : ""}" href="#">
+      <span class="ic">${ic(p.ic)}</span>
+      <span style="min-width:0">${p.sev === "bad" ? `<span class="sev">Requiere acción</span>` : ""}<b>${esc(p.t)}</b><small>${esc(p.d)}</small><span class="ir">${p.ir}</span></span>
+      <span class="flecha">${ic("chev")}</span></a></li>`;
+  return `<section aria-labelledby="h-pend">
+    <div class="sec-h"><h2 id="h-pend">Por atender<span>${src.length} ${src.length === 1 ? "pendiente" : "pendientes"}</span></h2></div>
+    <div class="pend">${src.length ? `<ul>${vis.map(item).join("")}</ul>${src.length > 3 ? `<button class="mas" data-act="pend" aria-expanded="${S.verPend}">${S.verPend ? "Ver menos" : `Ver ${src.length - 3} más`}</button>` : ""}`
+      : `<div class="al-dia"><span class="ic">${ic("check")}</span>Nada pendiente por ahora.</div>`}</div></section>`;
+}
+
+/* ======================= Encabezado ======================= */
+function encabezado() {
+  const priv = S.vista === "privado" && S.rol !== "supervisor";
+  const vista = S.rol === "supervisor" ? "" : `<div class="vista" role="group" aria-label="Vista">
+      <button data-act="vista" data-v="general" aria-pressed="${!priv}">General</button>
+      <button data-act="vista" data-v="privado" aria-pressed="${priv}">${ic("lock")}Privado</button></div>`;
+  const per = priv ? `<span class="alafecha">${ic("clock")}Todo a la fecha</span>`
+    : `<div class="periodo" role="group" aria-label="Periodo">${Object.entries(PERIODOS).map(([k, t]) => `<button data-act="periodo" data-v="${k}" aria-pressed="${S.periodo === k}">${t}</button>`).join("")}</div>`;
+  return `<header class="head">
+    <div><div class="contexto"><span>Constructora Demo</span><span class="sem">Semana 46, del 9 al 14 de noviembre</span></div>
+      <h1>Buenas tardes, ${S.rol === "supervisor" ? "Mateo" : "Lucía"}</h1></div>
+    <div class="toolbar">${vista}${per}</div></header>`;
+}
+
+/* ======================= Render ======================= */
+function render() {
+  const priv = S.vista === "privado" && S.rol !== "supervisor";
+  const kpis = S.rol === "supervisor" ? kpisSupervisor() : priv ? kpisPrivado() : kpisGeneral();
+  document.getElementById("root").innerHTML =
+    `<p class="aviso-movil" role="note">${ic("info2")}<span>Vista adaptable del contenido de Inicio. La navegación global móvil de ARQENTO está fuera del alcance de este prototipo.</span></p>
+    <div class="${S.primera ? "entra" : ""}">${encabezado()}${kpis}<div class="cuerpo">${obras()}${pendientes()}</div></div>
+    <p class="pie">Prototipo V3 con datos e imágenes ficticias. Mismo contenido, alcances temporales y reglas que Inicio V2; solo cambia el lenguaje visual.</p>`;
+  renderControles();
+  S.primera = false;
+}
+function renderControles() {
+  const b = (act, v, t, on) => `<button class="pb" data-act="${act}" data-v="${v}" aria-pressed="${on}">${t}</button>`;
+  document.getElementById("c-vista").innerHTML = `<span class="muted">Vista</span>${b("vista", "general", "General", S.vista === "general")}${b("vista", "privado", "Privado", S.vista === "privado")}`;
+  document.getElementById("c-rol").innerHTML = `<span class="muted">Rol</span>${b("rol", "admin", "Administrador", S.rol === "admin")}${b("rol", "supervisor", "Supervisor", S.rol === "supervisor")}`;
+  document.getElementById("c-marca").innerHTML = `<span class="muted">Marca</span>${MARCAS.map(([n, h]) => `<button class="sw" style="background:${h}" data-act="marca" data-v="${h}" aria-pressed="${S.marca === h}" aria-label="${n}" title="${n}"></button>`).join("")}<input type="color" id="c-color" value="${S.marca}" aria-label="Color libre">`;
+  document.getElementById("c-fotos").innerHTML = `<span class="muted">Fotografías</span>${b("fotos", "1", "Con", S.fotos)}${b("fotos", "0", "Ninguna", !S.fotos)}`;
+}
+function aplicarMarca() { document.getElementById("app").style.setProperty("--brand", S.marca); }
+
+document.addEventListener("click", (e) => {
+  const a = e.target.closest('a[href="#"]'); if (a) e.preventDefault();
+  const t = e.target.closest("[data-act]"); if (!t) return;
+  const v = t.dataset.v;
+  switch (t.dataset.act) {
+    case "vista": S.vista = v; break;
+    case "rol": S.rol = v; break;
+    case "periodo": S.periodo = v; break;
+    case "pend": S.verPend = !S.verPend; break;
+    case "fotos": S.fotos = v === "1"; break;
+    case "marca": S.marca = v; aplicarMarca(); renderControles(); return;
+    default: return;
+  }
+  render();
+});
+document.addEventListener("input", (e) => { if (e.target.id === "c-color") { S.marca = e.target.value; aplicarMarca(); } });
+
+try {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (q.get("vista") === "privado") S.vista = "privado";
+  if (q.get("rol") === "supervisor") S.rol = "supervisor";
+  if (PERIODOS[q.get("periodo")]) S.periodo = q.get("periodo");
+  if (/^[0-9a-f]{6}$/i.test(q.get("marca") || "")) S.marca = "#" + q.get("marca");
+  if (q.get("fotos") === "0") S.fotos = false;
+} catch (e) {}
+aplicarMarca(); render();
+</script>
+</body>
+</html>

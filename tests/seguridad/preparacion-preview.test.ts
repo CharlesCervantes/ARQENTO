@@ -1,6 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,9 @@ import {
   VALOR_MARCADOR,
   entornoParaPrisma,
   migracionesDelRepositorio,
+  passwordTemporalSegura,
+  restablecerPasswordMaster,
+  verificarRestablecerPassword,
   prepararBasePreview,
   validarConfiguracionPreview,
   verificarBasePreview,
@@ -168,6 +172,8 @@ function baseSimulada(opciones: { base?: string } = {}) {
     planModulos: [] as Fila[],
     empresas: [] as Fila[],
     usuarios: [] as Fila[],
+    sesiones: [] as Fila[],
+    auditorias: [] as Fila[],
   };
   let respaldo: typeof s | null = null;
   let soloLectura = false;
@@ -246,6 +252,30 @@ function baseSimulada(opciones: { base?: string } = {}) {
           modulos: s.planModulos.filter((x) => x.planId === plan?.id).length,
         },
       ];
+    }
+    // Restablecer contraseña del Master
+    const esMasterSemilla = (u: Fila, id: unknown, email: unknown) => u.id === id && u.email === email && u.rol === "MASTER" && (u.empresaId ?? null) === null;
+    if (t.startsWith("SELECT id, email, rol::text AS rol")) {
+      if (!t.endsWith("FOR UPDATE")) throw new Error("La lectura del Master debe bloquear la fila.");
+      return s.usuarios.filter((u) => u.id === p[0] || u.email === p[1]).map((u) => ({ id: u.id, email: u.email, rol: u.rol, empresaId: u.empresaId, activo: u.activo ?? true }));
+    }
+    if (t.startsWith('UPDATE usuarios SET "passwordHash"')) {
+      escribir(t);
+      const filas = s.usuarios.filter((u) => esMasterSemilla(u, p[1], p[2]));
+      for (const u of filas) Object.assign(u, { passwordHash: p[0], ...(t.includes(`"debeCambiarPassword" = true`) ? { debeCambiarPassword: true } : {}) });
+      return filas.map((u) => ({ id: u.id }));
+    }
+    if (t.startsWith("DELETE FROM sesiones")) {
+      escribir(t);
+      const borradas = s.sesiones.filter((x) => x.usuarioId === p[0]);
+      s.sesiones = s.sesiones.filter((x) => x.usuarioId !== p[0]);
+      return borradas.map((x) => ({ id: x.id }));
+    }
+    if (t.startsWith("INSERT INTO registros_auditoria")) return escribir(t), s.auditorias.push({ id: p[0], usuarioId: p[1], valorNuevo: JSON.parse(String(p[2])) }), [];
+    if (t.startsWith("SELECT u.activo")) {
+      return s.usuarios
+        .filter((u) => esMasterSemilla(u, p[0], p[1]))
+        .map((u) => ({ activo: u.activo ?? true, debe: u.debeCambiarPassword, sesiones: s.sesiones.filter((x) => x.usuarioId === u.id).length }));
     }
     throw new Error(`SQL no simulado: ${t.slice(0, 60)}`);
   };
@@ -502,5 +532,152 @@ describe("Preview — preparación completa e interrupciones", () => {
     b.s.empresas.push({ id: "conkuali", nombre: "Otra" });
     await rechaza(prepararBasePreview(b.deps()), /no son la Empresa Demo/);
     assert.equal(estado(b), "PREPARANDO");
+  });
+});
+
+describe("Preview — restablecer la contraseña del Master ficticio", () => {
+  const sha = (p: string) => createHash("sha256").update(p).digest("hex");
+  const MASTER = "usuario-master-preview";
+  async function baseLista() {
+    const b = baseSimulada();
+    await prepararBasePreview(b.deps());
+    // Como tras un uso real: el Master ya inició sesión y hay sesiones abiertas.
+    b.s.usuarios.find((u) => u.id === MASTER)!.debeCambiarPassword = false;
+    b.s.sesiones.push({ id: "s1", usuarioId: MASTER }, { id: "s2", usuarioId: MASTER }, { id: "s3", usuarioId: "usuario-admin-demo" });
+    b.escrituras.length = 0;
+    b.inicios.length = 0;
+    b.salida.length = 0;
+    return b;
+  }
+  const depsDe = (b: ReturnType<typeof baseSimulada>) => ({ ...b.deps(), hashear: async (p: string) => sha(p) });
+  const passwordMostrada = (b: ReturnType<typeof baseSimulada>) => b.salida[b.salida.findIndex((l) => l.includes("Nueva contraseña temporal")) + 1]?.trim();
+
+  test("Verificación por omisión: informa el estado y no escribe nada", async () => {
+    const b = await baseLista();
+    const antes = JSON.stringify(b.s);
+    await verificarRestablecerPassword(depsDe(b));
+    assert.equal(JSON.stringify(b.s), antes);
+    assert.deepEqual(b.escrituras, []);
+    assert.ok(b.inicios.length > 0 && b.inicios.every((x) => x === "BEGIN READ ONLY"));
+    assert.ok(b.salida.some((l) => l.includes("master@arqento-preview.invalid") && l.includes("sesiones abiertas: 2")));
+    assert.ok(b.salida.some((l) => l.includes("No se escribió nada")));
+  });
+
+  test("Restablece SOLO al Master: hash nuevo, cambio obligatorio, sus sesiones cerradas y auditoría sin la contraseña", async () => {
+    const b = await baseLista();
+    const otros = JSON.stringify(b.s.usuarios.filter((u) => u.id !== MASTER));
+    const resto = () => JSON.stringify([b.s.empresas, b.s.planes, b.s.modulos, b.s.planModulos, b.s.marcador, b.s.migraciones]);
+    const restoAntes = resto();
+    const hashAnterior = b.s.usuarios.find((u) => u.id === MASTER)!.passwordHash;
+    const migrarAntes = b.llamadasMigrar();
+
+    await restablecerPasswordMaster(depsDe(b));
+
+    const password = passwordMostrada(b)!;
+    assert.match(password, /^[A-HJ-NP-Za-km-z2-9]{20}$/);
+    const master = b.s.usuarios.find((u) => u.id === MASTER)!;
+    assert.equal(master.passwordHash, sha(password), "se guarda el hash de la contraseña mostrada");
+    assert.notEqual(master.passwordHash, hashAnterior);
+    assert.equal(master.debeCambiarPassword, true);
+    assert.deepEqual(b.s.sesiones, [{ id: "s3", usuarioId: "usuario-admin-demo" }], "solo se cierran las sesiones del Master");
+    assert.equal(JSON.stringify(b.s.usuarios.filter((u) => u.id !== MASTER)), otros, "ningún otro usuario cambia");
+    assert.equal(resto(), restoAntes, "ni Empresas, ni planes, ni marcador, ni migraciones");
+    assert.equal(b.llamadasMigrar(), migrarAntes, "no ejecuta migraciones");
+    assert.deepEqual(b.escrituras, ["UPDATE usuarios SET", "DELETE FROM sesiones", "INSERT INTO registros_auditoria"], "ni semilla ni otras escrituras");
+    assert.equal(b.s.auditorias.length, 1);
+    assert.deepEqual(b.s.auditorias[0].valorNuevo, { accion: "password_temporal_regenerada", origen: "script-preview", sesionesCerradas: 2 });
+    assert.ok(!JSON.stringify(b.s).includes(password), "la contraseña nunca queda en claro en la base");
+    assert.equal(b.salida.filter((l) => l.includes(password)).length, 1, "se muestra una sola vez");
+    assert.ok(b.salida.findIndex((l) => l.startsWith("Restablecimiento confirmado")) > b.salida.findIndex((l) => l.includes(password)));
+  });
+
+  test("Cada ejecución genera una contraseña distinta, sin caracteres ambiguos", () => {
+    const generadas = new Set(Array.from({ length: 200 }, () => passwordTemporalSegura()));
+    assert.equal(generadas.size, 200);
+    for (const p of generadas) assert.match(p, /^[A-HJ-NP-Za-km-z2-9]{20}$/);
+  });
+
+  test("Base que no está LISTA (vacía, en preparación o con migraciones pendientes): no se restablece nada", async () => {
+    await rechaza(restablecerPasswordMaster(depsDe(baseSimulada())), /no está LISTA \(estado: NUEVA\)/);
+
+    const enPreparacion = baseSimulada();
+    enPreparacion.fallarEn(/SET estado = 'LISTA'/);
+    await rechaza(prepararBasePreview(enPreparacion.deps()), /interrumpida/);
+    const antes = JSON.stringify(enPreparacion.s);
+    await rechaza(restablecerPasswordMaster(depsDe(enPreparacion)), /no está LISTA \(estado: EN_PREPARACION\)/);
+    assert.equal(JSON.stringify(enPreparacion.s), antes);
+
+    const atrasada = baseSimulada();
+    await prepararBasePreview(atrasada.deps([MIGRACIONES[0], MIGRACIONES[1]]));
+    await rechaza(restablecerPasswordMaster(depsDe(atrasada)), /migraciones pendientes/);
+    await rechaza(verificarRestablecerPassword(depsDe(atrasada)), /migraciones pendientes/);
+  });
+
+  test("Marcador de otro endpoint o base con datos sin marcador: se detiene sin escribir", async () => {
+    const b = await baseLista();
+    b.s.marcador[0].endpoint = "ep-otro-zz";
+    await rechaza(restablecerPasswordMaster(depsDe(b)), /otro endpoint/);
+    const sinMarcador = baseSimulada();
+    sinMarcador.s.tablas.push({ esquema: "public", tabla: "usuarios" });
+    await rechaza(restablecerPasswordMaster(depsDe(sinMarcador)), /NO está vacía/);
+    assert.deepEqual([...b.escrituras, ...sinMarcador.escrituras], []);
+  });
+
+  test("Si el Master no coincide con la semilla (otro rol, con Empresa, duplicado, ausente o desactivado): se detiene y no cambia nada", async () => {
+    const casos: [string, (b: ReturnType<typeof baseSimulada>) => void, RegExp][] = [
+      ["otro rol", (b) => void (b.s.usuarios.find((u) => u.id === MASTER)!.rol = "DIRECTOR"), /no coincide/],
+      ["con Empresa", (b) => void (b.s.usuarios.find((u) => u.id === MASTER)!.empresaId = "empresa-demo-preview"), /no coincide/],
+      ["correo en otro usuario", (b) => void (b.s.usuarios.find((u) => u.id === MASTER)!.id = "otro-id"), /no coincide/],
+      ["duplicado", (b) => void b.s.usuarios.push({ id: "x", email: "master@arqento-preview.invalid", rol: "MASTER", empresaId: null }), /exactamente un usuario/],
+      ["ausente", (b) => void b.s.usuarios.splice(b.s.usuarios.findIndex((u) => u.id === MASTER), 1), /exactamente un usuario/],
+      ["desactivado", (b) => void (b.s.usuarios.find((u) => u.id === MASTER)!.activo = false), /desactivado/],
+    ];
+    for (const [nombre, romper, patron] of casos) {
+      const b = await baseLista();
+      romper(b);
+      const antes = JSON.stringify(b.s);
+      await rechaza(restablecerPasswordMaster(depsDe(b)), patron);
+      assert.equal(JSON.stringify(b.s), antes, nombre);
+      assert.ok(!b.salida.some((l) => l.includes("Nueva contraseña temporal")), nombre);
+    }
+  });
+
+  test("Falla al confirmar: la contraseña mostrada queda ANULADA y el hash anterior se conserva", async () => {
+    const b = await baseLista();
+    const antes = JSON.stringify(b.s);
+    const d = depsDe(b);
+    const consultar = d.consultar;
+    d.consultar = async (sql, p) => {
+      if (sql.trim() === "COMMIT" && b.s.auditorias.length > 0) throw new Error("Conexión interrumpida (simulada)");
+      return consultar(sql, p);
+    };
+    await rechaza(restablecerPasswordMaster(d), /interrumpida/);
+    assert.equal(JSON.stringify(b.s), antes);
+    assert.ok(b.salida.some((l) => l.includes("ANULADA")));
+    assert.ok(!b.salida.some((l) => l.startsWith("Restablecimiento confirmado")));
+  });
+
+  test("El script real se cancela ANTES de conectarse (sin variables o sin confirmar el endpoint) y nunca imprime la conexión", () => {
+    const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/URL|PREVIEW_|_PRODUCTION$|SECRET|TOKEN|KEY|PEPPER/i.test(k)));
+    const correr = (env: Record<string, string>, args: string[] = []) =>
+      spawnSync(process.execPath, ["--import", "tsx", "scripts/preview/restablecer-password-preview.ts", ...args], {
+        cwd: process.cwd(),
+        env: { ...base, ...env } as NodeJS.ProcessEnv,
+        encoding: "utf8",
+        timeout: 60000,
+      });
+    const casos: [Record<string, string>, string[], RegExp][] = [
+      [{}, ["--restablecer"], /Falta PREVIEW_DIRECT_URL/],
+      [{ DATABASE_URL: URL_OK, DIRECT_URL: URL_OK }, ["--restablecer"], /Falta PREVIEW_DIRECT_URL/],
+      [entorno() as Record<string, string>, ["--restablecer"], /--confirmar/],
+      [entorno() as Record<string, string>, ["--restablecer", "--confirmar=ep-otro"], /--confirmar/],
+    ];
+    for (const [env, args, patron] of casos) {
+      const r = correr(env, args);
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /CANCELADO/);
+      assert.match(r.stderr, patron);
+      assert.ok(!/clave-ficticia|usuario_ficticio|postgresql:\/\//.test(r.stdout + r.stderr));
+    }
   });
 });

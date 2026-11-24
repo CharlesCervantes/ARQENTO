@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Card } from "@/components/ui/card";
+import { EnlaceVerDocumento } from "@/components/ui/visor-documento";
 import { formatearFecha } from "@/lib/fecha";
 import { descartarDocumentoRecibidoAction, reanudarRecepcionesRecibidasAction } from "@/app/(app)/contabilidad/actions";
 import type { BandejaRecibidos } from "@/lib/server/contabilidad/documentos/recibidos-whatsapp";
@@ -129,14 +130,10 @@ export function RecibidosWhatsapp({ bandeja }: { bandeja: BandejaRecibidos }) {
                 </div>
                 <div className="flex shrink-0 items-center gap-3 text-sm">
                   {!d.eliminacionPendiente && (
-                    <a
-                      href={`/api/contabilidad/documentos-recibidos/${d.id}/archivo`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <EnlaceVerDocumento
+                      documento={{ url: `/api/contabilidad/documentos-recibidos/${d.id}/archivo`, tipoMime: d.tipoMime, nombre: d.nombre }}
                       className="font-medium text-[var(--foreground)] underline underline-offset-2"
-                    >
-                      Ver archivo
-                    </a>
+                    />
                   )}
                   <button
                     type="button"

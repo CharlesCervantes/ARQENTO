@@ -830,6 +830,18 @@ Un gasto aprobado puede tener dos efectos distintos:
 
 Puede convertirse en costo/material cobrable dentro de la Estimación Cliente.
 
+Reglas vigentes (decisión de Charles, noviembre 2026):
+
+- **Semana abierta (preliminar):** Cliente y Cliente Priv. muestran los gastos cobrables
+  aprobados que entrarían al cerrar la semana, con su subtotal y la administración/utilidad
+  de cada vista, sumados al total preliminar. Es solo consulta: no crea estimaciones ni liga
+  gastos. Usa exactamente los mismos criterios que el cierre.
+- **Semana cerrada sin estimación:** al aprobar un gasto cobrable de esa semana se crean sus
+  estimaciones (General y Privada, en borrador) y se liga el gasto. Si la semana ya tiene
+  estimación, no se crea otra; una estimación emitida nunca se modifica y el gasto pasa a la
+  siguiente en borrador.
+- El pago de la reposición a quien pagó el gasto es independiente del cobro al cliente.
+
 ### Reporte General
 
 Puede representar dinero que debe pagarse o reponerse.

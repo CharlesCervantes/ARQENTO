@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo Inicio V2</title>
+<!--
+  Prototipo V2 del Dashboard Inicio de Arqento — DATOS FICTICIOS.
+  No forma parte de la aplicación. Especificación: agente ui-ux-architect.
+  Enfoque ejecutivo equilibrado: General (4 KPIs, 1 gráfica, hasta 5 obras, 3 alertas),
+  Privado (costos, rentabilidad, desviaciones; sin Utilidad real hasta validar D6),
+  Supervisor (operativo, sin montos).
+  Estado inicial por URL: index.html#rol=SUPERVISOR&vista=privado&periodo=mes&theme=light&brand=f2b705&vacio=1
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===== Tokens (idénticos a V1) ===== */
+:root {
+  --bg: #F5F6F8; --surface: #FFFFFF; --fg: #14161B; --muted: #5D6471;
+  --border: #E2E5EA; --subtle: #EEF0F3; --series-2: #7A8290;
+  --ok: #059669; --ok-ink: #047857; --ok-soft: #ECFDF5;
+  --warn: #D97706; --warn-ink: #B45309; --warn-soft: #FFFBEB;
+  --bad: #DC2626; --bad-ink: #B91C1C; --bad-soft: #FEF2F2;
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 12px 32px -16px rgba(16,24,40,.18);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1014; --surface: #161920; --fg: #ECEEF2; --muted: #9AA2AF;
+    --border: #272C35; --subtle: #1E222A; --series-2: #6E7686;
+    --ok-ink: #34D399; --ok-soft: #0F2A22; --warn-ink: #FBBF24; --warn-soft: #2D2310;
+    --bad-ink: #F87171; --bad-soft: #2E1416;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1014; --surface: #161920; --fg: #ECEEF2; --muted: #9AA2AF;
+  --border: #272C35; --subtle: #1E222A; --series-2: #6E7686;
+  --ok-ink: #34D399; --ok-soft: #0F2A22; --warn-ink: #FBBF24; --warn-soft: #2D2310;
+  --bad-ink: #F87171; --bad-soft: #2E1416;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+
+/* Derivados de marca: declarados donde se inyecta --brand (equivale a la raíz del AppShell) */
+.app {
+  --brand-ink: color-mix(in oklch, var(--brand) 72%, black);
+  --brand-chart: color-mix(in oklch, var(--brand) 88%, black);
+  --brand-soft: color-mix(in oklch, var(--brand) 10%, var(--surface));
+  --brand-track: color-mix(in oklch, var(--brand) 18%, var(--surface));
+  --brand-fg: #fff;
+}
+@supports (color: oklch(from red l c h)) {
+  .app {
+    --brand-ink: oklch(from var(--brand) min(l, 0.5) c h);
+    --brand-chart: oklch(from var(--brand) min(l, 0.62) c h);
+    --brand-fg: oklch(from var(--brand) clamp(0, (0.68 - l) * 999, 1) 0 0);
+  }
+  :root[data-theme="dark"] .app {
+    --brand-ink: oklch(from var(--brand) max(l, 0.75) c h);
+    --brand-chart: oklch(from var(--brand) clamp(0.6, l, 0.74) c h);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .app {
+      --brand-ink: oklch(from var(--brand) max(l, 0.75) c h);
+      --brand-chart: oklch(from var(--brand) clamp(0.6, l, 0.74) c h);
+    }
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 14px/20px "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brand-ink, var(--fg)); outline-offset: 2px; }
+.skip { position: absolute; left: 8px; top: -40px; background: var(--surface); padding: 8px 12px; border-radius: 8px; z-index: 50; }
+.skip:focus { top: 8px; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ===== Controles del prototipo ===== */
+.proto {
+  position: sticky; top: 0; z-index: 40;
+  background: repeating-linear-gradient(135deg, var(--subtle) 0 8px, var(--bg) 8px 16px);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px; display: flex; gap: 16px; align-items: center;
+  overflow-x: auto; white-space: nowrap; font-size: 13px;
+}
+.proto :focus-visible { outline-color: var(--fg); }
+.proto-title { font-weight: 600; }
+.proto-group { display: flex; align-items: center; gap: 6px; }
+.proto-group > span { color: var(--muted); }
+.proto .pbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 13px; cursor: pointer; }
+.proto .pbtn[aria-pressed="true"] { background: var(--fg); color: var(--surface); border-color: var(--fg); }
+.proto .pbtn:disabled { opacity: .45; cursor: not-allowed; }
+.swatch { width: 22px; height: 22px; border-radius: 999px; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); cursor: pointer; padding: 0; }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--fg); }
+.proto input[type=color] { width: 26px; height: 24px; border: 1px solid var(--border); border-radius: 6px; padding: 0; background: none; cursor: pointer; }
+
+/* ===== Shell ===== */
+.app > div { min-width: 0; }
+.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: calc(100vh - 45px); }
+.side {
+  position: sticky; top: 45px; height: calc(100vh - 45px);
+  background: var(--surface); border-right: 1px solid var(--border);
+  padding: 20px 12px; display: flex; flex-direction: column; gap: 24px;
+}
+.org { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--brand); color: var(--brand-fg); font-weight: 600; font-size: 13px; transition: background-color 200ms var(--ease-out), color 200ms; }
+.org b { display: block; font-weight: 600; }
+.org small { color: var(--muted); font-size: 12px; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav a { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; color: var(--muted); }
+.nav a:hover { background: var(--subtle); color: var(--fg); }
+.nav a[aria-current="page"] { background: var(--brand-soft); color: var(--brand-ink); font-weight: 500; }
+.me { margin-top: auto; display: flex; gap: 10px; align-items: center; padding: 16px 8px 8px; border-top: 1px solid var(--border); }
+.avatar { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; background: var(--brand); color: var(--brand-fg); font-size: 12px; font-weight: 600; transition: background-color 200ms var(--ease-out); }
+.me small { display: block; color: var(--muted); font-size: 12px; }
+.topbar { display: none; }
+.scrim { display: none; }
+
+main { padding: 32px 40px 64px; min-width: 0; }
+.wrap { max-width: 1440px; margin: 0 auto; }
+
+/* ===== Encabezado ===== */
+.head { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; }
+.head h1 { font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+.head p { margin: 0; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; background: var(--subtle); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; transition: background-color 150ms var(--ease-out), color 150ms; }
+.seg button:hover { color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+.seg button.priv[aria-pressed="true"] { background: var(--fg); color: var(--surface); }
+.alafecha { font-size: 13px; color: var(--muted); padding: 0 4px; }
+
+.privbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--fg); color: var(--surface); border-radius: 10px; padding: 10px 14px; margin: -12px 0 28px; }
+.privbar button { margin-left: auto; background: transparent; border: 1px solid color-mix(in srgb, var(--surface) 40%, transparent); color: inherit; border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.privbar button:focus-visible { outline-color: var(--surface); }
+
+/* ===== Grid ===== */
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
+.grid > * { grid-column: span 12; min-width: 0; }
+.a-kpi { order: 1; } .a-main { order: 2; } .a-side { order: 3; } .a-aten { order: 4; }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+.panel-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.panel-h h2 { font-size: 17px; line-height: 24px; font-weight: 600; margin: 0; }
+.panel-h p { margin: 2px 0 0; color: var(--muted); font-size: 13px; line-height: 18px; }
+.linkbtn { background: none; border: 0; padding: 4px 6px; margin: -4px -6px; border-radius: 6px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.linkbtn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.btn-brand { display: inline-flex; gap: 6px; align-items: center; background: var(--brand); color: var(--brand-fg); border: 0; border-radius: 8px; padding: 7px 12px; font-weight: 500; cursor: pointer; transition: background-color 200ms var(--ease-out); }
+
+/* ===== Banda KPI (único nivel con sombra) ===== */
+.kpis { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kpis.k3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpi { padding: 20px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi:first-child { border-left: 0; border-radius: 16px 0 0 16px; }
+.kpi:last-child { border-radius: 0 16px 16px 0; }
+a.kpi:hover { background: color-mix(in srgb, var(--subtle) 60%, var(--surface)); }
+.kpi-label { color: var(--muted); font-size: 13px; }
+.kpi-value { font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.kpi-value.pos { color: var(--ok-ink); } .kpi-value.neg { color: var(--bad-ink); }
+.kpi-value .unit { font-size: 15px; font-weight: 500; color: var(--muted); }
+.kpi-pair { display: grid; gap: 2px; }
+.kpi-pair small { color: var(--muted); font-size: 13px; }
+.kpi-pair .second { font-size: 17px; line-height: 24px; font-weight: 600; }
+.kpi-sub { font-size: 13px; color: var(--muted); line-height: 18px; }
+.kpi-sub b { color: var(--fg); font-weight: 500; }
+.kpi-sub.mini { font-size: 12px; }
+.badge { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; line-height: 18px; white-space: nowrap; }
+.badge svg.i { width: 13px; height: 13px; }
+.b-warn { background: var(--warn-soft); color: var(--warn-ink); }
+.b-bad { background: var(--bad-soft); color: var(--bad-ink); }
+.b-ok { background: var(--ok-soft); color: var(--ok-ink); }
+.b-neutral { background: var(--subtle); color: var(--muted); }
+.gauge { height: 8px; border-radius: 4px; background: var(--brand-track); overflow: hidden; margin: 6px 0 2px; }
+.gauge > i { display: block; height: 100%; background: var(--brand-chart); border-radius: 4px; transform-origin: left; transition: background-color 200ms var(--ease-out); }
+.delta { font-size: 13px; color: var(--ok-ink); display: inline-flex; gap: 4px; align-items: center; }
+.validacion { margin: 10px 4px 0; font-size: 13px; color: var(--muted); }
+
+/* ===== Gráficas ===== */
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.sw.line { height: 2px; width: 14px; border-radius: 1px; background: var(--fg); }
+.chart { position: relative; }
+.chart svg { display: block; overflow: visible; }
+.chart svg:focus-visible { outline-offset: 4px; border-radius: 6px; }
+.chart text { fill: var(--muted); font-size: 12px; font-family: inherit; }
+.chart .grid-l { stroke: var(--border); stroke-width: 1; }
+.chart .zero { stroke: var(--muted); stroke-width: 1; }
+.chart .xhair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.bars-grow path.b { transform-box: fill-box; transform-origin: bottom; animation: growY 500ms var(--ease-out) both; }
+@keyframes growY { from { transform: scaleY(0); } }
+@keyframes growX { from { transform: scaleX(0); } }
+.grow-x { animation: growX 500ms var(--ease-out) both; transform-origin: left; }
+
+.dtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dtable th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--border); }
+.dtable td { padding: 8px; border-bottom: 1px solid var(--border); }
+.dtable .r { text-align: right; }
+
+.tip { position: fixed; z-index: 60; pointer-events: none; background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 13px; min-width: 200px; max-width: 300px; opacity: 0; transform: translateY(4px); transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out); }
+.tip.on { opacity: 1; transform: none; }
+.tip h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.tip .tr { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.tip .tr span { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.tip .tr b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.tip p { margin: 4px 0 0; color: var(--muted); }
+
+/* ===== Filas de obra (resumen compacto) ===== */
+.olist { display: grid; }
+.orow { display: grid; gap: 6px; padding: 12px 8px; margin: 0 -8px; border-radius: 10px; border-bottom: 1px solid var(--border); }
+.orow:last-child { border-bottom: 0; }
+.orow:hover, .orow:focus-visible { background: var(--brand-soft); }
+.orow-h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; align-items: center; }
+.orow-h b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orow-b { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.orow-b .gauge { margin: 0; height: 6px; }
+.orow-m { font-size: 13px; color: var(--muted); }
+.orow-m.warn { color: var(--warn-ink); }
+.btrack { position: relative; height: 8px; background: var(--subtle); border-radius: 3px; }
+.btrack .f { position: absolute; inset: 0 auto 0 0; background: var(--brand-chart); border-radius: 0 3px 3px 0; transition: background-color 200ms var(--ease-out); }
+.btrack .m { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--fg); border-radius: 1px; box-shadow: 0 0 0 2px var(--surface); transform: translateX(-1px); }
+.gap-t { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.gap-t.warn { color: var(--warn-ink); font-weight: 500; }
+.panel-foot { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Costo pagado frente a presupuesto por obra */
+.cbars { display: grid; gap: 4px; }
+.crow { display: grid; grid-template-columns: minmax(120px, 180px) 1fr; gap: 6px 16px; align-items: center; padding: 10px 6px; border-radius: 8px; }
+.crow:hover, .crow:focus-visible { background: var(--subtle); }
+.crow .nm { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crow .vals { grid-column: 2; font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.crow .vals b { color: var(--fg); font-weight: 500; }
+.ctrack { position: relative; height: 12px; }
+.ctrack .p { position: absolute; inset: 0 auto 0 0; background: var(--brand-track); border-radius: 0 3px 3px 0; }
+.ctrack .c { position: absolute; inset: 0 auto 0 0; background: var(--brand-chart); border-radius: 0 3px 3px 0; transition: background-color 200ms var(--ease-out); }
+
+/* ===== Atención ===== */
+.alist { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.alert { display: grid; grid-template-columns: 3px 20px 1fr; gap: 10px; padding: 12px 12px 12px 0; border-radius: 10px; align-items: start; border: 1px solid var(--border); }
+a.alert:hover { background: var(--subtle); }
+.alert .stripe { align-self: stretch; border-radius: 0 3px 3px 0; }
+.alert .ic { padding-top: 1px; }
+.alert b { font-weight: 500; display: block; }
+.alert small { color: var(--muted); font-size: 13px; display: block; }
+.alert .sev { font-size: 12px; font-weight: 500; }
+.alert.bad .stripe { background: var(--bad); } .alert.bad .ic, .alert.bad .sev { color: var(--bad-ink); }
+.alert.warn .stripe { background: var(--warn); } .alert.warn .ic, .alert.warn .sev { color: var(--warn-ink); }
+
+/* ===== Vacíos ===== */
+.empty { padding: 28px 8px; text-align: center; color: var(--muted); }
+.empty b { display: block; color: var(--fg); font-weight: 500; margin-bottom: 4px; }
+
+/* ===== Datos nuevos / en corrección ===== */
+body.mark-new .nuevo { text-decoration: underline dotted var(--warn); text-underline-offset: 4px; text-decoration-thickness: 2px; }
+body.mark-new .nuevo::after { content: attr(data-l); margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--warn-ink); background: var(--warn-soft); padding: 0 6px; border-radius: 4px; display: inline-block; white-space: nowrap; }
+
+.proto-foot { margin-top: 48px; font-size: 13px; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 16px; max-width: 80ch; }
+
+.enter { opacity: 1; transform: none; transition: opacity 400ms var(--ease-out), transform 400ms var(--ease-out); }
+@starting-style { .enter { opacity: 0; transform: translateY(10px); } }
+
+/* ===== Breakpoints ===== */
+@media (min-width: 1280px) {
+  .a-main { grid-column: span 8; }
+  .a-side { grid-column: span 4; }
+}
+@media (min-width: 768px) and (max-width: 1279px) {
+  main { padding: 28px 24px 56px; }
+  .kpis:not(.k3) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpis:not(.k3) .kpi { border-left: 0; border-radius: 0 !important; }
+  .kpis:not(.k3) .kpi:nth-child(even) { border-left: 1px solid var(--border); }
+  .kpis:not(.k3) .kpi:nth-child(n+3) { border-top: 1px solid var(--border); }
+  .kpi-value { font-size: 22px; line-height: 28px; }
+  .alist { grid-template-columns: 1fr; }
+}
+@media (max-width: 1023px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; width: 264px; z-index: 45; transform: translateX(-100%); transition: transform 300ms var(--ease-out); box-shadow: var(--shadow); }
+  .app.drawer .side { transform: none; }
+  .app.drawer .scrim { display: block; position: fixed; inset: 0; background: rgba(10,12,16,.4); z-index: 44; }
+  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 45px; z-index: 30; background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 16px; }
+  .topbar button { background: none; border: 0; padding: 6px; border-radius: 8px; cursor: pointer; display: grid; place-items: center; }
+  .topbar b { font-weight: 600; }
+  .topbar .avatar { margin-left: auto; }
+}
+@media (max-width: 767px) {
+  main { padding: 20px 16px 48px; }
+  .head h1 { font-size: 22px; line-height: 28px; }
+  .controls { width: 100%; }
+  .seg.periods { max-width: 100%; overflow-x: auto; }
+  .seg button { padding: 6px 10px; white-space: nowrap; }
+  .panel { padding: 16px; }
+  .a-aten { order: 1; } .a-kpi { order: 2; } .a-main { order: 3; } .a-side { order: 4; }
+  .alist { grid-template-columns: 1fr; }
+  /* KPIs con importes: lista de filas (el importe completo no cabe en 2×2) */
+  .kpis { grid-template-columns: 1fr !important; }
+  .kpi { border-left: 0 !important; border-top: 1px solid var(--border); border-radius: 0 !important; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; }
+  .kpi:first-child { border-top: 0; }
+  .kpi > * { grid-column: 1 / -1; }
+  .kpi .kpi-label { grid-column: 1; }
+  .kpi .kpi-value { grid-column: 2; grid-row: 1; font-size: 20px; line-height: 26px; text-align: right; }
+  .kpi .badge { justify-self: start; }
+  /* Supervisor: sin importes, cabe en 2×2 */
+  .kpis.sup2 { grid-template-columns: 1fr 1fr !important; }
+  .kpis.sup2 .kpi { display: flex; }
+  .kpis.sup2 .kpi:nth-child(even) { border-left: 1px solid var(--border) !important; }
+  .kpis.sup2 .kpi:nth-child(2) { border-top: 0; }
+  .kpis.sup2 .kpi .kpi-value { text-align: left; }
+  .crow { grid-template-columns: 1fr; }
+  .crow .vals { grid-column: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#contenido">Ir al contenido</a>
+
+<div class="proto" role="region" aria-label="Controles del prototipo">
+  <span class="proto-title">Prototipo V2</span>
+  <span class="muted">No forma parte de Arqento · datos ficticios</span>
+  <div class="proto-group" id="pc-rol"></div>
+  <div class="proto-group"><button class="pbtn" id="pc-priv">Vista privada disponible</button></div>
+  <div class="proto-group" id="pc-brand"></div>
+  <div class="proto-group" id="pc-theme"></div>
+  <div class="proto-group"><button class="pbtn" id="pc-empty">Empresa sin obras</button></div>
+  <div class="proto-group"><button class="pbtn" id="pc-new">Marcar datos nuevos</button></div>
+  <div class="proto-group"><button class="pbtn" id="pc-nota">Nota de Utilidad real</button></div>
+</div>
+
+<div class="app" id="app">
+  <div class="scrim" data-act="drawer"></div>
+  <aside class="side" id="side" aria-label="Navegación"></aside>
+  <div>
+    <div class="topbar">
+      <button data-act="drawer" aria-label="Abrir menú"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <b>Constructora Demo</b>
+      <span class="avatar" id="top-av"></span>
+    </div>
+    <main id="contenido" tabindex="-1"><div class="wrap enter" id="root"></div></main>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+/* ======================= Datos ficticios ======================= */
+const PERSONAS = {
+  DIRECTOR: { nombre: "Ricardo", completo: "Ricardo Ejemplo", rol: "Director", ini: "RE" },
+  ADMINISTRADOR: { nombre: "Lucía", completo: "Lucía Ejemplo", rol: "Administradora", ini: "LE" },
+  SUPERVISOR: { nombre: "Mateo", completo: "Mateo Ejemplo", rol: "Supervisor", ini: "ME" },
+};
+// salud = salud General calculada SIN desviación privada (corrección D4).
+// ejercido = MovimientoSemanal LIQUIDADO + PAGADO_PUENTE (sin gasto directo aprobado, D8).
+// semSinAvance: null = sin avance histórico (por iniciar).
+const OBRAS = [
+  { nombre: "Torre Norte", fis: 64, fac: 58, presup: 6890000, ejercido: 4350000,
+    salud: "atencion", razon: "1 semana sin cerrar · 1 gasto por revisar", semSinAvance: 0 },
+  { nombre: "Bodega Industrial B2", fis: 38, fac: 30, presup: 4316000, ejercido: 2632760,
+    salud: "accion", razon: "Pago pendiente hace 16 días", semSinAvance: 1 },
+  { nombre: "Casa Pedregal", fis: 91, fac: 88, presup: 2640000, ejercido: 2270400,
+    salud: "ok", razon: "Sin pendientes", semSinAvance: 0 },
+  { nombre: "Plaza Comercial Sur", fis: 22, fac: 15, presup: 10460000, ejercido: 1673600,
+    salud: "atencion", razon: "3 gastos por revisar · sin avance hace 2 semanas", semSinAvance: 2 },
+  { nombre: "Nave Apodaca", fis: 47, fac: 52, presup: 5600000, ejercido: 2450000,
+    salud: "atencion", razon: "Pago pendiente hace 3 días", semSinAvance: 0 },
+  { nombre: "Escuela Fase 2", fis: null, fac: 0, presup: 3420000, ejercido: 0, incompleto: "3 de 42 conceptos sin precio",
+    salud: "seguimiento", razon: "Por iniciar", semSinAvance: null },
+];
+OBRAS.forEach(o => {
+  o.pctEj = o.presup ? Math.round(o.ejercido / o.presup * 100) : 0;
+  o.desv = o.fis == null ? null : o.pctEj - o.fis;
+});
+const UMBRAL_PP = 15;
+const SALUD = {
+  accion: { t: "Requiere acción", c: "b-bad", ic: "octagon", rank: 0 },
+  atencion: { t: "Atención", c: "b-warn", ic: "triangle", rank: 1 },
+  ok: { t: "Saludable", c: "b-ok", ic: "check", rank: 2 },
+  seguimiento: { t: "En seguimiento", c: "b-neutral", ic: "clock", rank: 3 },
+};
+const SEM = [
+  [32, 980000, 1120400], [33, 0, 645800], [34, 1420000, 1035200], [35, 760000, 990600],
+  [36, 1305500, 1210300], [37, 640000, 858900], [38, 1890000, 1342700], [39, 520000, 905400],
+  [40, 1280000, 1117850], [41, 1150000, 868400],
+].map(([s, e, p]) => ({ s, e, p }));
+const MESES = [
+  ["nov", "Noviembre 2025", 2150000, 1980400], ["dic", "Diciembre 2025", 1640000, 1812300],
+  ["ene", "Enero 2026", 2480000, 2105600], ["feb", "Febrero 2026", 2910500, 2640200],
+  ["mar", "Marzo 2026", 3205000, 2988750], ["abr", "Abril 2026", 2760000, 2915300],
+  ["may", "Mayo 2026", 3540000, 3102450], ["jun", "Junio 2026", 3120000, 3260800],
+  ["jul", "Julio 2026", 3880500, 3415200], ["ago", "Agosto 2026", 4015000, 3722600],
+  ["sep", "Septiembre 2026", 4355500, 4317300], ["oct", "Octubre 2026 (en curso)", 2430000, 1986250],
+].map(([k, t, e, p]) => ({ k, t, e, p }));
+const PERIODOS = {
+  semana: { t: "Semana", label: "esta semana", weeks: [41] },
+  mes: { t: "Mes", label: "octubre", weeks: [40, 41] },
+  mes_anterior: { t: "Mes anterior", label: "septiembre", weeks: [36, 37, 38, 39] },
+  acumulado: { t: "Acumulado", label: "últimos 12 meses", weeks: null },
+};
+const DELTA = { semana: [2.1, "vs semana anterior"], mes: [6.8, "vs septiembre"] };
+const PP_OBRAS = 1240500, PP_EMPRESA = 86200, POR_COBRAR = 932750;
+const UTIL_PRESUP = 6954000, MARGEN_PRESUP = 17.3;
+// Alertas del backend actual, sin las cubiertas por un KPI (pagos_pendientes, pendiente_cobro)
+// ni desviacion (nunca en General; en Privado la cubre un KPI). Orden: severidad → gravedad → urgencia (D13).
+const ALERTAS = [
+  ["warn", "clock", "1 obra con semanas pendientes de cierre", "Torre Norte · bloquea cortes y pagos"],
+  ["warn", "wallet", `<span class="num">$18,450.00</span> en reposiciones abiertas`, "1 reposición · hace 9 días"],
+  ["warn", "doc", "2 estimaciones listas para emitir", "Torre Norte · Nave Apodaca"],
+  ["warn", "receipt", "4 gastos pendientes de revisión", "Plaza Comercial Sur (3) · Torre Norte (1)"],
+  ["warn", "repeat", "1 gasto recurrente sin monto", "Renta de andamios"],
+  ["warn", "receipt", "1 factura con diferencia de monto", "Proveedor Ejemplo SA"],
+  ["warn", "inbox", "3 facturas pendientes", "Por recibir de proveedores"],
+];
+const ALERTAS_SUP = [["warn", "clock", "Plaza Comercial Sur sin avance", "Sin avance capturado en 2 semanas"]];
+
+/* ======================= Estado ======================= */
+const S = { rol: "ADMINISTRADOR", privDisp: true, vista: "general", periodo: "semana", brand: "#4338ca", theme: "system",
+  empty: false, markNew: false, nota: true, tabla: { flujo: false, costo: false }, verAlertas: false, verObras: false, first: true };
+const BRANDS = [["Índigo", "#4338ca"], ["Verde", "#15803d"], ["Ámbar claro", "#f2b705"], ["Vino", "#9f1239"], ["Petróleo", "#0e7490"]];
+
+/* ======================= Utilidades ======================= */
+const MX = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });
+const money = n => (n < 0 ? "−" : "") + MX.format(Math.abs(n));
+const signed = n => (n >= 0 ? "+" : "−") + MX.format(Math.abs(n));
+const compact = n => { const a = Math.abs(n), s = n < 0 ? "−$" : "$"; if (a >= 1e6) return s + (a / 1e6).toFixed(1).replace(/\.0$/, "") + " M"; if (a >= 1e3) return s + Math.round(a / 1e3) + " k"; return s + a; };
+const fmtGap = (g, d = 0) => (g > 0 ? "+" : g < 0 ? "−" : "") + Math.abs(g).toFixed(d) + " pp";
+const MON = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function weekRange(s) {
+  const mon = new Date(2026, 9, 5 - (41 - s) * 7), sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return mon.getMonth() === sun.getMonth() ? `${mon.getDate()}–${sun.getDate()} ${MON[sun.getMonth()]}` : `${mon.getDate()} ${MON[mon.getMonth()]}–${sun.getDate()} ${MON[sun.getMonth()]}`;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ICONS = {
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  octagon: '<path d="M8 3h8l5 5v8l-5 5H8l-5-5V8z"/><path d="M12 8v5M12 16h.01"/>',
+  triangle: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
+  check: '<path d="m5 12 5 5 9-10"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>', down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  home: '<path d="M4 11 12 4l8 7v9H4z"/>', obra: '<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/>',
+  conta: '<path d="M4 4h16v16H4zM4 9h16M9 4v16"/>', rep: '<path d="M5 20V10M12 20V4M19 20v-7"/>',
+  cat: '<path d="M4 6h16M4 12h16M4 18h10"/>', compra: '<path d="M6 7h12l-1 13H7zM9 7a3 3 0 0 1 6 0"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  wallet: '<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M16 13h2M3 10h18"/>',
+  doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>', repeat: '<path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', inbox: '<path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z"/>',
+  receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/>',
+};
+const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+const nuevo = (txt, p) => `<span class="nuevo" data-l="dato nuevo ${p}">${txt}</span>`;
+const enCorreccion = (txt, p) => `<span class="nuevo" data-l="definición en corrección ${p}">${txt}</span>`;
+const pill = k => { const s = SALUD[k]; return `<span class="badge ${s.c}">${ic(s.ic)}${s.t}</span>`; };
+
+/* ======================= Derivados ======================= */
+const isSup = () => S.rol === "SUPERVISOR";
+const puedeVerPrivado = () => !isSup() && S.privDisp;
+const priv = () => puedeVerPrivado() && S.vista === "privado"; // vistaEfectiva
+function flujoPeriodo() {
+  if (S.periodo === "acumulado") return MESES.reduce((a, m) => [a[0] + m.e, a[1] + m.p], [0, 0]);
+  const w = PERIODOS[S.periodo].weeks;
+  return SEM.filter(x => w.includes(x.s)).reduce((a, x) => [a[0] + x.e, a[1] + x.p], [0, 0]);
+}
+const byName = (a, b) => a.nombre.localeCompare(b.nombre, "es");
+const obrasGeneral = () => [...OBRAS].sort((a, b) => SALUD[a.salud].rank - SALUD[b.salud].rank || byName(a, b));
+const obrasPrivado = () => [...OBRAS].sort((a, b) => (a.desv == null) - (b.desv == null) || (b.desv ?? 0) - (a.desv ?? 0) || byName(a, b));
+const obrasSup = () => [...OBRAS].sort((a, b) => (a.semSinAvance == null) - (b.semSinAvance == null) || (b.semSinAvance ?? 0) - (a.semSinAvance ?? 0) || byName(a, b));
+const conAvance = () => OBRAS.filter(o => o.fis != null);
+
+/* ======================= Controles y shell ======================= */
+function renderProto() {
+  document.getElementById("pc-rol").innerHTML = "<span>Rol</span>" + ["DIRECTOR", "ADMINISTRADOR", "SUPERVISOR"].map(r =>
+    `<button class="pbtn" data-act="rol" data-v="${r}" aria-pressed="${S.rol === r}">${r[0] + r.slice(1).toLowerCase()}</button>`).join("");
+  const p = document.getElementById("pc-priv");
+  p.setAttribute("aria-pressed", puedeVerPrivado()); p.disabled = isSup();
+  p.title = isSup() ? "El rol Supervisor no tiene acceso a información privada" : "Simula: tope de rol + switch personal + privadoHabilitado de la Empresa";
+  document.getElementById("pc-brand").innerHTML = "<span>Marca</span>" + BRANDS.map(([n, h]) =>
+    `<button class="swatch" style="background:${h}" data-act="brand" data-v="${h}" aria-pressed="${S.brand === h}" aria-label="${n}" title="${n} ${h}"></button>`).join("") +
+    `<input type="color" id="pc-color" value="${S.brand}" aria-label="Color libre">`;
+  document.getElementById("pc-theme").innerHTML = "<span>Tema</span>" + [["system", "Sistema"], ["light", "Claro"], ["dark", "Oscuro"]].map(([v, t]) =>
+    `<button class="pbtn" data-act="theme" data-v="${v}" aria-pressed="${S.theme === v}">${t}</button>`).join("");
+  document.getElementById("pc-empty").setAttribute("aria-pressed", S.empty);
+  document.getElementById("pc-new").setAttribute("aria-pressed", S.markNew);
+  const n = document.getElementById("pc-nota");
+  n.setAttribute("aria-pressed", S.nota); n.disabled = !priv();
+  n.title = priv() ? "Muestra u oculta la línea “Utilidad real: en validación”" : "Solo aplica en vista Privado";
+}
+function renderShell() {
+  const p = PERSONAS[S.rol];
+  const items = [["home", "Inicio", true], ["obra", "Control de obra"], ...(isSup() ? [] : [["conta", "Contabilidad"], ["rep", "Reporte general"]]),
+    ["compra", "Compras"], ["cat", "Catálogos"], ["user", "Perfil"]];
+  document.getElementById("side").innerHTML = `
+    <div class="org"><span class="logo">CD</span><div><b>Constructora Demo</b><small>Arqento</small></div></div>
+    <nav class="nav">${items.map(([i, t, a]) => `<a href="#" ${a ? 'aria-current="page"' : ""}>${ic(i)}${t}</a>`).join("")}</nav>
+    <div class="me"><span class="avatar">${p.ini}</span><div>${p.completo}<small>${p.rol}</small></div></div>`;
+  document.getElementById("top-av").textContent = p.ini;
+}
+
+/* ======================= Encabezado ======================= */
+function header() {
+  const p = PERSONAS[S.rol];
+  const vistaSeg = puedeVerPrivado() ? `<div class="seg" role="group" aria-label="Vista">
+      <button data-act="vista" data-v="general" aria-pressed="${!priv()}">General</button>
+      <button class="priv" data-act="vista" data-v="privado" aria-pressed="${priv()}">${ic("lock")}Privado</button></div>` : "";
+  // En Privado todo es "a la fecha": el selector de periodo no tendría efecto, se sustituye por un texto.
+  const perSeg = priv() ? `<span class="alafecha">Todo a la fecha</span>` :
+    `<div class="seg periods" role="group" aria-label="Periodo">${Object.entries(PERIODOS).map(([k, v]) =>
+      `<button data-act="periodo" data-v="${k}" aria-pressed="${S.periodo === k}">${v.t}</button>`).join("")}</div>`;
+  return `<div class="head">
+      <div><h1>Buenas tardes, ${p.nombre}</h1><p>Constructora Demo · Semana 41 · 5–11 oct 2026</p></div>
+      <div class="controls">${vistaSeg}${perSeg}</div></div>
+    ${priv() ? `<div class="privbar" role="status">${ic("lock")}<span><b>Vista privada:</b> se muestran costos reales y rentabilidad.</span><button data-act="vista" data-v="general">Cambiar a General</button></div>` : ""}`;
+}
+
+/* ======================= Vista General ======================= */
+function kpisGeneral() {
+  const [ent, sal] = S.empty ? [0, 0] : flujoPeriodo(), neto = ent - sal, dl = DELTA[S.periodo];
+  return `<section class="kpis a-kpi" aria-label="Indicadores">
+    <a class="kpi" href="#"><span class="kpi-label">Por pagar</span>
+      <div class="kpi-pair"><small>Obras</small><span class="kpi-value num">${S.empty ? "—" : money(PP_OBRAS)}</span></div>
+      <div class="kpi-pair"><small>Empresa</small><span class="second num">${S.empty ? "—" : money(PP_EMPRESA)}</span></div>
+      ${S.empty ? `<span class="kpi-sub">Sin pendientes</span>` : `<span class="badge b-bad">${ic("clock")}Más antiguo: 16 días</span>`}
+      <span class="kpi-sub mini">A la fecha</span></a>
+    <a class="kpi" href="#"><span class="kpi-label">Por cobrar</span>
+      <span class="kpi-value num">${S.empty ? "—" : money(POR_COBRAR)}</span>
+      <span class="kpi-sub">${S.empty ? "Sin pendientes" : "5 estimaciones emitidas"}</span>
+      <span class="kpi-sub mini">A la fecha</span></a>
+    <a class="kpi" href="#"><span class="kpi-label">${enCorreccion("Flujo neto de obras", "D2")}</span>
+      <span class="kpi-value num ${S.empty ? "" : neto >= 0 ? "pos" : "neg"}">${S.empty ? "—" : signed(neto)}</span>
+      <span class="kpi-sub">${S.empty ? "Sin cobros ni pagos en este periodo" : `${neto >= 0 ? "Entró más de lo que salió" : "Salió más de lo que entró"} · ${PERIODOS[S.periodo].label}`}</span>
+      <span class="kpi-sub mini">Cobros y aportaciones menos pagos de obra liquidados</span></a>
+    ${avanceCell()}
+  </section>`;
+}
+function avanceCell() {
+  const dl = DELTA[S.periodo];
+  return `<a class="kpi" href="#"><span class="kpi-label">Avance físico</span>
+      <span class="kpi-value">${S.empty ? "—" : "52.4<span class='unit'> %</span>"}</span>
+      ${S.empty ? `<span class="kpi-sub">Sin obras activas</span>` : `
+      <div class="gauge" role="img" aria-label="Avance físico 52.4 %"><i class="${S.first ? "grow-x" : ""}" style="width:52.4%"></i></div>
+      ${dl && !priv() ? `<span class="delta">${ic("up")}+${dl[0]} pp ${dl[1]}</span>` : `<span class="kpi-sub mini">${priv() ? "A la fecha" : "Variación disponible en Semana y Mes"}</span>`}
+      <span class="kpi-sub mini">1 obra con precios incompletos</span>`}</a>`;
+}
+function flujoPanel() {
+  const acum = S.periodo === "acumulado";
+  let body;
+  if (S.empty) body = `<div class="empty"><b>Sin cobros ni pagos registrados en este periodo.</b>Aquí verás las entradas y los pagos de obra.</div>`;
+  else if (S.tabla.flujo) body = `<div style="overflow-x:auto"><table class="dtable num"><thead><tr><th>${acum ? "Mes" : "Semana"}</th><th class="r">Entradas</th><th class="r">Pagos de obra</th><th class="r">Neto</th></tr></thead>
+      <tbody>${flowData().map(r => `<tr><td>${r.title}</td><td class="r">${money(r.e)}</td><td class="r">${money(r.p)}</td><td class="r">${signed(r.e - r.p)}</td></tr>`).join("")}</tbody></table></div>`;
+  else body = `<div class="legend"><span><i class="sw" style="background:var(--brand-chart)"></i>Entradas</span><span><i class="sw" style="background:var(--series-2)"></i>Pagos de obra</span><span><i class="sw line"></i>Neto</span></div><div class="chart" id="flow-chart"></div>`;
+  return `<section class="panel a-main" aria-labelledby="flujo-h">
+    <div class="panel-h"><div><h2 id="flujo-h">${nuevo("Entradas y salidas", "B1")}</h2>
+      <p>${acum ? "Últimos 12 meses" : `Últimas 10 semanas · ${PERIODOS[S.periodo].label} resaltado`} · movimientos reales de efectivo de obras</p></div>
+      ${S.empty ? "" : `<button class="linkbtn" data-act="tabla" data-v="flujo">${S.tabla.flujo ? "Ver como gráfica" : "Ver como tabla"}</button>`}</div>
+    ${body}</section>`;
+}
+function flowData() {
+  if (S.periodo === "acumulado") return MESES.map(m => ({ x: m.k, title: m.t, e: m.e, p: m.p, hi: true }));
+  const w = PERIODOS[S.periodo].weeks;
+  return SEM.map(x => ({ x: "S" + x.s, title: `Semana ${x.s} · ${weekRange(x.s)}${x.s === 41 ? " (en curso)" : ""}`, e: x.e, p: x.p, hi: w.includes(x.s) }));
+}
+function obrasGeneralPanel() {
+  if (S.empty) return emptyObras("a-side");
+  const all = obrasGeneral(), rows = S.verObras ? all : all.slice(0, 5);
+  return `<section class="panel a-side" aria-labelledby="ob-h">
+    <div class="panel-h"><div><h2 id="ob-h">Obras</h2><p>6 activas · 1 pausada</p></div>
+      ${all.length > 5 ? `<button class="linkbtn" data-act="obras">${S.verObras ? "Ver menos" : `Ver las ${all.length}`}</button>` : ""}</div>
+    <div class="olist">${rows.map((o, i) => {
+      const tip = `<h4>${esc(o.nombre)}</h4>${o.fis == null ? `<p>Precios incompletos: ${o.incompleto}</p>` : `<div class="tr"><span>Avance físico</span><b>${o.fis.toFixed(1)} %</b></div><div class="tr"><span>Facturado</span><b>${o.fac.toFixed(1)} %</b></div>`}<p>${esc(o.razon)}</p>`;
+      return `<a class="orow" href="#" data-tip="${esc(tip)}">
+        <span class="orow-h"><b>${o.nombre}</b>${pill(o.salud)}</span>
+        ${o.fis == null ? `<span class="orow-m">Precios incompletos · ${o.incompleto}</span>` :
+          `<span class="orow-b"><span class="gauge"><i class="${S.first ? "grow-x" : ""}" style="width:${o.fis}%;animation-delay:${i * 30}ms"></i></span><span class="num">${o.fis} %</span></span>`}
+        <span class="orow-m">${nuevo(o.razon, "B13")}</span></a>`;
+    }).join("")}</div>
+    <p class="panel-foot">Ordenadas por estado y luego por nombre. El estado no usa información privada.</p></section>`;
+}
+
+/* ======================= Vista Privada ======================= */
+function kpisPrivado() {
+  const ej = conAvance().reduce((a, o) => a + o.ejercido, 0), pr = OBRAS.reduce((a, o) => a + o.presup, 0);
+  const adel = conAvance().filter(o => o.desv > UMBRAL_PP).sort((a, b) => b.desv - a.desv);
+  return `<section class="kpis k3 a-kpi" aria-label="Indicadores privados">
+    <a class="kpi" href="#"><span class="kpi-label">Utilidad presupuestada</span>
+      <span class="kpi-value num">${S.empty ? "—" : money(UTIL_PRESUP)}</span>
+      <span class="kpi-sub">${S.empty ? "Sin obras activas" : `Margen <b>${MARGEN_PRESUP.toFixed(1)} %</b> · línea base`}</span>
+      <span class="kpi-sub mini">Contratos menos presupuesto de costo · a la fecha</span></a>
+    <a class="kpi" href="#"><span class="kpi-label">${nuevo("Costo pagado frente al presupuesto", "B2")}</span>
+      <span class="kpi-value num">${S.empty ? "—" : money(ej)}</span>
+      ${S.empty ? `<span class="kpi-sub">Sin costos registrados</span>` : `
+      <span class="kpi-sub">de <b class="num">${money(pr)}</b> de presupuesto de costo</span>
+      <div class="gauge" role="img" aria-label="${(ej / pr * 100).toFixed(1)} % ejercido"><i class="${S.first ? "grow-x" : ""}" style="width:${ej / pr * 100}%"></i></div>
+      <span class="kpi-sub mini">${(ej / pr * 100).toFixed(1)} % ejercido · pagos liquidados y puente, sin gasto aprobado no pagado</span>`}</a>
+    <a class="kpi" href="#"><span class="kpi-label">Obras con costo adelantado al avance</span>
+      <span class="kpi-value">${S.empty ? "—" : `${adel.length} <span class="unit">de ${conAvance().length}</span>`}</span>
+      ${S.empty ? "" : adel.length ? `<span class="badge b-warn">${ic("triangle")}${adel[0].nombre} · ${fmtGap(adel[0].desv)}</span>` : `<span class="kpi-sub">Ninguna supera el umbral</span>`}
+      <span class="kpi-sub mini">${nuevo(`Umbral: ${UMBRAL_PP} pp entre % ejercido y % físico`, "B3")}</span></a>
+  </section>
+  ${S.nota && !S.empty ? `<p class="validacion a-kpi" style="grid-column:span 12">Utilidad real: en validación (consistencia de IVA y de bases de ingreso y costo). No se muestra hasta confirmarse.</p>` : ""}`;
+}
+function costoPanel() {
+  let body;
+  const rows = [...OBRAS].sort((a, b) => b.presup - a.presup), max = Math.max(...OBRAS.map(o => o.presup));
+  if (S.empty) body = `<div class="empty"><b>Aún no hay obras activas.</b>Aquí verás cuánto se ha pagado de cada presupuesto.</div>`;
+  else if (S.tabla.costo) body = `<div style="overflow-x:auto"><table class="dtable num"><thead><tr><th>Obra</th><th class="r">Costo pagado</th><th class="r">Presupuesto de costo</th><th class="r">Ejercido</th></tr></thead>
+      <tbody>${rows.map(o => `<tr><td>${o.nombre}</td><td class="r">${money(o.ejercido)}</td><td class="r">${money(o.presup)}</td><td class="r">${(o.ejercido / o.presup * 100).toFixed(1)} %</td></tr>`).join("")}</tbody></table></div>`;
+  else body = `<div class="legend"><span><i class="sw" style="background:var(--brand-chart)"></i>Costo pagado</span><span><i class="sw" style="background:var(--brand-track)"></i>Presupuesto de costo</span></div>
+    <div class="cbars" role="list">${rows.map((o, i) => {
+      const tip = `<h4>${esc(o.nombre)}</h4><div class="tr"><span>Costo pagado</span><b>${money(o.ejercido)}</b></div><div class="tr"><span>Presupuesto de costo</span><b>${money(o.presup)}</b></div><div class="tr"><span>Ejercido</span><b>${(o.ejercido / o.presup * 100).toFixed(1)} %</b></div>`;
+      return `<div class="crow" role="listitem" tabindex="0" data-tip="${esc(tip)}">
+        <span class="nm">${o.nombre}</span>
+        <span class="ctrack"><i class="p" style="width:${o.presup / max * 100}%"></i><i class="c ${S.first ? "grow-x" : ""}" style="width:${o.ejercido / max * 100}%;animation-delay:${i * 30}ms"></i></span>
+        <span class="vals"><span><b class="num">${money(o.ejercido)}</b> de <span class="num">${money(o.presup)}</span></span><span class="num">${(o.ejercido / o.presup * 100).toFixed(0)} %</span></span>
+      </div>`; }).join("")}</div>
+    <p class="panel-foot">Escala común: la barra clara es el tamaño del presupuesto de costo de cada obra.</p>`;
+  return `<section class="panel a-main" aria-labelledby="co-h">
+    <div class="panel-h"><div><h2 id="co-h">Costo pagado frente al presupuesto por obra</h2><p>Exposición en dinero · a la fecha</p></div>
+      ${S.empty ? "" : `<button class="linkbtn" data-act="tabla" data-v="costo">${S.tabla.costo ? "Ver como gráfica" : "Ver como tabla"}</button>`}</div>
+    ${body}</section>`;
+}
+function desviacionPanel() {
+  if (S.empty) return emptyObras("a-side");
+  const all = obrasPrivado(), rows = S.verObras ? all : all.slice(0, 5);
+  return `<section class="panel a-side" aria-labelledby="de-h">
+    <div class="panel-h"><div><h2 id="de-h">Desviación por obra</h2><p>Avance físico frente a % ejercido</p></div>
+      ${all.length > 5 ? `<button class="linkbtn" data-act="obras">${S.verObras ? "Ver menos" : `Ver las ${all.length}`}</button>` : ""}</div>
+    <div class="legend"><span><i class="sw" style="background:var(--brand-chart)"></i>Avance físico</span><span><i class="sw" style="width:2px;height:12px;background:var(--fg)"></i>% ejercido</span></div>
+    <div class="olist">${rows.map((o, i) => {
+      if (o.desv == null) return `<div class="orow" tabindex="0"><span class="orow-h"><b>${o.nombre}</b></span><span class="orow-m">Precios incompletos · sin desviación calculable</span></div>`;
+      const warn = o.desv > UMBRAL_PP;
+      const tip = `<h4>${esc(o.nombre)}</h4><div class="tr"><span>Avance físico</span><b>${o.fis.toFixed(1)} %</b></div><div class="tr"><span>% ejercido</span><b>${o.pctEj.toFixed(1)} %</b></div><div class="tr"><span>Desviación</span><b>${fmtGap(o.desv, 1)}</b></div>`;
+      return `<div class="orow" tabindex="0" data-tip="${esc(tip)}">
+        <span class="orow-h"><b>${o.nombre}</b><span class="gap-t num ${warn ? "warn" : ""}">${warn ? ic("triangle") : ""}${fmtGap(o.desv)}</span></span>
+        <span class="btrack"><i class="f ${S.first ? "grow-x" : ""}" style="width:${o.fis}%;animation-delay:${i * 30}ms"></i><i class="m" style="left:${o.pctEj}%"></i></span>
+        <span class="orow-m num ${warn ? "warn" : ""}">${o.fis} % físico · ${o.pctEj} % ejercido${warn ? " · costo adelantado" : ""}</span></div>`;
+    }).join("")}</div>
+    <p class="panel-foot">Ordenadas por desviación, de mayor a menor. Se resalta arriba de ${UMBRAL_PP} pp.</p></section>`;
+}
+
+/* ======================= Supervisor ======================= */
+function kpisSup() {
+  return `<section class="kpis sup2 a-kpi" aria-label="Indicadores">
+    <a class="kpi" href="#"><span class="kpi-label">Obras activas</span><span class="kpi-value">${S.empty ? "—" : "6"}</span>
+      <span class="kpi-sub">${S.empty ? "Sin obras activas" : "5 en ejecución · 1 por iniciar · 1 pausada"}</span></a>
+    ${avanceCell()}
+    <a class="kpi" href="#"><span class="kpi-label">${nuevo("Obras sin avance reciente", "B6")}</span><span class="kpi-value">${S.empty ? "—" : "1"}</span>
+      <span class="kpi-sub">${S.empty ? "" : "2 semanas o más sin avance"}</span></a>
+    <a class="kpi" href="#"><span class="kpi-label">${nuevo("Avance por aprobar", "B5")}</span><span class="kpi-value">${S.empty ? "—" : "14 <span class='unit'>conceptos</span>"}</span>
+      <span class="kpi-sub">${S.empty ? "" : "En 3 obras"}</span></a>
+  </section>`;
+}
+function obrasSupPanel() {
+  if (S.empty) return emptyObras("a-main");
+  const all = obrasSup(), rows = S.verObras ? all : all.slice(0, 5);
+  const ultimo = o => o.semSinAvance == null ? "Sin avance registrado" : o.semSinAvance === 0 ? "Esta semana" : o.semSinAvance === 1 ? "Hace 1 semana" : `Hace ${o.semSinAvance} semanas`;
+  return `<section class="panel a-main" style="grid-column:span 12" aria-labelledby="os-h">
+    <div class="panel-h"><div><h2 id="os-h">Avance y último avance por obra</h2><p>Ordenadas por tiempo sin avance</p></div>
+      <div style="display:flex;gap:16px;align-items:center">${all.length > 5 ? `<button class="linkbtn" data-act="obras">${S.verObras ? "Ver menos" : `Ver las ${all.length}`}</button>` : ""}
+      <button class="btn-brand" title="Visible solo con el permiso de reportar avance; deshabilitado en obras pausadas">${ic("pencil")}Capturar avance</button></div></div>
+    <div class="olist">${rows.map((o, i) => `<a class="orow" href="#">
+        <span class="orow-h"><b>${o.nombre}</b><span class="orow-m ${o.semSinAvance >= 2 ? "warn" : ""}">${o.semSinAvance >= 2 ? ic("clock") + " " : ""}Último avance: ${ultimo(o)}</span></span>
+        ${o.fis == null ? `<span class="orow-m">Por iniciar · precios incompletos</span>` :
+          `<span class="orow-b"><span class="gauge"><i class="${S.first ? "grow-x" : ""}" style="width:${o.fis}%;animation-delay:${i * 30}ms"></i></span><span class="num">${o.fis} %</span></span>`}</a>`).join("")}</div>
+  </section>`;
+}
+
+/* ======================= Comunes ======================= */
+function emptyObras(cls) {
+  return `<section class="panel ${cls}"><div class="panel-h"><div><h2>Obras</h2></div></div>
+    <div class="empty"><b>Aún no hay obras activas.</b>Crea una en Control de obra para ver aquí su avance.<br><br><button class="btn-brand">Ir a Control de obra</button></div></section>`;
+}
+function alertasPanel() {
+  const src = S.empty ? [] : isSup() ? ALERTAS_SUP : ALERTAS;
+  const rows = S.verAlertas ? src : src.slice(0, 3);
+  return `<section class="panel a-aten" aria-labelledby="at-h">
+    <div class="panel-h"><div><h2 id="at-h">Requiere tu atención</h2><p>${src.length ? (src.length > 3 ? `${Math.min(3, rows.length) === rows.length ? rows.length : 3} de ${src.length} · por gravedad y urgencia` : `${src.length} pendiente${src.length > 1 ? "s" : ""}`) : "Al día"}</p></div>
+      ${src.length > 3 ? `<button class="linkbtn" data-act="alertas" aria-expanded="${S.verAlertas}">${S.verAlertas ? "Ver menos" : `Ver las ${src.length}`}</button>` : ""}</div>
+    ${!src.length ? `<div class="empty"><b>Nada pendiente.</b>Aquí aparecerá lo que requiera revisión.</div>` :
+    `<div class="alist">${rows.map(([sev, i, b, s]) => `<a class="alert ${sev}" href="#"><span class="stripe"></span><span class="ic">${ic(i)}</span>
+      <span><span class="sev">${sev === "bad" ? "Requiere acción" : "Atención"}</span><b>${b}</b><small>${s}</small></span></a>`).join("")}</div>`}
+  </section>`;
+}
+
+/* ======================= Gráfica de flujo (SVG) ======================= */
+let flowIdx = -1;
+function drawFlow() {
+  const el = document.getElementById("flow-chart"); if (!el) return;
+  let data = flowData(); const W = el.clientWidth;
+  if (W < 480 && S.periodo !== "acumulado") data = data.slice(-6);
+  const H = W < 480 ? 200 : W < 600 ? 260 : 360, m = { l: 52, r: 8, t: 10, b: 26 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const nets = data.map(d => d.e - d.p), hi = Math.max(...data.map(d => Math.max(d.e, d.p))), lo = Math.min(0, ...nets);
+  const step = niceStep((hi - lo) / 4), yMax = Math.ceil(hi / step) * step, yMin = Math.floor(lo / step) * step;
+  const y = v => m.t + (yMax - v) / (yMax - yMin) * ih;
+  const bw = iw / data.length, w = Math.max(4, Math.min(18, (bw - 14) / 2)), cx = i => m.l + bw * i + bw / 2;
+  const bar = (x, v, fill, op, i) => { if (v <= 0) return ""; const y0 = y(0), y1 = y(v), r = Math.min(3, y0 - y1);
+    return `<path class="b" d="M${x},${y0}V${y1 + r}q0,-${r} ${r},-${r}h${w - 2 * r}q${r},0 ${r},${r}V${y0}z" style="fill:${fill};opacity:${op};animation-delay:${i * 30}ms"/>`; };
+  let g = "";
+  for (let v = yMin; v <= yMax + 1; v += step) g += `<line class="${v === 0 ? "zero" : "grid-l"}" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${compact(v)}</text>`;
+  data.forEach((d, i) => { const op = d.hi ? 1 : .4;
+    g += bar(cx(i) - w - 1, d.e, "var(--brand-chart)", op, i) + bar(cx(i) + 1, d.p, "var(--series-2)", op, i);
+    if (W >= 400 || i % 2 === (data.length - 1) % 2) g += `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle" style="${d.hi && S.periodo !== "acumulado" ? "fill:var(--fg);font-weight:500" : ""}">${d.x}</text>`; });
+  g += `<polyline points="${data.map((d, i) => `${cx(i)},${y(d.e - d.p)}`).join(" ")}" style="fill:none;stroke:var(--fg);stroke-width:2;stroke-linejoin:round;opacity:.85"/>`;
+  data.forEach((d, i) => { g += `<circle cx="${cx(i)}" cy="${y(d.e - d.p)}" r="4" style="fill:var(--fg);stroke:var(--surface);stroke-width:2;opacity:${d.hi ? 1 : .55}"/>`; });
+  g += `<line class="xhair" id="xhair" y1="${m.t}" y2="${m.t + ih}" x1="-10" x2="-10" style="opacity:0"/>`;
+  data.forEach((d, i) => { g += `<rect x="${m.l + bw * i}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent" data-i="${i}"/>`; });
+  el.innerHTML = `<svg width="${W}" height="${H}" tabindex="0" role="img" aria-label="Entradas y salidas, ${data.length} ${S.periodo === "acumulado" ? "meses" : "semanas"}. Usa las flechas para recorrer los valores." class="${S.first ? "bars-grow" : ""}">${g}</svg>`;
+  const svg = el.firstChild;
+  const show = i => { flowIdx = i; const d = data[i], xh = svg.querySelector("#xhair"); xh.setAttribute("x1", cx(i)); xh.setAttribute("x2", cx(i)); xh.style.opacity = 1;
+    const r = svg.getBoundingClientRect();
+    showTip(`<h4>${d.title}</h4><div class="tr"><span><i class="sw" style="background:var(--brand-chart)"></i>Entradas</span><b>${money(d.e)}</b></div>
+      <div class="tr"><span><i class="sw" style="background:var(--series-2)"></i>Pagos de obra</span><b>${money(d.p)}</b></div>
+      <div class="tr"><span><i class="sw line"></i>Neto</span><b>${signed(d.e - d.p)}</b></div>${d.e === 0 ? `<p>Sin cobros esta semana</p>` : ""}`, r.left + cx(i), r.top + y(Math.max(d.e, d.p))); };
+  const hide = () => { svg.querySelector("#xhair").style.opacity = 0; hideTip(); };
+  svg.addEventListener("mousemove", e => { const t = e.target.closest("rect[data-i]"); if (t) show(+t.dataset.i); });
+  svg.addEventListener("mouseleave", hide);
+  svg.addEventListener("focus", () => show(flowIdx >= 0 && flowIdx < data.length ? flowIdx : data.length - 1));
+  svg.addEventListener("blur", hide);
+  svg.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); show(Math.min(data.length - 1, flowIdx + 1)); }
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); show(Math.max(0, flowIdx - 1)); }
+    if (e.key === "Escape") hide(); });
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
+
+/* ======================= Tooltip ======================= */
+const tipEl = document.getElementById("tip");
+function showTip(html, x, y) {
+  tipEl.innerHTML = html; tipEl.classList.add("on");
+  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  let left = Math.min(window.innerWidth - w - 8, Math.max(8, x - w / 2)), top = y - h - 12;
+  if (top < 52) top = y + 16;
+  tipEl.style.left = left + "px"; tipEl.style.top = top + "px";
+}
+function hideTip() { tipEl.classList.remove("on"); }
+function bindTips() {
+  document.querySelectorAll("[data-tip]").forEach(r => {
+    const on = () => { const b = r.getBoundingClientRect(); showTip(r.dataset.tip, b.left + b.width / 2, b.top); };
+    r.addEventListener("mouseenter", on); r.addEventListener("focus", on);
+    r.addEventListener("mouseleave", hideTip); r.addEventListener("blur", hideTip);
+  });
+}
+
+/* ======================= Render ======================= */
+function render() {
+  hideTip(); renderProto(); renderShell();
+  document.body.classList.toggle("mark-new", S.markNew);
+  let secs;
+  if (isSup()) secs = kpisSup() + obrasSupPanel() + alertasPanel();
+  else if (priv()) secs = kpisPrivado() + costoPanel() + desviacionPanel() + alertasPanel();
+  else secs = kpisGeneral() + flujoPanel() + obrasGeneralPanel() + alertasPanel();
+  document.getElementById("root").innerHTML = header() + `<div class="grid">${secs}</div>
+    <p class="proto-foot">Prototipo V2 con datos ficticios. “Marcar datos nuevos” señala lo que hoy no calcula Arqento (B1, B2, B3, B5, B6, B13) y el flujo neto, cuya definición cambia con la corrección D2. La Utilidad real no se muestra hasta validar su fórmula (D6). El resultado contable queda fuera de Inicio hasta coincidir con Contabilidad.</p>`;
+  drawFlow(); bindTips(); S.first = false;
+}
+function applyBrand() { document.getElementById("app").style.setProperty("--brand", S.brand); }
+function applyTheme() { if (S.theme === "system") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", S.theme); }
+
+document.addEventListener("click", e => {
+  const a = e.target.closest("a[href='#']"); if (a) e.preventDefault();
+  const t = e.target.closest("[data-act]"); if (!t) return;
+  const v = t.dataset.v;
+  switch (t.dataset.act) {
+    case "rol": S.rol = v; S.verObras = false; S.verAlertas = false; break;
+    case "vista": S.vista = v; S.verObras = false; break;
+    case "periodo": S.periodo = v; break;
+    case "tabla": S.tabla[v] = !S.tabla[v]; break;
+    case "alertas": S.verAlertas = !S.verAlertas; break;
+    case "obras": S.verObras = !S.verObras; break;
+    case "brand": S.brand = v; applyBrand(); renderProto(); return;
+    case "theme": S.theme = v; applyTheme(); renderProto(); return;
+    case "drawer": document.getElementById("app").classList.toggle("drawer"); return;
+    default: return;
+  }
+  render();
+});
+document.getElementById("pc-priv").addEventListener("click", () => { S.privDisp = !S.privDisp; render(); });
+document.getElementById("pc-empty").addEventListener("click", () => { S.empty = !S.empty; render(); });
+document.getElementById("pc-new").addEventListener("click", () => { S.markNew = !S.markNew; renderProto(); document.body.classList.toggle("mark-new", S.markNew); });
+document.getElementById("pc-nota").addEventListener("click", () => { S.nota = !S.nota; render(); });
+document.addEventListener("input", e => { if (e.target.id === "pc-color") { S.brand = e.target.value; applyBrand(); } });
+document.addEventListener("change", e => { if (e.target.id === "pc-color") renderProto(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.getElementById("app").classList.remove("drawer"); });
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(drawFlow, 120); });
+
+try {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (PERSONAS[q.get("rol")]) S.rol = q.get("rol");
+  if (["general", "privado"].includes(q.get("vista"))) S.vista = q.get("vista");
+  if (PERIODOS[q.get("periodo")]) S.periodo = q.get("periodo");
+  if (["system", "light", "dark"].includes(q.get("theme"))) S.theme = q.get("theme");
+  if (/^[0-9a-f]{6}$/i.test(q.get("brand") || "")) S.brand = "#" + q.get("brand");
+  if (q.get("vacio") === "1") S.empty = true;
+  if (q.get("nuevos") === "1") S.markNew = true;
+} catch (e) {}
+applyBrand(); applyTheme(); render();
+</script>
+</body>
+</html>

@@ -104,10 +104,17 @@ async function main() {
   const empresa = await db.empresa.upsert({
     where: { id: "conkuali" },
     update: {},
+    // privadoHabilitado: true — Conkuali usa la capa Privada. La migración
+    // 20260901090000_master_empresa_modulos solo lo activa si la fila YA
+    // existe; en una base nueva (migraciones primero, seed después, como
+    // PRD en septiembre 2026) ese UPDATE no encontraba nada y Conkuali
+    // nacía sin Privado. Solo en `create`: nunca pisa una decisión posterior
+    // de Master sobre una Empresa existente.
     create: {
       id: "conkuali",
       nombre: "Grupo Conkuali",
       planId: plan.id,
+      privadoHabilitado: true,
     },
   });
 

@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/server/auth/dal";
 import { Card } from "@/components/ui/card";
+import { obtenerModulosVisibles } from "@/lib/server/permisos";
 import {
   obtenerResumenEjecutivo,
   type VistaDashboard,
@@ -36,7 +37,12 @@ export default async function DashboardPage({
   const vista = aVista(vistaParam);
   const periodo = aPeriodo(periodoParam);
 
-  const resumen = await obtenerResumenEjecutivo(usuario, vista, periodo);
+  // Módulos visibles (Empresa + rol): Inicio solo enlaza a pantallas que el
+  // usuario puede abrir — el resto se muestra como texto, sin enlace.
+  const [resumen, modulos] = await Promise.all([
+    obtenerResumenEjecutivo(usuario, vista, periodo),
+    obtenerModulosVisibles(usuario),
+  ]);
 
-  return <InicioView resumen={resumen} />;
+  return <InicioView resumen={resumen} modulosVisibles={modulos.map((m) => m.clave)} />;
 }

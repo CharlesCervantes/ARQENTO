@@ -26,6 +26,7 @@ export default async function PerfilPage() {
         rolLabel={NOMBRE_ROL[usuario.rol] ?? usuario.rol}
         mostrarPrivacidad={puedeConfigurarVistaPrivada(usuario)}
         vistaPrivadaActivaInicial={usuario.vistaPrivadaActiva}
+        privadoEmpresaHabilitado={usuario.empresa?.privadoHabilitado ?? false}
       />
 
       {whatsapp && <WhatsappVinculacion estado={whatsapp} puedeAdministrar={puedeAdministrarWhatsappEmpresa(usuario)} />}

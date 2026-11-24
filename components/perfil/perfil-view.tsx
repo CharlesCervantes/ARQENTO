@@ -18,12 +18,14 @@ export function PerfilView({
   rolLabel,
   mostrarPrivacidad,
   vistaPrivadaActivaInicial,
+  privadoEmpresaHabilitado,
 }: {
   nombre: string;
   email: string;
   rolLabel: string;
   mostrarPrivacidad: boolean;
   vistaPrivadaActivaInicial: boolean;
+  privadoEmpresaHabilitado: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -37,7 +39,10 @@ export function PerfilView({
 
       {mostrarPrivacidad && (
         <Seccion titulo="Privacidad">
-          <VistaPrivadaSwitch vistaPrivadaActivaInicial={vistaPrivadaActivaInicial} />
+          <VistaPrivadaSwitch
+            vistaPrivadaActivaInicial={vistaPrivadaActivaInicial}
+            privadoEmpresaHabilitado={privadoEmpresaHabilitado}
+          />
         </Seccion>
       )}
     </div>
@@ -117,10 +122,17 @@ function FormularioPassword() {
   );
 }
 
+// La preferencia es solo una de las tres condiciones de acceso a la capa
+// privada (rol + preferencia + Empresa.privadoHabilitado, ver
+// puedeVerInformacionPrivada). Si la Empresa no la tiene habilitada, se dice
+// explícitamente — antes el texto «Activada. Puedes visualizar información
+// privada» aparecía aunque Privado no se mostrara en ningún lado.
 function VistaPrivadaSwitch({
   vistaPrivadaActivaInicial,
+  privadoEmpresaHabilitado,
 }: {
   vistaPrivadaActivaInicial: boolean;
+  privadoEmpresaHabilitado: boolean;
 }) {
   const [activa, setActiva] = useState(vistaPrivadaActivaInicial);
   const [pending, startTransition] = useTransition();
@@ -154,11 +166,21 @@ function VistaPrivadaSwitch({
         </button>
       </div>
 
+      {!privadoEmpresaHabilitado && (
+        <p className="mt-2 text-xs text-amber-700">
+          La capa Privada no está habilitada para tu empresa: aunque actives esta opción, la
+          información privada no se mostrará hasta que un usuario Master la habilite en
+          Portal Master → Empresas.
+        </p>
+      )}
+
       <p className="mt-2 text-xs text-[var(--muted)]">
         {activa ? (
           <>
-            <strong className="text-[var(--foreground)]">Activada.</strong> Puedes visualizar
-            información privada y financiera según tus permisos.
+            <strong className="text-[var(--foreground)]">Activada.</strong>{" "}
+            {privadoEmpresaHabilitado
+              ? "Puedes visualizar información privada y financiera según tus permisos."
+              : "Tu preferencia queda guardada y surtirá efecto cuando tu empresa tenga Privado habilitado."}
           </>
         ) : (
           <>

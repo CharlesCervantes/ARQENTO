@@ -19,6 +19,7 @@ módulo relacionado.
 | `03-modulo-reporte-general.md` | Especificación detallada del módulo Reporte General (entidades, flujos, reglas) — primer módulo a construir |
 | `05-modulo-contabilidad.md` | Rediseño del módulo Contabilidad: los cuatro ejes (inclusión/reconocimiento/CFDI/movimiento de dinero), Estado de Resultados, Cuentas por Cobrar/Pagar, Bancos/Tesorería |
 | `06-whatsapp-recepcion-comprobantes.md` | Recepción de fotografías y PDF de comprobantes por WhatsApp (Fase 2A): quién envía y quién revisa, Empresa del comprobante, repetidos, recepción interrumpida, límites y descarte |
+| `comercializacion.md` | Módulo de Comercialización (v0.2): cotización de venta → OC de cliente, catálogo de productos y precios, función Vendedor, compras a proveedor, créditos con cuotas para cliente y proveedor, avisos internos, entregas y resultado. Incluye pendientes P1–P8 |
 
 ## Principios no negociables (aplican a todo el sistema)
 1. **No eliminar información histórica.** Todo cambio de estado o monto se preserva; los rechazos se conservan con motivo.

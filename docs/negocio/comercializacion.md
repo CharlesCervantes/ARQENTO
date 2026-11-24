@@ -1,0 +1,292 @@
+# ARQENTO — Módulo de Comercialización
+
+Versión: 0.2 · 16 de noviembre de 2026
+Estado: base funcional para revisión e implementación incremental.
+Ubicación propuesta en el repositorio: `docs/negocio/comercializacion.md`.
+
+## 1. Propósito y autoridad del documento
+
+Controlar la comercialización de materiales a obras: cotizar, registrar la aceptación del cliente, comprar al proveedor, controlar créditos y abonos, documentar entregas y consultar resultados internos. La experiencia debe permitir actualizaciones cotidianas en pocos minutos.
+
+Este documento incorpora los comentarios del usuario después de la reunión. Los prototipos anteriores son referencias visuales; este texto reemplaza sus etiquetas o comportamientos cuando exista diferencia. No constituye evidencia de funcionalidad implementada ni de revisión del código actual.
+
+Convenciones:
+- **Confirmado:** solicitado expresamente por el usuario.
+- **Propuesta:** regla recomendada para concretar el alcance; no presentarla como acuerdo de los dueños.
+- **Pendiente:** decisión que debe resolverse antes de implementar la parte afectada. Continuar con las partes independientes.
+
+## 2. Acuerdos confirmados
+
+1. Un módulo habilitable por empresa, con logo y usuarios propios, dentro de Arqento.
+2. Interfaz sencilla: listado, formulario de cotización y detalle. Evitar siete pantallas de navegación y múltiples pestañas.
+3. El botón principal es **Nueva cotización**. Una cotización aceptada se convierte en una **OC** y continúa el seguimiento.
+4. Incorporar **Vendedor** para identificar quién vende.
+5. Seleccionar materiales de un catálogo precargado, editable, con precios modificables.
+6. Solo el Administrador puede modificar el precio al armar una cotización. El vendedor utiliza el precio autorizado, sin edición ni descuentos.
+7. Dos perfiles funcionales iniciales: acceso completo y vendedor, que cotiza y sigue entregas. Se busca reutilizar Administrador y Supervisor si el código lo permite.
+8. Pago directo o crédito tanto para cliente como para proveedor, con opción de pagos en varias fechas desde la primera versión. Cada lado tiene su propio calendario y saldo.
+9. El vendedor solo consulta sus cotizaciones y el seguimiento asociado; no las de otros vendedores.
+10. Las notificaciones iniciales se muestran exclusivamente dentro de Arqento. WhatsApp se evaluará en una fase posterior, posiblemente la semana siguiente, sin fecha comprometida.
+11. Mantener pagos parciales, evidencias y entregas parciales, sin volver a capturar los mismos datos.
+12. Contemplar resultado interno y reparto entre socios. El caso de referencia usa 50/50; abonos a deuda y reservas no deben confundirse.
+
+## 3. Integración con Arqento y límites
+
+- Antes de desarrollar, leer el `AGENTS.md` real, el índice de negocio, decisiones fundamentales y la implementación actual de usuarios, permisos, empresas, proyectos, compras y archivos.
+- Reutilizar infraestructura existente después de inspeccionarla. No asumir nombres de modelos, rutas o enums a partir de este documento.
+- Todo registro pertenece a una empresa. Validar empresa y permisos en servidor, incluyendo relaciones, búsquedas, archivos, descargas y PDFs.
+- Habilitar Comercialización mediante el mecanismo actual de módulos/planes; ocultar y bloquear el acceso si está deshabilitado.
+- No modificar globalmente las facultades del Supervisor de construcción. La capacidad de ver precios de venta y cotizar es específica de Comercialización.
+- No obligar a una obra comercial a crear contratos de construcción, semanas, estimaciones o avances físicos. Verificar si el modelo Proyecto sirve como referencia ligera o requiere una adaptación localizada.
+- No generar duplicados financieros en Compras, Gastos o Contabilidad. Definir un único propietario de cada obligación y movimiento antes de conectar módulos.
+- Reutilizar bitácora, marca, almacenamiento y componentes. Conservar historial y evitar borrados destructivos de registros utilizados.
+- No ejecutar migraciones ni cambiar PRD como consecuencia de leer este archivo. Preparar cambios y pruebas conforme al flujo autorizado del repositorio.
+
+## 4. Significado de OC y flujo comercial
+
+**Propuesta terminológica:** llamar **OC de cliente** a la venta aceptada y **Compra a proveedor** a la adquisición para atenderla. No confundirlas con una sola entidad o un solo saldo.
+
+**Pendiente P1:** confirmar si el folio OC lo genera Arqento, lo proporciona el cliente o se requieren ambos. La cotización aceptada no debe generar automáticamente compras al proveedor sin conocer proveedor, costos y condiciones.
+
+Flujo propuesto:
+1. Crear cotización en borrador con vendedor, cliente, obra y partidas del catálogo.
+2. Completar condiciones y generar PDF para compartir fuera del sistema.
+3. Registrar aceptación y su evidencia/referencia.
+4. Convertir una sola vez a OC de cliente, conservando cotización y versión aceptada.
+5. Registrar compras vinculadas, obligaciones de cobro/pago y entregas.
+6. Registrar abonos y evidencias; consultar saldos y vencimientos.
+7. Cerrar cuando se cumplan condiciones de entrega y liquidación; mantener el historial.
+
+Estados propuestos de cotización: Borrador, Emitida, Aceptada, Rechazada y Cancelada. Vigencia vencida se identifica por fecha; no convertir ni cobrar automáticamente una cotización vencida.
+
+La aceptación debe ser transaccional e idempotente: doble clic o reintento no crea dos OCs. Conservar folios de cotización y OC, fecha, usuario que registra aceptación, vendedor y evidencia. Una cotización no aceptada no aumenta el saldo por cobrar ni compromete una compra.
+
+Después de aceptar, no editar silenciosamente cantidades o precios pactados. Una corrección requiere historial y una revisión controlada que trate efectos sobre pagos, compras y entregas. Para el primer alcance, bloquear esos cambios cuando existan movimientos y resolver ajustes explícitos con administración.
+
+Entrega, cobro y pago son estados independientes. No utilizar un único estado para representar los tres. No inferir que el cliente pagó porque se entregó material, ni que el proveedor recibió pago porque su compra es de contado.
+
+## 5. Experiencia de usuario
+
+### 5.1 Listado único: Comercialización
+
+- Título propuesto: **Cotizaciones y órdenes**.
+- Acción principal: **Nueva cotización**.
+- Filtros sencillos: búsqueda, obra, estado; vendedor para administración.
+- Tabla: folio y tipo (COT/OC), descripción, cliente/obra, vendedor, total, estado comercial y entrega. Saldo y vencimiento según permiso.
+- En borradores, cobro/entrega muestran “No aplica”, no “Cobrado” ni “Completa”.
+- Administrador: indicadores Por cobrar, Por pagar y Entregas pendientes; bloque compacto **Vencimientos** con accesos a los expedientes.
+- Vendedor: indicadores y filas de su alcance; sin costos, saldos de proveedores ni utilidades.
+- Acceso secundario **Productos** dentro del módulo: panel o vista simple de catálogo, no nuevo conjunto de menús.
+
+### 5.2 Nueva cotización
+
+Datos: cliente, obra, descripción, vendedor, fecha, vigencia y condiciones. Crear cliente/obra desde el formulario si tiene permiso. Vendedor se precarga con usuario actual cuando corresponde; administración puede asignarlo. Registrar creador y vendedor por separado.
+
+Partidas: buscador por código/nombre, unidad precargada, cantidad, precio de venta editable solo para Administrador (de solo lectura para vendedor) e importe calculado. Costos internos solo para administración. Subtotal, impuestos y total automáticos. Opciones: Guardar borrador y Guardar/ver cotización.
+
+No exigir pagos, fotos de entrega o proveedor definitivo para guardar un borrador. Validar campos completos al emitir/aceptar. No exigir que el usuario cambie de pantalla para seleccionar productos.
+
+### 5.3 Detalle único
+
+Encabezado con folios, cliente/obra, vendedor, estado y acción Ver cotización. Antes de aceptación: acciones comerciales según permiso. Después: bloques simples de Materiales, Compras vinculadas, Cobros/pagos, Entregas/documentos y Resultado interno. Los bloques sensibles no se envían al vendedor desde servidor.
+
+Las compras pueden mostrarse como filas o sección expandible dentro del detalle. Cada una identifica proveedor, importe, modalidad y próximo vencimiento, con calendario de cuotas expandible. Registrar un pago sobre la compra correcta.
+
+Acciones frecuentes con formularios breves: Registrar cobro, Registrar pago, Registrar entrega y Adjuntar documento. Mostrar inicialmente movimientos recientes y permitir consultar el historial sin salir del expediente.
+
+## 6. Catálogo y precios
+
+**Propuesta de campos mínimos:** código único por empresa, descripción, unidad, precio de venta base, costo de referencia opcional privado, tratamiento de impuesto y activo/inactivo. Proveedor sugerido opcional; no sustituye a la compra real.
+
+Catálogo administrable; productos utilizados se desactivan, no se eliminan con su historial. Definir responsable y archivo de carga inicial; no asumir que la explosión de insumos DUALIA es automáticamente el catálogo de la nueva empresa. Si se importa, validar códigos, unidades, precios y duplicados, con resumen previo de errores.
+
+Reglas propuestas esenciales:
+- Seleccionar producto copia sus datos y precio a la partida como fotografía histórica.
+- Modificar el precio **en la cotización afecta solo esa cotización** por defecto.
+- Actualizar el catálogo es una acción explícita y separada, restringida a administración; no marcarla por defecto al cotizar.
+- Cambiar catálogo no recalcula documentos anteriores ni borradores existentes silenciosamente. Si se ofrece actualizar un borrador, mostrar cambios y requerir una acción explícita.
+- Conservar precio base aplicado y precio final, autor y fecha del cambio. Un descuento no cambia el costo del proveedor.
+- No confundir costo de referencia con costo confirmado de compra. Si falta costo, mostrar resultado incompleto, no asumir costo cero.
+- Servidor valida y calcula totales con decimales adecuados; definir redondeo consistente por partida y documento. No confiar en importes enviados por navegador.
+
+**Confirmado P2:** el vendedor no puede modificar precios, descuentos ni importes calculados, ni mantener el catálogo. Solo Administrador puede ajustar el precio al cotizar. Validar en servidor: rechazar alteraciones de precio por API, importación o duplicación; no basta deshabilitar un campo. Conservar precios previamente autorizados por administración al editar otras partes de una cotización; no volver al precio de catálogo silenciosamente.
+
+## 7. Perfiles y permisos
+
+Reutilización de Administrador/Supervisor: propuesta sujeta a inspección del código. Mostrar “Vendedor” como función dentro del módulo, sin renombrar el rol global Supervisor. El campo vendedor identifica responsabilidad comercial, no concede privilegios.
+
+Matriz propuesta para primera versión:
+
+| Capacidad | Administrador | Supervisor con función vendedor |
+|---|---|---|
+| Consultar expedientes | Toda su empresa | Solo sus cotizaciones y OCs derivadas |
+| Crear/editar cotización no aceptada | Sí | Sí, en su alcance |
+| Seleccionar producto/ver precio de venta | Sí | Sí |
+| Modificar precio en cotización | Sí | No (confirmado) |
+| Mantener catálogo global | Sí | No |
+| Ver costos, margen y reparto | Sí | No |
+| Asignar/reasignar vendedor | Sí | No |
+| Registrar aceptación y convertir a OC | Sí | Pendiente P3 |
+| Consultar/registrar entregas | Sí | Sí, en su alcance |
+| Registrar compras, créditos y pagos | Sí | No por defecto |
+| Ver cobros del cliente o registrarlos | Sí | Pendiente P3; restringido hasta definir |
+| Cancelar, revertir movimientos o cerrar | Sí, con motivo | No por defecto |
+
+Mapear Director/Master conforme a la política existente, sin degradar permisos actuales ni conceder accesos globales nuevos por accidente. Aplicar restricciones en API, exportaciones, PDFs y archivos, no solo ocultando botones. El vendedor no debe poder descargar una factura de proveedor que revele costos mediante una URL conocida.
+
+## 8. Compras y créditos: prioridad funcional
+
+Una venta puede requerir una o varias compras. **Propuesta:** admitir varias compras simples vinculadas desde el detalle; confirmar volumen habitual sin construir comparativas avanzadas ni inventario.
+
+Compra mínima: proveedor, folio/referencia, partidas/cantidades y costos confirmados, subtotal/impuestos/total, fecha de compra, modalidad **Pago directo / Crédito**, documento y condición de pago.
+
+- Pago directo: registrar obligación y pago efectivo por separado; fecha exigible capturada o confirmada. Guardar la compra no significa pagarla.
+- Crédito: calendario de una o varias cuotas, cada una con monto y fecha de vencimiento obligatorios. Capturar fechas explícitas; un generador de plazos sería opcional y no necesario para iniciar.
+- No asumir si el plazo corre desde compra, factura o recepción. En primera versión capturar fechas por cuota. La base de plazo solo queda pendiente si se agrega cálculo automático.
+- Cambiar vencimiento requiere permiso, motivo e historial. Conservar vencimiento original y vigente.
+- Cada compra tiene saldo propio. Mostrar suma en la OC sin perder vencimientos individuales.
+- Abonos reducen saldo; un abono parcial no liquida la obligación ni reinicia su vencimiento.
+- Método (transferencia/efectivo/etc.) es distinto de modalidad (directo/crédito).
+
+**Confirmado:** el cliente también puede tener crédito y pagos en varias fechas. Su calendario de cobro es independiente del calendario de pago al proveedor. Nunca copiar fechas ni compensar saldos automáticamente entre ambos lados.
+
+**Confirmado: múltiples vencimientos incluidos en la primera versión.** Modelar cuotas y aplicaciones de abonos; no simular cuotas como compras ficticias.
+
+Reglas propuestas para hacerlo sencillo:
+- En el mismo detalle, botón “Programar pagos” con filas Fecha / Importe y “Agregar fecha”. Un único pago es un calendario de una cuota.
+- La suma de cuotas debe cuadrar con el total exigible. Si hay anticipo, mostrarlo como parte del total y descontarlo una sola vez; nunca sumar total completo más anticipo.
+- Cada cuota conserva monto original, fecha, importe aplicado, saldo y estado. El saldo de la obligación es la suma de saldos de sus cuotas.
+- Al registrar un abono, proponer aplicación a la cuota pendiente más antigua, mostrar distribución y permitir a administración ajustarla antes de guardar. Esta regla de imputación es una propuesta técnica explícita.
+- Un abono puede cubrir parte de una cuota o varias cuotas de la misma obligación; la suma de aplicaciones debe coincidir con el abono, sin duplicar el movimiento.
+- No sobreaplicar ni mover pagos ya aplicados silenciosamente al reprogramar. Cambios posteriores preservan historial y requieren motivo.
+- Ejemplo: total $12,000, tres cuotas de $4,000. Un abono de $5,000 aplica $4,000 a la primera y $1,000 a la segunda; saldos $0, $3,000 y $4,000, total $7,000. La tercera mantiene su fecha futura aunque la segunda esté vencida.
+
+## 9. Saldos y movimientos
+
+- Saldo cliente = total vigente de OC menos cobros válidos aplicados y ajustes autorizados correspondientes.
+- Saldo proveedor = total vigente de compra menos pagos válidos aplicados y ajustes autorizados correspondientes.
+- Registrar monto, fecha efectiva, método, referencia, comprobante, autor y obligación vinculada.
+- Primera versión propuesta: cada movimiento se aplica a una obligación. Si una transferencia cubre varias, requiere distribución explícita sin duplicar el importe; confirmar P5 antes de ampliar.
+- Evitar doble registro por reintento y validar abonos concurrentes. No permitir sobrepago accidental; anticipos excedentes requieren una regla explícita, no saldo negativo silencioso.
+- Anular con motivo y conservar registro; recalcular saldo y alertas. No borrar pagos históricos.
+- Pagos a socios y abonos a deuda son conceptos distintos de pagar material al proveedor.
+- Las transferencias entre empresas del ejemplo DUALIA no son ventas adicionales. No contabilizar todos sus pasos como ingresos del mismo negocio.
+
+## 10. Vencimientos y recordatorios
+
+**Confirmado P6:** notificaciones solo dentro de Arqento en esta primera entrega; no correo, WhatsApp ni push externo. Pendiente únicamente la anticipación y presentación concreta de avisos. No considerar satisfecho este requisito con fechas guardadas sin avisos visibles.
+
+Propuesta de alcance inicial:
+- Alertas dentro de Arqento en el listado y detalle, calculadas por cuota de obligaciones activas con saldo pendiente.
+- Categorías: Por vencer, Vence hoy y Vencido. Umbral inicial propuesto: 3 días naturales; requiere confirmación.
+- Mostrar proveedor/cliente, OC/compra, cuota, vencimiento y saldo de esa cuota, con acción para abrir el expediente. El total vencido suma solo cuotas vencidas pendientes, no las cuotas futuras.
+- Fecha anterior a hoy y saldo positivo = vencido. Fecha igual a hoy = vence hoy. Saldo cero = liquidado y sin alerta activa.
+- Aplicar zona horaria configurada para la empresa; no desplazar fechas de vencimiento por conversiones UTC. Propuesta inicial de negocio: America/Monterrey.
+- Administrador recibe información de pagos a proveedores. El vendedor solo avisos autorizados de su ámbito.
+- Avisos calculados al consultar la pantalla funcionan sin scheduler, pero no llegan fuera de Arqento.
+
+WhatsApp queda fuera de esta entrega y como posible fase siguiente, sin promesa de implementación la próxima semana. No construir ahora infraestructura de envíos externos ni bloquear el módulo por esa integración. Una futura fase requerirá destinatarios autorizados, proveedor de mensajería, costos, programación y deduplicación por cuota. Los avisos internos se actualizan al abonar, liquidar, revertir o reprogramar una cuota. No crear automatizaciones personales de ChatGPT para sustituirlos.
+
+## 11. Entregas y documentos
+
+- Una entrega registra fecha, cantidades por partida, receptor, observaciones, fotos y remisión.
+- Calcular pendientes por producto/unidad; evitar sobreentregas accidentales. No sumar piezas, toneladas y metros en un porcentaje engañoso.
+- Estados: Pendiente, Parcial y Completa. Completa solo cuando todas las partidas aplicables estén cubiertas.
+- Recepción del proveedor y entrega al cliente son hechos distintos, aunque el envío sea directo a obra. Confirmar si necesitan capturar ambos por separado; no duplicar cantidades.
+- Preservar correcciones de entregas en historial. Devoluciones y cambios con movimientos necesitan regla acordada; no editar una entrega antigua para ocultarlos.
+- Documentos clasificados por función: cotización, autorización/OC cliente, compra/factura proveedor, comprobante de cobro/pago, remisión y fotos. Controlar visibilidad por rol.
+- PDF cliente: marca de la empresa, folio, versión, fecha, vendedor según decisión comercial, cliente/obra, materiales, precios de venta, impuestos, total y condiciones. Nunca costos, margen o reparto.
+
+## 12. Resultado, reparto y deuda opcional
+
+Mostrar resultado estimado de venta menos costos y gastos registrados, con bases de impuestos consistentes. Separar margen estimado de flujo disponible. Un crédito pendiente no desaparece porque haya dinero en banco.
+
+Reparto inicial de referencia 50/50; configurar socios y porcentajes por proyecto si se confirma. Distinguir importe previsto, autorizado y pagado. No distribuir automáticamente por aceptar cotización o recibir un anticipo.
+
+Caso DUALIA: la evidencia revisada identifica abono a deuda de otro proyecto. No denominarlo fondo de ahorro ni tratar el principal como gasto operativo por defecto. Deuda, reserva y reparto tienen movimientos y saldos separados. Confirmar base del descuento, alcance por empresa/proyecto y momento del reparto. Si el primer cliente no lo necesita, posponer la gestión avanzada manteniendo la separación conceptual.
+
+## 13. Modelo conceptual, no esquema obligatorio
+
+| Elemento | Relación/regla |
+|---|---|
+| Producto | Empresa, código, unidad y precios de referencia |
+| Cotización y partidas | Empresa, cliente, obra, vendedor y versión de precios |
+| OC de cliente | Referencia única a aceptación de cotización |
+| Compra y partidas | OC, proveedor, costos y condiciones propias |
+| Obligación | Cobro cliente o pago proveedor; total y saldo independientes |
+| Cuota | Obligación, monto, fecha y saldo; una o varias por calendario |
+| Movimiento/aplicación | Abono o reversión con evidencia; distribución entre cuotas sin duplicar dinero |
+| Entrega y partidas | Cantidades por partida de venta |
+| Documento | Expediente/entidad y clasificación de acceso |
+| Aviso interno | Derivado de cuota/vencimiento/saldo; envío externo fuera de esta versión |
+
+Claude debe comparar este modelo con Prisma y la lógica existente antes de proponer tablas. No reutilizar entidades solo porque se llaman Cotización u OrdenCompra si representan otra función. No introducir contabilidad completa, inventario o motor genérico de workflows para resolver este módulo.
+
+## 14. Criterios de aceptación y pruebas mínimas
+
+1. Empresa sin módulo no accede por menú, URL ni API; empresa A no puede leer registros/archivos de B.
+2. Supervisor de construcción conserva su comportamiento; vendedor comercial puede cotizar sin recibir costos, márgenes o documentos privados.
+3. Cambiar precio local no modifica catálogo. Cambiar catálogo no modifica una cotización guardada/aceptada ni su PDF histórico.
+4. Vendedor identifica responsable distinto del creador cuando administración registra a su nombre; no se permite reasignación indebida.
+5. Borrador no crea cuentas por cobrar/pagar. Dos solicitudes simultáneas de aceptación crean una sola OC.
+6. Compra de $11,600 con abono $4,000 deja $7,600 pendientes; compra a crédito exige vencimiento y pago directo no se marca pagado sin movimiento.
+7. Cobros del cliente y pagos al proveedor no se compensan ni liquidan entre sí.
+8. Probar por vencer, hoy, vencido, liquidado, abono parcial, cambio de fecha y reversión, incluyendo zona horaria.
+9. Avisos internos por cuota: liquidar una cuota retira su aviso, mantiene pendientes las otras y no considera vencidas las futuras. No depender de correo ni WhatsApp.
+10. Entrega de 40 de 100 deja 60 pendientes; no altera saldo monetario. Varias unidades no producen agregados inválidos.
+11. Costos desconocidos muestran resultado incompleto; crédito pendiente no se ofrece como dinero repartible.
+12. Anulaciones y cambios registran usuario, fecha y motivo. No hay doble pago por reintento ni sobreaplicación concurrente.
+13. Vendedor no accede a cotizaciones de otro vendedor por URL, búsqueda, PDF, archivos ni totales agregados; no altera precios mediante peticiones manipuladas.
+14. Probar calendario de $12,000 en tres cuotas y abono de $5,000: saldo $7,000; repetir para cobro cliente y pago proveedor, incluyendo reversión y reprogramación.
+15. Probar flujo real completo con administrador y vendedor, PDF cliente, adjuntos desde móvil y regresión de Compras/Construcción.
+
+## 15. Decisiones pendientes antes de cerrar implementación
+
+| ID | Decisión | Propuesta inicial / impacto |
+|---|---|---|
+| P1 | Qué significa OC y quién genera folio | OC cliente separada de compra proveedor; conservar referencia externa |
+| P2 — resuelto | Edición de precios | Solo Administrador; vendedor no modifica precios |
+| P3 — parcial | Vendedor solo ve sus cotizaciones: confirmado | Falta confirmar aceptación y visibilidad/registro de cobros |
+| P4 — resuelto en alcance | Crédito cliente/proveedor y varios vencimientos | Incluidos desde primera versión; fechas explícitas por cuota. Base de plazo solo si se agrega cálculo automático |
+| P5 | Una transferencia para varias órdenes, anticipos y ajustes | Aplicación simple primero; confirmar casos habituales |
+| P6 — parcial | Canal interno: confirmado; WhatsApp posterior | Falta confirmar umbral de anticipación; propuesta 3 días naturales |
+| P7 | Origen y carga inicial de catálogo | Archivo/columnas/responsable y volumen pendientes |
+| P8 | Reparto y deuda en primera entrega | Resultado estimado; automatización avanzada después si no es necesaria |
+
+Estas decisiones no detienen la revisión del repositorio ni la preparación de partes independientes. No publicar reglas financieras o permisos ambiguos como definitivos.
+
+## 16. Secuencia de implementación y plazo
+
+1. Inspeccionar repo y entregar mapa de reutilización, diferencias, migraciones y riesgos. Resolver P1–P6 para las partes afectadas.
+2. Módulo/empresa/permisos y catálogo con datos iniciales.
+3. Cotización, vendedor, precios históricos, PDF y conversión a OC.
+4. Compras, obligaciones, calendarios de cuotas y aplicación de abonos para cliente y proveedor.
+5. Recordatorios acordados, entregas/evidencias y resultado básico.
+6. Pruebas integrales, revisión con dueños y liberación conforme al proceso del repo.
+
+La semana planteada originalmente era una estimación para un alcance menor. Catálogo, restricciones por rol, crédito y avisos requieren reevaluar el plazo después de inspeccionar código y dimensionar los calendarios de cuotas. El canal inicial ya está confirmado: interno. No prometer una semana sin esa revisión ni recortar controles de dinero/permisos para cumplirla.
+
+Fuera del primer alcance propuesto: portal cliente, pasarela de pago, timbrado fiscal, conciliación bancaria automática, inventario multi-almacén, WhatsApp, intereses/moras automáticos, amortización financiera avanzada e intermediación multiempresa automatizada. Los calendarios simples de cuotas SÍ están incluidos. Si alguno es indispensable, incorporarlo explícitamente y reestimar.
+
+## 17. Cómo mantener este documento visible para Claude
+
+Colocar este archivo en `docs/negocio/comercializacion.md`, agregarlo al índice de negocio y añadir al `AGENTS.md` y/o `CLAUDE.md` que ya use el repositorio, sin reemplazar instrucciones existentes:
+
+> Para tareas de Comercialización, leer `docs/negocio/comercializacion.md` antes de proponer o modificar modelos, permisos, cotizaciones, compras, créditos, pagos, recordatorios o entregas. Distinguir acuerdos confirmados de propuestas y pendientes. Actualizar este documento con las decisiones aprobadas y el estado real de implementación. No alterar permisos globales ni flujos de construcción para resolver reglas exclusivas de Comercialización.
+
+Prompt de arranque sugerido:
+
+> Lee las instrucciones del repositorio y `docs/negocio/comercializacion.md`. Primero inspecciona la implementación actual y entrega un plan concreto de reutilización, cambios, migraciones y pruebas; identifica los pendientes que afectan cada parte. Mantén la interfaz sencilla y la separación de cotización, OC cliente y compra proveedor. No implementes supuestos pendientes como decisiones aprobadas. En esta primera revisión no modifiques PRD ni ejecutes migraciones.
+
+## 18. Fuentes y estado
+
+- Requerimientos del usuario y comentarios de reunión, conversación de noviembre de 2026.
+- `00-decisiones-fundamentales.md` y `00-indice.md` proporcionados como contexto: multitenancy, marca, permisos, bitácora y preservación histórica.
+- Tres propuestas visuales de listado, alta y detalle aceptadas como referencia de estilo; actualizar Nueva operación → Nueva cotización, agregar vendedor y catálogo, y adaptar crédito/permisos.
+- Caso documental DUALIA revisado previamente: https://drive.google.com/drive/folders/1lw_5ec1m33FvQ1sOK0KKxuo_Dj5KdLgV . Es ejemplo, no configuración obligatoria para cada empresa.
+
+Estado de implementación al emitir este documento: no verificado. Este archivo está preparado para incorporación; no se ha agregado a un repositorio remoto ni se ha creado una rama de código.
+
+## 19. Cambios de versión 0.2
+
+Decisiones confirmadas por el usuario: precios editables solo por Administrador, vendedor limitado a sus cotizaciones, crédito para cliente y proveedor con varias fechas y notificaciones exclusivamente dentro de Arqento. WhatsApp se evaluará después. Se actualizaron formulario, permisos, modelo de cuotas, avisos, pruebas y pendientes para evitar contradicciones con la versión 0.1.

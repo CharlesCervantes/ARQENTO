@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/despliegue/verificar-migraciones.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "node --conditions=react-server --import tsx --import ./tests/setup/unitarias.mjs --test \"tests/{dashboard,contabilidad,seguridad,cobro,reposiciones,whatsapp}/**/*.test.ts\"",
@@ -17,6 +17,7 @@
     "test:integracion:limpiar": "node --import tsx scripts/pruebas/limpiar-base-pruebas.ts",
     "preview:verificar": "node --import tsx scripts/preview/preparar-base-preview.ts",
     "preview:preparar": "node --import tsx scripts/preview/preparar-base-preview.ts --preparar",
+    "preview:password": "node --import tsx scripts/preview/restablecer-password-preview.ts",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",

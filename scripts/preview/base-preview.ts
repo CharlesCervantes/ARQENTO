@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Preparación protegida de la base de ARQENTO Preview (proyecto Neon
@@ -453,4 +453,103 @@ export function entornoParaPrisma(env: Entorno, url: string, raiz: string): Ento
   limpio.DOTENV_CONFIG_PATH = join(raiz, ".env.preview-inexistente");
   limpio.PRISMA_HIDE_UPDATE_MESSAGE = "1";
   return limpio;
+}
+
+// ---------------------------------------------------------------------------
+// 5. Restablecer la contraseña del Master ficticio (noviembre 2026)
+// ---------------------------------------------------------------------------
+// Para cuando se pierde la contraseña temporal del Master de Preview (nadie
+// más puede regenerarla desde la aplicación). Mismas validaciones de
+// conexión; exige una base LISTA y sin migraciones pendientes; solo toca al
+// usuario Master de la semilla: nueva contraseña temporal aleatoria (solo su
+// hash), cambio obligatorio al iniciar sesión y cierre de sus sesiones. No
+// ejecuta migraciones ni semilla y no modifica ningún otro registro, salvo
+// la entrada de auditoría del propio restablecimiento.
+
+export const MASTER_PREVIEW = USUARIOS_DEMO[0];
+
+// Sin caracteres ambiguos (0/O, 1/l/I): 20 caracteres ≈ 115 bits.
+const ALFABETO_PASSWORD = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+export function passwordTemporalSegura(longitud = 20): string {
+  let p = "";
+  for (let i = 0; i < longitud; i++) p += ALFABETO_PASSWORD[randomInt(ALFABETO_PASSWORD.length)];
+  return p;
+}
+
+// Dentro de la transacción del llamador. Devuelve la contraseña en claro
+// (solo para mostrarla una vez) y cuántas sesiones se cerraron.
+export async function restablecerPasswordMasterTx(
+  consultar: Consultar,
+  hashear: (p: string) => Promise<string>
+): Promise<{ password: string; sesionesCerradas: number }> {
+  const filas = await consultar(
+    `SELECT id, email, rol::text AS rol, "empresaId", activo FROM usuarios WHERE id = $1 OR email = $2 FOR UPDATE`,
+    [MASTER_PREVIEW.id, MASTER_PREVIEW.email]
+  );
+  if (filas.length !== 1) cancelar("No se encontró exactamente un usuario Master ficticio de Preview.");
+  const u = filas[0];
+  if (u.id !== MASTER_PREVIEW.id || u.email !== MASTER_PREVIEW.email || u.rol !== "MASTER" || (u.empresaId ?? null) !== null) {
+    cancelar("El usuario encontrado no coincide con el Master ficticio de la semilla.");
+  }
+  if (u.activo !== true) cancelar("El Master ficticio está desactivado; no se restablece su contraseña.");
+
+  const password = passwordTemporalSegura();
+  const actualizados = await consultar(
+    `UPDATE usuarios SET "passwordHash" = $1, "debeCambiarPassword" = true, "updatedAt" = now()
+     WHERE id = $2 AND email = $3 AND rol = 'MASTER'::"RolUsuario" AND "empresaId" IS NULL RETURNING id`,
+    [await hashear(password), MASTER_PREVIEW.id, MASTER_PREVIEW.email]
+  );
+  if (actualizados.length !== 1) cancelar("La actualización no afectó exactamente a un usuario.");
+  const cerradas = await consultar(`DELETE FROM sesiones WHERE "usuarioId" = $1 RETURNING id`, [MASTER_PREVIEW.id]);
+  await consultar(
+    `INSERT INTO registros_auditoria (id, "empresaId", "usuarioId", entidad, "entidadId", accion, "valorNuevo")
+     VALUES ($1, NULL, $2, 'Usuario', $2, 'EDITAR'::"AccionAuditoria", $3::jsonb)`,
+    [randomUUID(), MASTER_PREVIEW.id, JSON.stringify({ accion: "password_temporal_regenerada", origen: "script-preview", sesionesCerradas: cerradas.length })]
+  );
+  return { password, sesionesCerradas: cerradas.length };
+}
+
+type DependenciasRestablecer = Pick<Dependencias, "consultar" | "hashear" | "imprimir" | "migracionesLocales" | "esperado">;
+
+async function requerirBaseLista(d: DependenciasRestablecer) {
+  const c = await enTransaccion(d.consultar, async () => clasificarEstado(await leerEstado(d.consultar), d.esperado, d.migracionesLocales), true);
+  if (c.tipo !== "LISTA") cancelar(`La base no está LISTA (estado: ${c.tipo}); no se restablece nada.`);
+  else if (c.pendientes.length > 0) cancelar("La base tiene migraciones pendientes respecto al repositorio; no se restablece nada.");
+}
+
+// Verificación (por omisión): SOLO lectura.
+export async function verificarRestablecerPassword(d: DependenciasRestablecer): Promise<void> {
+  await requerirBaseLista(d);
+  const filas = await enTransaccion(
+    d.consultar,
+    () =>
+      d.consultar(
+        `SELECT u.activo, u."debeCambiarPassword" AS debe, (SELECT count(*) FROM sesiones s WHERE s."usuarioId" = u.id)::int AS sesiones
+         FROM usuarios u WHERE u.id = $1 AND u.email = $2 AND u.rol = 'MASTER'::"RolUsuario" AND u."empresaId" IS NULL`,
+        [MASTER_PREVIEW.id, MASTER_PREVIEW.email]
+      ),
+    true
+  );
+  if (filas.length !== 1) cancelar("No se encontró el Master ficticio de Preview.");
+  d.imprimir(`Base LISTA. Usuario: ${MASTER_PREVIEW.email} (activo: ${filas[0].activo}, cambio obligatorio: ${filas[0].debe}, sesiones abiertas: ${filas[0].sesiones}).`);
+  d.imprimir("Verificación terminada. No se escribió nada.");
+}
+
+export async function restablecerPasswordMaster(d: DependenciasRestablecer): Promise<void> {
+  await requerirBaseLista(d);
+  let mostrada = false;
+  try {
+    await enTransaccion(d.consultar, async () => {
+      const r = await restablecerPasswordMasterTx(d.consultar, d.hashear);
+      // Se muestra ANTES del COMMIT: nunca queda guardada una contraseña que no se mostró.
+      d.imprimir(`Nueva contraseña temporal de ${MASTER_PREVIEW.email} (VÁLIDA SOLO si abajo aparece «Restablecimiento confirmado»):`);
+      d.imprimir(`  ${r.password}`);
+      d.imprimir(`Sesiones anteriores cerradas: ${r.sesionesCerradas}.`);
+      mostrada = true;
+    });
+  } catch (error) {
+    if (mostrada) d.imprimir("La contraseña mostrada arriba quedó ANULADA (el cambio no se guardó).");
+    throw error;
+  }
+  d.imprimir("Restablecimiento confirmado. Al iniciar sesión se pedirá una contraseña nueva.");
 }

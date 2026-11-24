@@ -52,6 +52,64 @@ body {
   color: var(--foreground);
 }
 
+/* Inicio (dashboard V4) — tokens ACOTADOS a .inicio: no alteran otras
+   pantallas. Base neutral, grafito como superficie destacada y el color de
+   la Empresa (--brand, inyectado por AppShell) solo en acentos, con
+   contraste asegurado aunque la marca sea muy clara u oscura. */
+.inicio {
+  --i-fondo: #e6e5e4;
+  --i-tarjeta: #ffffff;
+  --i-suave: #f3f3f2;
+  --i-tinta: #16191c;
+  --i-tinta-2: #4d5257;
+  --i-tinta-3: #6b7177;
+  --i-linea: #e7e7e5;
+  --i-grafito: #1e2226;
+  --i-grafito-2: #2b3035;
+  --i-grafito-tinta: #f3f4f5;
+  --i-grafito-tenue: #a7adb3;
+  --i-ok: #0f7a52;
+  --i-ok-suave: #e3f3ea;
+  --i-aviso: #9a5a06;
+  --i-aviso-suave: #fbefdc;
+  --i-alerta: #b42318;
+  --i-alerta-suave: #fde9e7;
+  --i-sombra: 0 1px 2px rgba(22, 25, 28, 0.05), 0 10px 30px -14px rgba(22, 25, 28, 0.18);
+  --i-sombra-hover: 0 1px 2px rgba(22, 25, 28, 0.05), 0 18px 36px -16px rgba(22, 25, 28, 0.28);
+  --marca-tinta: color-mix(in oklch, var(--brand) 70%, black);
+  --marca-relleno: var(--brand);
+  --marca-suave: color-mix(in oklch, var(--brand) 10%, white);
+  --marca-en-grafito: #cfd5d9;
+  /* Segunda serie de la gráfica (Facturado/Cubierto): pizarra sólido. */
+  --serie-2: #7d8995;
+  color: var(--i-tinta);
+  font-family: var(--font-inicio), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+@supports (color: oklch(from red l c h)) {
+  .inicio {
+    --marca-tinta: oklch(from var(--brand) clamp(0.32, l, 0.46) min(c, 0.16) h);
+    --marca-relleno: oklch(from var(--brand) clamp(0.42, l, 0.64) c h);
+    --marca-suave: oklch(from var(--brand) 0.955 min(c, 0.035) h);
+    --marca-en-grafito: oklch(from var(--brand) clamp(0.72, l, 0.84) min(c, 0.14) h);
+    /* Marca oscura → pizarra claro; marca clara → pizarra oscuro. */
+    --serie-2: oklch(from var(--marca-relleno) calc(0.41 + 0.27 * clamp(0, (0.52 - l) * 999, 1)) 0.022 250);
+  }
+}
+/* Solo la pantalla de Inicio ocupa todo el ancho después del sidebar y usa
+   el fondo neutral del diseño; las demás conservan el contenedor de AppShell. */
+main:has(.inicio) {
+  background: #e6e5e4;
+}
+main > div:has(> .inicio) {
+  max-width: none;
+  padding: 24px 32px 48px;
+}
+@media (max-width: 680px) {
+  main > div:has(> .inicio) {
+    padding: 14px 14px 40px;
+  }
+}
+
 /* Entrada sutil para tarjetas/paneles al montar — sin JS, sin useEffect.
    El estado de reposo usa `transform: none` (no `translateY(0)`) a propósito:
    un transform distinto de `none`, aunque sea "0px", se queda aplicado para
