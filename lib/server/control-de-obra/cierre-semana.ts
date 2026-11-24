@@ -165,6 +165,8 @@ export type ResumenCierreSemana = {
   reabiertoPorNombre: string | null;
   reabiertoEn: string | null;
   motivoReapertura: string | null;
+  // Semana histórica migrada desde Excel — nunca se reabre ni se materializa.
+  historicoImportado: boolean;
   conceptosConAvance: number;
   avancesAprobados: number;
   pendientesPorAprobar: number;
@@ -239,6 +241,7 @@ export async function obtenerResumenCierreSemana(
     reabiertoPorNombre: cierre?.reabiertoPor?.nombre ?? null,
     reabiertoEn: cierre?.reabiertoEn?.toISOString() ?? null,
     motivoReapertura: cierre?.motivoReapertura ?? null,
+    historicoImportado: cierre?.historicoImportado ?? false,
     conceptosConAvance,
     avancesAprobados: lineas.length,
     pendientesPorAprobar: pendientes,
@@ -773,6 +776,14 @@ export async function reabrirSemana(
   });
   if (!cierre) throw new RegistroNoEncontradoError("El cierre de esta semana");
   if (cierre.estatus === "ABIERTA") return cierre;
+
+  // Semana histórica migrada: reabrirla permitiría que un recierre generara
+  // cortes y estimación de todo el avance histórico (doble pago/cobro).
+  if (cierre.historicoImportado) {
+    throw new ValidacionError(
+      "Esta semana es histórica (migrada desde Excel) y no se puede reabrir."
+    );
+  }
 
   // Bloqueo de reapertura después de emitir (arquitectura por capas, agosto
   // 2026) — EstimacionClienteConcepto es la verdad física que sustenta un

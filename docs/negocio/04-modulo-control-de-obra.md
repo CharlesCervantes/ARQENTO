@@ -1700,3 +1700,59 @@ acumulado/Saldo/comparación avance-vs-pagado/Estado de cuenta por contrato.
   `20260814041200_contrato_general_base`, totalmente aditiva, sin defaults
   que alteren proyectos/conceptos existentes).
   por Reporte General y Control de Obra, no propia de ningún módulo.
+## 49.10 Semanas históricas importadas (migración de obras desde Excel, noviembre 2026)
+
+Estado: **implementado** (noviembre 2026). Primera obra: MISSISSIPPI.
+
+- `CierreSemanaProyecto.historicoImportado` marca una semana cuyo avance aprobado se migró desde Excel y cuya estimación se emitió fuera de ARQENTO. Solo la escribe el importador.
+- Una semana así **no se reabre**, **no se materializa** su estimación y aprobar un gasto en ella no crea estimación. Así no se generan otra vez cortes, estimación ni folios por todo el histórico.
+- El avance histórico **no se atribuye a ningún contratista**. Al asignar un concepto, la cantidad asignada es la contratada menos lo ejecutado en semanas históricas importadas. Si ya se ejecutó todo, no se puede asignar.
+- En Contratistas, "Ejecutado" cuenta solo lo registrado en ARQENTO. El histórico se muestra aparte como "histórico sin atribuir".
+- La asignación del histórico a contratistas queda fuera de alcance. Sergio y Charles asignan manualmente el trabajo pendiente.
+- Una obra sin semanas históricas importadas se comporta exactamente igual que antes.
+
+### Procedimiento: ajustar solo el P.U. de una asignación (antes del primer cierre)
+
+La interfaz todavía no permite editar una asignación. Mientras tanto, el ajuste se hace con `scripts/mantenimiento/ajustar-pu-asignacion.ts`. El script cambia **únicamente** `ContratoConcepto.precioUnitarioContratista` de esa asignación.
+
+- **Lo que no toca:** la cantidad asignada, salvo que se indique `NUEVA_CANTIDAD`. Tampoco el P.U. General ni el Privado del concepto, otras asignaciones, avances, cortes, recibos, movimientos ni estimaciones.
+- **Cuándo hacerlo:** antes de cerrar la primera semana con avance de ese concepto. Un corte ya generado conserva el precio con que se generó; el nuevo precio aplica a los cortes siguientes.
+
+Pasos:
+
+1. Vista previa, sin escribir nada:
+   ```
+   PROYECTO_ID=… CONCEPTO_TEXTO="<inicio de la descripción>" NUEVO_PU=… USUARIO_EMAIL=<admin> \
+   MOTIVO="<acuerdo que lo respalda>" node --conditions=react-server --import tsx scripts/mantenimiento/ajustar-pu-asignacion.ts
+   ```
+2. Revisar que la vista previa diga `Cantidad: X → X` (sin cambio) y el P.U. esperado.
+3. Repetir con `APLICAR=1`. El cambio queda en bitácora (`ContratoConcepto`, EDITAR, con el motivo).
+4. Verificar en Contratistas el nuevo contrato vigente del contratista.
+
+Los precios que se usaron en las pruebas de la migración **no constituyen un acuerdo aprobado**. Cada ajuste requiere la confirmación de Sergio o Charles.
+
+## 49.11 Cantidad estimada por capa (noviembre 2026)
+
+Estado: **implementado** (noviembre 2026). Decisión de Charles, 24-nov-2026: el Privado necesita cantidades estimadas propias, también en semanas nuevas.
+
+Cuatro datos distintos que no se mezclan:
+
+1. **Cantidad contratada por capa.** `Concepto.cantidadContratada` es el General; el Privado usa `cantidadContratadaPrivado` cuando existe. Esto aplica también al monto de contrato privado de Control Contractual.
+2. **Avance físico** (`AvanceConcepto`). Es lo único que decide lo ejecutado, lo disponible para asignar, los cortes y los saldos de contratistas. No cambia con esta regla.
+3. **Cantidad e importe estimados por capa** (`EstimadoCapaConcepto`). Es lo que una capa estima al cliente en una semana:
+   - **Semana normal:** sin captura, la capa estima el avance físico aprobado, igual que antes. Con captura, estima la cantidad capturada. `importeBase` opcional fija el importe exacto antes de administración.
+   - **Semana histórica importada:** la capa estima solo lo que trae el Excel por estimación, con su cantidad e importe originales. El físico de esas semanas nunca se convierte en estimado.
+   - El "anterior" de cada capa en una estimación nueva es la suma de lo que esa capa estimó en semanas anteriores.
+4. **Cobros y pagos.** Solo los movimientos registrados (`MovimientoFinancieroCliente`, movimientos semanales). Un importe estimado no es un cobro.
+
+Reglas de la captura privada (Cliente Priv. → Estimación):
+
+- Solo Administrador o Director con Vista privada activa y Privado habilitado en la Empresa. El servidor lo valida (`puedeCapturarEstimadoPrivado`).
+- Solo en semanas no históricas, y mientras la estimación privada de esa semana no esté emitida.
+- Requiere motivo, que queda en bitácora (`EstimadoCapaConcepto`, CREAR / EDITAR / ELIMINAR).
+- No crea cortes, movimientos, deuda de contratistas ni cuentas por cobrar.
+- Al emitir, la capa congela sus propias cantidades en `EstimacionClienteCapaConcepto` (columnas nuevas, nulas en las emisiones anteriores).
+- Una captura en 0 excluye el concepto solo de la estimación privada de esa semana. Por ejemplo, una semana de vigilancia ya cobrada en otra estimación privada.
+- La capa General solo tiene filas importadas de semanas históricas. No se captura en semanas nuevas.
+
+Una obra sin semanas históricas importadas y sin capturas privadas se comporta exactamente igual que antes.

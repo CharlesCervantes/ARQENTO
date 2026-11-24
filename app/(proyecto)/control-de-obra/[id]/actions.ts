@@ -34,6 +34,7 @@ import {
   configurarIvaEstimacion,
   materializarEstimacionHistorica,
 } from "@/lib/server/control-de-obra/estimacion-cliente";
+import { guardarEstimadoPrivado, eliminarEstimadoPrivado } from "@/lib/server/control-de-obra/estimado-privado";
 import {
   registrarAportacionFondo,
   registrarPagoEstimacion,
@@ -607,6 +608,46 @@ export async function emitirEstimacionAction(
   revalidatePath(`/control-de-obra/${proyectoId}/cliente/privado/estimacion`);
   revalidatePath(`/control-de-obra/${proyectoId}/cliente/privado/control-contractual`);
   return { emitida: true };
+}
+
+export type EstimadoPrivadoFormState = { error?: string; guardado?: boolean } | undefined;
+
+// Cantidad estimada privada de una semana (noviembre 2026) — no toca avance
+// físico, asignaciones, cortes ni contratistas.
+export async function guardarEstimadoPrivadoAction(
+  proyectoId: string,
+  semanaId: string,
+  _state: EstimadoPrivadoFormState,
+  formData: FormData
+): Promise<EstimadoPrivadoFormState> {
+  const usuario = await requireSession();
+  const importeTexto = String(formData.get("importeBase") ?? "").trim();
+  try {
+    await guardarEstimadoPrivado(usuario, proyectoId, semanaId, {
+      conceptoId: String(formData.get("conceptoId") ?? ""),
+      cantidad: Number(formData.get("cantidad")),
+      importeBase: importeTexto === "" ? null : Number(importeTexto),
+      motivo: String(formData.get("motivo") ?? ""),
+    });
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/control-de-obra/${proyectoId}/cliente/privado/estimacion`);
+  return { guardado: true };
+}
+
+export async function eliminarEstimadoPrivadoAction(
+  proyectoId: string,
+  estimadoId: string
+): Promise<{ error?: string } | undefined> {
+  const usuario = await requireSession();
+  try {
+    await eliminarEstimadoPrivado(usuario, proyectoId, estimadoId);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/control-de-obra/${proyectoId}/cliente/privado/estimacion`);
+  return undefined;
 }
 
 export type ConfigurarIvaFormState = { error?: string; guardado?: boolean } | undefined;

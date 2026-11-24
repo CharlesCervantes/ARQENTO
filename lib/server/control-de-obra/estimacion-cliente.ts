@@ -14,6 +14,8 @@ import {
   type PorcentajesDefaultProyecto,
 } from "@/lib/control-de-obra/contrato-general";
 import { sumaEjecutadaPorConcepto } from "./avance-calculo";
+import { baseDeImporteCongelado, importesBase } from "@/lib/control-de-obra/presentacion-estimacion-privada";
+import { ajustesEstimadoCapa, estimaAlgoEstaSemana, valorarConceptoEnCapa } from "./estimado-capa";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
 
@@ -273,16 +275,77 @@ async function obtenerContextoProyecto(cliente: Cliente, proyectoId: string) {
 
 // Vista preliminar de semana ABIERTA: avance valorizado + los gastos
 // cobrables que entrarían a cada capa al cerrar (`preliminar`). Solo lectura.
+// `capas` es lo que mostrará cada capa al cerrar con su cantidad estimada
+// propia (noviembre 2026); `filas` sigue siendo el físico valorizado.
 export async function obtenerEstimacionSemanalEnVivo(
   usuario: UsuarioSesion,
   proyectoId: string,
   semana: { id: string; fechaInicio: Date }
-): Promise<ResultadoValorizacion & { preliminar: PreliminarSemanaAbierta }> {
+): Promise<
+  ResultadoValorizacion & {
+    preliminar: PreliminarSemanaAbierta;
+    capas: Record<CapaEstimacion, FilaEstimacionCapa[]>;
+  }
+> {
   await obtenerProyecto(usuario, proyectoId);
   const { esquemaContractual, porcentajesDefault } = await obtenerContextoProyecto(db, proyectoId);
   const valorizacion = await construirDetalleValorizado(db, proyectoId, semana, esquemaContractual, porcentajesDefault);
-  const preliminar = await construirPreliminar(db, proyectoId, semana, valorizacion, esquemaContractual, porcentajesDefault);
-  return { ...valorizacion, preliminar };
+  const capas = await valorizarCapasSemanaAbierta(db, proyectoId, semana, valorizacion, esquemaContractual, porcentajesDefault);
+  const preliminar = await construirPreliminar(db, proyectoId, semana, capas, esquemaContractual, porcentajesDefault);
+  return {
+    ...valorizacion,
+    preliminar,
+    capas: { OPERATIVO: capas.OPERATIVO.filas, PRIVADO: capas.PRIVADO.filas },
+  };
+}
+
+type CapaSemanaAbierta = { filas: FilaEstimacionCapa[]; subtotal: number; montoAdministracionTrabajos: number };
+
+async function valorizarCapasSemanaAbierta(
+  cliente: Cliente,
+  proyectoId: string,
+  semana: { id: string; fechaInicio: Date },
+  valorizacion: ResultadoValorizacion,
+  esquemaContractual: EsquemaContractual | null,
+  porcentajesDefault: PorcentajesDefaultProyecto
+): Promise<Record<CapaEstimacion, CapaSemanaAbierta>> {
+  const detalleFisico: DetalleFisico[] = valorizacion.filas.map((f) => ({
+    conceptoId: f.conceptoId,
+    partidaNombre: f.partidaNombre,
+    descripcionConcepto: f.descripcionConcepto,
+    unidad: f.unidad,
+    cantidadContratada: f.cantidadContratada,
+    cantidadAnterior: f.cantidadAnterior,
+    cantidadEstaSemana: f.cantidadEstaSemana,
+    cantidadAcumulada: f.cantidadAcumulada,
+    cantidadPorEjercer: f.cantidadPorEjercer,
+    avancePorcentaje: f.avancePorcentaje,
+  }));
+  const resultado = {} as Record<CapaEstimacion, CapaSemanaAbierta>;
+  for (const capa of ["OPERATIVO", "PRIVADO"] as const) {
+    const { filas, totales } = await valorizarCapaEnVivo(cliente, {
+      capa,
+      capaId: null,
+      proyectoId,
+      semana,
+      detalleFisico,
+      esquemaContractual,
+      porcentajesDefault,
+      aplicaIVA: false,
+      porcentajeIVA: null,
+    });
+    resultado[capa] = { filas, subtotal: totales.subtotal, montoAdministracionTrabajos: totales.montoAdministracionTrabajos };
+  }
+  return resultado;
+}
+
+// Alguna capa estima algo esta semana sin avance físico (captura privada).
+async function hayEstimadoCapaEnSemana(cliente: Cliente, proyectoId: string, semanaId: string) {
+  const fila = await cliente.estimadoCapaConcepto.findFirst({
+    where: { proyectoId, semanaId, OR: [{ cantidad: { not: 0 } }, { importeBase: { not: 0 } }] },
+    select: { id: true },
+  });
+  return fila !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +379,14 @@ export type FilaEstimacionCapa = {
   importeEstaSemana: number;
   importeAcumulado: number;
   importePorEjercer: number;
+
+  // Mismos importes antes de administración/utilidad (vista Cliente Priv. de
+  // semana abierta). Solo se calculan en vivo; una capa EMITIDA antigua no
+  // los tiene congelados y los deriva con la proporción P.U. base / P.U.
+  importeContratadoBase: number;
+  importeEstaSemanaBase: number;
+  importeAcumuladoBase: number;
+  importePorEjercerBase: number;
 };
 
 export type TotalesCapaCalculados = {
@@ -404,7 +475,11 @@ async function valorizarCapaEnVivo(
   cliente: Cliente,
   params: {
     capa: CapaEstimacion;
-    capaId: string;
+    // null = semana abierta (vista preliminar): no hay capa real ni gastos
+    // reclamados todavía; los gastos los pone construirPreliminar.
+    capaId: string | null;
+    proyectoId: string;
+    semana: { id: string; fechaInicio: Date };
     detalleFisico: DetalleFisico[];
     esquemaContractual: EsquemaContractual | null;
     porcentajesDefault: PorcentajesDefaultProyecto;
@@ -412,17 +487,53 @@ async function valorizarCapaEnVivo(
     porcentajeIVA: number | null;
   }
 ): Promise<{ filas: FilaEstimacionCapa[]; totales: TotalesCapaCalculados; gastos: FilaGastoEstimacion[] }> {
-  const conceptoIds = params.detalleFisico.map((f) => f.conceptoId);
-  const conceptos = await cliente.concepto.findMany({ where: { id: { in: conceptoIds } } });
+  // Cantidad estimada por capa (noviembre 2026): sin semanas históricas ni
+  // filas propias de la capa, `ajustes` queda vacío y todo sale igual que
+  // antes (precio × físico).
+  const ajustes = await ajustesEstimadoCapa(cliente, {
+    proyectoId: params.proyectoId,
+    capa: params.capa,
+    semana: params.semana,
+  });
+  const fisicoPorConcepto = new Map(params.detalleFisico.map((f) => [f.conceptoId, f]));
+  // Conceptos que esta capa estima esta semana sin avance físico.
+  const soloCapa = [...ajustes.entries()]
+    .filter(([id, a]) => !fisicoPorConcepto.has(id) && estimaAlgoEstaSemana(a))
+    .map(([id]) => id);
+
+  const conceptoIds = [...fisicoPorConcepto.keys(), ...soloCapa];
+  const [conceptos, anteriorSoloCapa] = await Promise.all([
+    cliente.concepto.findMany({
+      where: { id: { in: conceptoIds } },
+      include: { partida: { select: { nombre: true } } },
+    }),
+    soloCapa.length > 0
+      ? sumaEjecutadaPorConcepto(soloCapa, params.semana.fechaInicio, cliente)
+      : Promise.resolve(new Map<string, number>()),
+  ]);
   const conceptoPorId = new Map(conceptos.map((c) => [c.id, c]));
 
   const filas: FilaEstimacionCapa[] = [];
   let subtotal = 0;
   let montoAdministracionTrabajos = 0;
 
-  for (const f of params.detalleFisico) {
-    const concepto = conceptoPorId.get(f.conceptoId);
+  for (const conceptoId of conceptoIds) {
+    const concepto = conceptoPorId.get(conceptoId);
     if (!concepto) continue; // concepto eliminado después de congelar el físico — defensivo, no debería pasar
+    const f: DetalleFisico = fisicoPorConcepto.get(conceptoId) ?? {
+      conceptoId,
+      partidaNombre: concepto.partida.nombre,
+      descripcionConcepto: concepto.descripcion,
+      unidad: concepto.unidad,
+      cantidadContratada: Number(concepto.cantidadContratada),
+      cantidadAnterior: anteriorSoloCapa.get(conceptoId) ?? 0,
+      cantidadEstaSemana: 0,
+      cantidadAcumulada: anteriorSoloCapa.get(conceptoId) ?? 0,
+      cantidadPorEjercer: 0,
+      avancePorcentaje: 0,
+    };
+    const ajuste = ajustes.get(conceptoId);
+    if (ajuste?.estaSemana && !estimaAlgoEstaSemana(ajuste)) continue; // la capa no estima nada esta semana
 
     const costos = {
       precioUnitarioContratista: numOrNull(concepto.precioUnitarioContratista),
@@ -437,50 +548,72 @@ async function valorizarCapaEnVivo(
     let precioUnitarioBase: number;
     let porcentajeAplicado: number | null;
     let precioUnitario: number;
+    let montoPorcentajePorUnidad: number;
+    // Cantidad contratada de ESTA capa: el Privado tiene su propio presupuesto
+    // cuando se capturó (Concepto.cantidadContratadaPrivado).
+    let cantidadContratada = f.cantidadContratada;
 
     if (params.capa === "OPERATIVO") {
       const r = calcularPrecioOperativoConcepto(costos, params.esquemaContractual, params.porcentajesDefault.administracion);
       precioUnitarioBase = r.subtotalPorUnidad;
       porcentajeAplicado = r.porcentajeAdministracionAplicado;
       precioUnitario = r.precioUnitarioConAdministracion;
-      subtotal += r.subtotalPorUnidad * f.cantidadEstaSemana;
-      montoAdministracionTrabajos += r.montoAdministracionPorUnidad * f.cantidadEstaSemana;
+      montoPorcentajePorUnidad = r.montoAdministracionPorUnidad;
     } else {
       const r = calcularPrecioConcepto(costos, params.esquemaContractual, params.porcentajesDefault);
       precioUnitarioBase = r.costoBase;
       porcentajeAplicado = r.porcentajeAplicado;
       precioUnitario = r.precioUnitarioRecomendado;
-      subtotal += r.costoBase * f.cantidadEstaSemana;
-      montoAdministracionTrabajos += r.montoPorcentaje * f.cantidadEstaSemana;
+      montoPorcentajePorUnidad = r.montoPorcentaje;
+      if (concepto.cantidadContratadaPrivado !== null) {
+        cantidadContratada = Number(concepto.cantidadContratadaPrivado);
+      }
     }
+
+    const v = valorarConceptoEnCapa({
+      cantidadContratada,
+      fisicoAnterior: f.cantidadAnterior,
+      fisicoEstaSemana: f.cantidadEstaSemana,
+      ajuste,
+      precioUnitarioBase,
+      montoPorcentajePorUnidad,
+    });
+    subtotal += v.importeEstaSemanaBase;
+    montoAdministracionTrabajos += v.montoPorcentajeEstaSemana;
 
     filas.push({
       conceptoId: f.conceptoId,
       partidaNombre: f.partidaNombre,
       descripcionConcepto: f.descripcionConcepto,
       unidad: f.unidad,
-      cantidadContratada: f.cantidadContratada,
-      cantidadAnterior: f.cantidadAnterior,
-      cantidadEstaSemana: f.cantidadEstaSemana,
-      cantidadAcumulada: f.cantidadAcumulada,
-      cantidadPorEjercer: f.cantidadPorEjercer,
-      avancePorcentaje: f.avancePorcentaje,
+      cantidadContratada: v.cantidadContratada,
+      cantidadAnterior: v.cantidadAnterior,
+      cantidadEstaSemana: v.cantidadEstaSemana,
+      cantidadAcumulada: v.cantidadAcumulada,
+      cantidadPorEjercer: v.cantidadPorEjercer,
+      avancePorcentaje: v.avancePorcentaje,
       precioUnitarioBase,
       porcentajeAplicado,
       precioUnitario,
-      importeContratado: precioUnitario * f.cantidadContratada,
-      importeEstaSemana: precioUnitario * f.cantidadEstaSemana,
-      importeAcumulado: precioUnitario * f.cantidadAcumulada,
-      importePorEjercer: precioUnitario * f.cantidadPorEjercer,
+      importeContratado: v.importeContratado,
+      importeEstaSemana: v.importeEstaSemana,
+      importeAcumulado: v.importeAcumulado,
+      importePorEjercer: v.importePorEjercer,
+      importeContratadoBase: v.importeContratadoBase,
+      importeEstaSemanaBase: v.importeEstaSemanaBase,
+      importeAcumuladoBase: v.importeAcumuladoBase,
+      importePorEjercerBase: v.importePorEjercerBase,
     });
   }
   filas.sort((a, b) => a.descripcionConcepto.localeCompare(b.descripcionConcepto));
 
-  const gastosClaimed = await cliente.gastoObra.findMany({
-    where: { [campoCapaGasto(params.capa)]: params.capaId },
-    include: INCLUDE_DETALLE_GASTO,
-    orderBy: { fecha: "asc" },
-  });
+  const gastosClaimed = params.capaId
+    ? await cliente.gastoObra.findMany({
+        where: { [campoCapaGasto(params.capa)]: params.capaId },
+        include: INCLUDE_DETALLE_GASTO,
+        orderBy: { fecha: "asc" },
+      })
+    : [];
   const gastos = gastosClaimed.map(aFilaGastoEstimacion);
 
   return {
@@ -603,6 +736,7 @@ export async function obtenerEstimacionCliente(
     where: { proyectoId_semanaId: { proyectoId, semanaId } },
     include: {
       detalle: true,
+      semana: { select: { id: true, fechaInicio: true } },
       capas: {
         where: { capa },
         include: {
@@ -622,29 +756,50 @@ export async function obtenerEstimacionCliente(
   if (!capaRow) return null;
 
   if (capaRow.estatus === "EMITIDA") {
-    const capaConceptoPorId = new Map(capaRow.detalle.map((d) => [d.conceptoId, d]));
-    const filas: FilaEstimacionCapa[] = estimacion.detalle
-      .map((fis) => {
-        const cc = capaConceptoPorId.get(fis.conceptoId);
-        if (!cc) return null;
+    const fisicoPorId = new Map(estimacion.detalle.map((d) => [d.conceptoId, d]));
+    const filas: FilaEstimacionCapa[] = capaRow.detalle
+      .map((cc) => {
+        const fis = fisicoPorId.get(cc.conceptoId);
+        // Capa emitida con cantidades propias congeladas (noviembre 2026) o,
+        // si es anterior a ese cambio, con las cantidades físicas compartidas.
+        const propias = cc.cantidadEstaSemana !== null;
+        if (!propias && !fis) return null;
+        const cant = (propia: Prisma.Decimal | null, fisica: Prisma.Decimal | undefined) =>
+          Number(propias ? propia : fisica);
+        const precioUnitario = Number(cc.precioUnitario);
+        const precioUnitarioBase = Number(cc.precioUnitarioBase);
+        const porcentajeAplicado = numOrNull(cc.porcentajeAplicado);
+        const calculados = importesBase({
+          precioUnitarioBase,
+          cantidadContratada: cant(cc.cantidadContratada, fis?.cantidadContratada),
+          cantidadEstaSemana: cant(cc.cantidadEstaSemana, fis?.cantidadEstaSemana),
+          cantidadAcumulada: cant(cc.cantidadAcumulada, fis?.cantidadAcumulada),
+          cantidadPorEjercer: cant(cc.cantidadPorEjercer, fis?.cantidadPorEjercer),
+        });
+        const aBase = (importe: Prisma.Decimal, calculado: number) =>
+          baseDeImporteCongelado({ calculado, importe: Number(importe), precioUnitarioBase, precioUnitario, porcentajeAplicado });
         return {
-          conceptoId: fis.conceptoId,
-          partidaNombre: fis.partidaNombre,
-          descripcionConcepto: fis.descripcionConcepto,
-          unidad: fis.unidad,
-          cantidadContratada: Number(fis.cantidadContratada),
-          cantidadAnterior: Number(fis.cantidadAnterior),
-          cantidadEstaSemana: Number(fis.cantidadEstaSemana),
-          cantidadAcumulada: Number(fis.cantidadAcumulada),
-          cantidadPorEjercer: Number(fis.cantidadPorEjercer),
-          avancePorcentaje: Number(fis.avancePorcentaje),
-          precioUnitarioBase: Number(cc.precioUnitarioBase),
-          porcentajeAplicado: numOrNull(cc.porcentajeAplicado),
-          precioUnitario: Number(cc.precioUnitario),
+          conceptoId: cc.conceptoId,
+          partidaNombre: cc.partidaNombre ?? fis?.partidaNombre ?? "",
+          descripcionConcepto: cc.descripcionConcepto ?? fis?.descripcionConcepto ?? "",
+          unidad: cc.unidad ?? fis?.unidad ?? "",
+          cantidadContratada: cant(cc.cantidadContratada, fis?.cantidadContratada),
+          cantidadAnterior: cant(cc.cantidadAnterior, fis?.cantidadAnterior),
+          cantidadEstaSemana: cant(cc.cantidadEstaSemana, fis?.cantidadEstaSemana),
+          cantidadAcumulada: cant(cc.cantidadAcumulada, fis?.cantidadAcumulada),
+          cantidadPorEjercer: cant(cc.cantidadPorEjercer, fis?.cantidadPorEjercer),
+          avancePorcentaje: cant(cc.avancePorcentaje, fis?.avancePorcentaje),
+          precioUnitarioBase,
+          porcentajeAplicado,
+          precioUnitario,
           importeContratado: Number(cc.importeContratado),
           importeEstaSemana: Number(cc.importeEstaSemana),
           importeAcumulado: Number(cc.importeAcumulado),
           importePorEjercer: Number(cc.importePorEjercer),
+          importeContratadoBase: aBase(cc.importeContratado, calculados.importeContratado),
+          importeEstaSemanaBase: aBase(cc.importeEstaSemana, calculados.importeEstaSemana),
+          importeAcumuladoBase: aBase(cc.importeAcumulado, calculados.importeAcumulado),
+          importePorEjercerBase: aBase(cc.importePorEjercer, calculados.importePorEjercer),
         };
       })
       .filter((f): f is FilaEstimacionCapa => f !== null)
@@ -703,6 +858,8 @@ export async function obtenerEstimacionCliente(
   const { filas, totales, gastos } = await valorizarCapaEnVivo(db, {
     capa,
     capaId: capaRow.id,
+    proyectoId,
+    semana: estimacion.semana,
     detalleFisico,
     esquemaContractual,
     porcentajesDefault,
@@ -924,20 +1081,15 @@ async function construirPreliminar(
   cliente: Cliente,
   proyectoId: string,
   semana: { id: string; fechaInicio: Date },
-  valorizacion: ResultadoValorizacion,
+  capas: Record<CapaEstimacion, CapaSemanaAbierta>,
   esquemaContractual: EsquemaContractual | null,
   porcentajesDefault: PorcentajesDefaultProyecto
 ): Promise<PreliminarSemanaAbierta> {
-  const simulado = await simularGastosDelCierre(cliente, proyectoId, semana, valorizacion.filas.length > 0);
+  const hayTrabajos = capas.OPERATIVO.filas.length > 0 || capas.PRIVADO.filas.length > 0;
+  const simulado = await simularGastosDelCierre(cliente, proyectoId, semana, hayTrabajos);
   const trabajos = {
-    OPERATIVO: {
-      subtotal: valorizacion.totalesOperativos.subtotal,
-      montoAdministracionTrabajos: valorizacion.totalesOperativos.montoAdministracion,
-    },
-    PRIVADO: {
-      subtotal: valorizacion.totalesPrivados.subtotal,
-      montoAdministracionTrabajos: valorizacion.totalesPrivados.montoAdministracionOUtilidad,
-    },
+    OPERATIVO: { subtotal: capas.OPERATIVO.subtotal, montoAdministracionTrabajos: capas.OPERATIVO.montoAdministracionTrabajos },
+    PRIVADO: { subtotal: capas.PRIVADO.subtotal, montoAdministracionTrabajos: capas.PRIVADO.montoAdministracionTrabajos },
   };
   const porCapa = {} as PreliminarSemanaAbierta;
   for (const s of simulado) {
@@ -981,11 +1133,13 @@ export async function asegurarEstimacionDeSemanaCerradaTx(
   tx: Cliente,
   ctx: { empresaId: string; proyectoId: string; semanaId: string; usuarioId: string }
 ): Promise<boolean> {
-  const [cierre] = await tx.$queryRaw<{ estatus: string }[]>`
-    SELECT estatus::text AS estatus FROM cierres_semana_proyecto
+  const [cierre] = await tx.$queryRaw<{ estatus: string; historicoImportado: boolean }[]>`
+    SELECT estatus::text AS estatus, "historicoImportado" FROM cierres_semana_proyecto
     WHERE "proyectoId" = ${ctx.proyectoId} AND "semanaId" = ${ctx.semanaId}
     FOR UPDATE`;
   if (!cierre || cierre.estatus !== "CERRADA") return false;
+  // Semana histórica migrada: su estimación se emitió fuera de ARQENTO.
+  if (cierre.historicoImportado) return false;
 
   const existente = await tx.estimacionCliente.findUnique({
     where: { proyectoId_semanaId: { proyectoId: ctx.proyectoId, semanaId: ctx.semanaId } },
@@ -1048,8 +1202,14 @@ export async function asegurarFisicoYCapas(
   // crear la estimación (con detalle físico vacío) para que ese gasto tenga
   // dónde reclamarse y la capa se pueda emitir solo con el material
   // (decisión de sesión, septiembre 2026 — semanas sin avance con gasto).
+  // Lo mismo si una capa estima algo esta semana sin avance físico (captura
+  // privada independiente, noviembre 2026): el detalle físico queda vacío y
+  // la capa valoriza su propia cantidad.
   if (filas.length === 0 && !existente) {
-    if (!(await hayGastoCobrableAprobadoEnSemana(tx, ctx.proyectoId, ctx.semanaId))) {
+    if (
+      !(await hayGastoCobrableAprobadoEnSemana(tx, ctx.proyectoId, ctx.semanaId)) &&
+      !(await hayEstimadoCapaEnSemana(tx, ctx.proyectoId, ctx.semanaId))
+    ) {
       return { tipo: "SIN_AVANCE" };
     }
   }
@@ -1172,6 +1332,13 @@ export async function materializarEstimacionHistorica(
       "Esta semana no está cerrada — solo se puede materializar una estimación histórica sobre una semana ya cerrada."
     );
   }
+  // Semana migrada desde Excel: su estimación ya se emitió fuera de ARQENTO;
+  // materializarla crearía un borrador por todo el histórico y consumiría folio.
+  if (cierre.historicoImportado) {
+    throw new ValidacionError(
+      "Esta semana es histórica (migrada desde Excel); su estimación se emitió fuera de ARQENTO."
+    );
+  }
 
   const existente = await db.estimacionCliente.findUnique({
     where: { proyectoId_semanaId: { proyectoId, semanaId } },
@@ -1283,7 +1450,9 @@ export async function emitirEstimacion(
 
     const capaRow = await tx.estimacionClienteCapa.findFirst({
       where: { id: estimacionClienteCapaId },
-      include: { estimacionCliente: { include: { detalle: true } } },
+      include: {
+        estimacionCliente: { include: { detalle: true, semana: { select: { id: true, fechaInicio: true } } } },
+      },
     });
     if (!capaRow) throw new RegistroNoEncontradoError("La estimación");
     if (capaRow.estatus === "EMITIDA") throw new ValidacionError("Esta estimación ya fue emitida.");
@@ -1294,6 +1463,8 @@ export async function emitirEstimacion(
     const { filas, totales, gastos } = await valorizarCapaEnVivo(tx, {
       capa: capaRow.capa,
       capaId: capaRow.id,
+      proyectoId,
+      semana: capaRow.estimacionCliente.semana,
       detalleFisico,
       esquemaContractual,
       porcentajesDefault,
@@ -1324,6 +1495,15 @@ export async function emitirEstimacion(
           importeEstaSemana: f.importeEstaSemana,
           importeAcumulado: f.importeAcumulado,
           importePorEjercer: f.importePorEjercer,
+          partidaNombre: f.partidaNombre,
+          descripcionConcepto: f.descripcionConcepto,
+          unidad: f.unidad,
+          cantidadContratada: f.cantidadContratada,
+          cantidadAnterior: f.cantidadAnterior,
+          cantidadEstaSemana: f.cantidadEstaSemana,
+          cantidadAcumulada: f.cantidadAcumulada,
+          cantidadPorEjercer: f.cantidadPorEjercer,
+          avancePorcentaje: f.avancePorcentaje,
         })),
       });
     }

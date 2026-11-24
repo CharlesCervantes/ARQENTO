@@ -297,6 +297,7 @@ export async function calcularMontoContrato(
     where: { partida: { proyectoId }, estatus: "ACTIVO" },
     select: {
       cantidadContratada: true,
+      cantidadContratadaPrivado: true,
       precioUnitarioContratista: true,
       precioUnitarioContratistaPrivado: true,
       precioUnitarioMateriales: true,
@@ -310,6 +311,9 @@ export async function calcularMontoContrato(
   return conceptos.reduce((total, c) => {
     const cantidadContratada = Number(c.cantidadContratada);
     if (capa === "privado") {
+      // El Privado usa su propia cantidad presupuestada cuando existe (mismo
+      // criterio que su estimación por capa, noviembre 2026).
+      const cantidadContratada = Number(c.cantidadContratadaPrivado ?? c.cantidadContratada);
       const importes = calcularImportesConcepto(
         {
           precioUnitarioContratista: numOrNull(c.precioUnitarioContratista),

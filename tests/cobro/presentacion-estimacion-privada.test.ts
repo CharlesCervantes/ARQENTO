@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { importesBase, resumenPdfPrivado, tasasDeTrabajos } from "@/lib/control-de-obra/presentacion-estimacion-privada";
+import { importesBase, resumenPdfPrivado, tasasDeTrabajos, baseDeImporteCongelado } from "@/lib/control-de-obra/presentacion-estimacion-privada";
 
 const CASO = {
   esquemaContractual: "ADMINISTRACION" as const,
@@ -46,5 +46,26 @@ describe("Presentación de la estimación privada", () => {
     const fila = (precioUnitarioBase: number, porcentajeAplicado: number | null) => ({ precioUnitarioBase, cantidadEstaSemana: 1, porcentajeAplicado });
     assert.deepEqual(tasasDeTrabajos([fila(5000, 18), fila(2000, 18)]), [{ porcentaje: 18, base: 7000, monto: 1260 }]);
     assert.deepEqual(tasasDeTrabajos([fila(950, 15), fila(5000, 18)]).map((t) => [t.porcentaje, t.base, t.monto]), [[18, 5000, 900], [15, 950, 142.5]]);
+  });
+});
+
+describe("importes fijados por capa (cantidad estimada por capa)", () => {
+  const emitida = { precioUnitarioBase: 381.15, precioUnitario: 426.89, porcentajeAplicado: 12 };
+  test("una fila emitida normal conserva P.U. base × cantidad exacto", () => {
+    const calculado = 381.15 * 1000;
+    const importe = Math.round(calculado * 1.12 * 100) / 100;
+    assert.equal(baseDeImporteCongelado({ ...emitida, calculado, importe }), calculado);
+  });
+  test("un importe fijado no se recalcula como P.U. × cantidad", () => {
+    const base = baseDeImporteCongelado({ calculado: 5500 * 1.090909, importe: 6720, precioUnitarioBase: 5500, precioUnitario: 6160, porcentajeAplicado: 12 });
+    assert.equal(Math.round(base * 100) / 100, 6000);
+  });
+  test("sin administración, el importe congelado ya es la base", () => {
+    assert.equal(baseDeImporteCongelado({ calculado: 100, importe: 150, precioUnitarioBase: 100, precioUnitario: 100, porcentajeAplicado: null }), 150);
+  });
+  test("las tasas de trabajos usan el importe base de la capa si está fijado", () => {
+    const [t] = tasasDeTrabajos([{ precioUnitarioBase: 5500, cantidadEstaSemana: 1, porcentajeAplicado: 12, importeEstaSemanaBase: 6000 }]);
+    assert.equal(t.base, 6000);
+    assert.equal(Math.round(t.monto), 720);
   });
 });

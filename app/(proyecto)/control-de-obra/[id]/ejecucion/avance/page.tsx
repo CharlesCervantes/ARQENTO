@@ -110,7 +110,7 @@ export default async function AvanceObraPage({
           semanaId={semana.id}
           numeroSemana={semana.numero}
           resumen={resumenCierre}
-          puedeReabrir={puedeReabrirSemana(usuario)}
+          puedeReabrir={puedeReabrirSemana(usuario) && !resumenCierre.historicoImportado}
           puedeVerRecibosFinancieros={puedeVerRecibosFinancieros(usuario)}
         />
       ) : (

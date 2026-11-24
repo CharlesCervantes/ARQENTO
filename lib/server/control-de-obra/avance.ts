@@ -13,7 +13,7 @@ import {
   RegistroNoEncontradoError,
 } from "./estructura-contractual";
 import { verificarSemanaEditable } from "./cierre-semana";
-import { sumaEjecutadaPorConcepto } from "./avance-calculo";
+import { sumaEjecutadaPorConcepto, sumaHistoricaImportadaPorConcepto } from "./avance-calculo";
 
 export { sumaEjecutadaPorConcepto };
 
@@ -187,10 +187,15 @@ export function filtrarPartidasConMovimiento<
 // Lectura — enriquecer Contratistas con avance acumulado a la fecha
 // ---------------------------------------------------------------------------
 
+// Avance de un concepto visto desde su contratista. `historicoSinAtribuir`
+// es lo ejecutado en semanas históricas importadas: NO cuenta como ejecutado
+// del contratista asignado (pudo hacerlo otro); se muestra aparte.
+export type AvanceContratista = AvanceCalculado & { historicoSinAtribuir: number };
+
 export async function obtenerAvanceAcumuladoPorConcepto(
   usuario: UsuarioSesion,
   proyectoId: string
-): Promise<Map<string, AvanceCalculado>> {
+): Promise<Map<string, AvanceContratista>> {
   await obtenerProyecto(usuario, proyectoId);
 
   // Se resuelve por proyectoId, no a partir de la lista de conceptos de
@@ -198,18 +203,24 @@ export async function obtenerAvanceAcumuladoPorConcepto(
   // termine primero y puede pedir todo en un solo Promise.all.
   const conceptos = await db.concepto.findMany({
     where: { partida: { proyectoId } },
-    select: { id: true, cantidadContratada: true },
+    select: { id: true, cantidadContratada: true, asignaciones: { select: { cantidad: true } } },
   });
   const conceptoIds = conceptos.map((c) => c.id);
-  const acumuladoPorConcepto = await sumaEjecutadaPorConcepto(conceptoIds);
+  const [acumuladoPorConcepto, historicoPorConcepto] = await Promise.all([
+    sumaEjecutadaPorConcepto(conceptoIds),
+    sumaHistoricaImportadaPorConcepto(proyectoId, conceptoIds),
+  ]);
 
-  const resultado = new Map<string, AvanceCalculado>();
+  const resultado = new Map<string, AvanceContratista>();
   for (const concepto of conceptos) {
-    const acumulado = acumuladoPorConcepto.get(concepto.id) ?? 0;
-    resultado.set(
-      concepto.id,
-      calcularAvance(Number(concepto.cantidadContratada), acumulado)
-    );
+    const historico = historicoPorConcepto.get(concepto.id) ?? 0;
+    const acumulado = (acumuladoPorConcepto.get(concepto.id) ?? 0) - historico;
+    // Sin histórico importado: igual que siempre (total del concepto). Con
+    // histórico: el total es la cantidad asignada al contratista, que ya
+    // excluye lo ejecutado antes (ver asignarConcepto).
+    const asignada = concepto.asignaciones[0];
+    const total = historico > 0 && asignada ? Number(asignada.cantidad) : Number(concepto.cantidadContratada);
+    resultado.set(concepto.id, { ...calcularAvance(total, acumulado), historicoSinAtribuir: historico });
   }
   return resultado;
 }
