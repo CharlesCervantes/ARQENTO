@@ -341,6 +341,8 @@ export type EstimacionClienteCapaResumen = TotalesCapaCalculados & {
   numero: number | null;
   aplicaIVA: boolean;
   porcentajeIVA: number | null;
+  // Esquema con el que se generó (snapshot), para rotular Administración/Utilidad.
+  esquemaContractualUsado: EsquemaContractual | null;
   generadoPorNombre: string;
   generadoEn: string;
   emitidoPorNombre: string | null;
@@ -672,6 +674,7 @@ export async function obtenerEstimacionCliente(
         numero: capaRow.numero,
         aplicaIVA: capaRow.aplicaIVA,
         porcentajeIVA: numOrNull(capaRow.porcentajeIVA),
+        esquemaContractualUsado: estimacion.esquemaContractualUsado,
         subtotal: Number(capaRow.subtotal),
         montoAdministracionTrabajos: Number(capaRow.montoAdministracionTrabajos),
         subtotalGastosCobrables: Number(capaRow.subtotalGastosCobrables),
@@ -716,6 +719,8 @@ export async function obtenerEstimacionCliente(
       numero: null,
       aplicaIVA: capaRow.aplicaIVA,
       porcentajeIVA: numOrNull(capaRow.porcentajeIVA),
+      // Borrador: se valoriza con el esquema vigente, se rotula con el mismo.
+      esquemaContractualUsado: esquemaContractual,
       ...totales,
       generadoPorNombre: capaRow.generadoPor.nombre,
       generadoEn: capaRow.generadoEn.toISOString(),
@@ -853,7 +858,12 @@ async function reclamarGastosCobrablesPendientes(
 // crea estimaciones ni capas, no liga gastos, no escribe nada.
 // ---------------------------------------------------------------------------
 
-export type PreliminarCapa = { gastos: FilaGastoEstimacion[]; totales: TotalesCapaCalculados; aplicaIVA: boolean };
+export type PreliminarCapa = {
+  gastos: FilaGastoEstimacion[];
+  totales: TotalesCapaCalculados;
+  aplicaIVA: boolean;
+  porcentajeIVA: number | null;
+};
 export type PreliminarSemanaAbierta = Record<CapaEstimacion, PreliminarCapa>;
 
 async function simularGastosDelCierre(
@@ -934,6 +944,7 @@ async function construirPreliminar(
     porCapa[s.capa] = {
       gastos: s.gastos,
       aplicaIVA: s.aplicaIVA,
+      porcentajeIVA: s.porcentajeIVA,
       totales: totalesCapa({
         capa: s.capa,
         ...trabajos[s.capa],

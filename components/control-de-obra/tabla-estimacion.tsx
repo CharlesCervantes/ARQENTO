@@ -23,7 +23,6 @@ export type FilaTablaEstimacion = {
   cantidadPorEjercer: number;
   importePorEjercer: number;
   avancePorcentaje: number;
-  porcentajeAplicado?: number | null;
 };
 
 function formatCantidad(n: number): string {
@@ -33,18 +32,16 @@ function formatCantidad(n: number): string {
 // Rediseño de lectura horizontal (Contratado → Anterior → Esta semana →
 // Acumulado → Avance) — de 10 columnas agrupadas por encabezados a 6
 // columnas, cada una con su propia jerarquía tipográfica interna en vez de
-// subcolumnas separadas (agosto 2026). `etiquetaPorcentajeAplicado` es
-// "ADM"/"UTIL" — quién llama ya sabe cuál de las dos aplica según el esquema
-// del proyecto, esta tabla solo lo pinta junto a la unidad, sin ensuciar la
-// descripción del concepto.
+// subcolumnas separadas (agosto 2026). Cliente Priv. oculta Anterior (el
+// Acumulado ya lo incluye) y declara con `nota` la base de sus importes.
 export function TablaEstimacion({
   partidas,
-  mostrarPorcentajeAplicado,
-  etiquetaPorcentajeAplicado = "%",
+  ocultarAnterior = false,
+  nota,
 }: {
   partidas: { partidaNombre: string; conceptos: FilaTablaEstimacion[] }[];
-  mostrarPorcentajeAplicado?: boolean;
-  etiquetaPorcentajeAplicado?: string;
+  ocultarAnterior?: boolean;
+  nota?: string;
 }) {
   if (partidas.length === 0) {
     return (
@@ -56,6 +53,7 @@ export function TablaEstimacion({
 
   return (
     <div className="space-y-3">
+      {nota && <p className="text-xs text-[var(--muted)]">{nota}</p>}
       {partidas.map((partida) => {
         const subtotalContratado = partida.conceptos.reduce((t, c) => t + c.importeContratado, 0);
         const subtotalEstaSemana = partida.conceptos.reduce((t, c) => t + c.importeEstaSemana, 0);
@@ -89,12 +87,12 @@ export function TablaEstimacion({
                 <Table>
                   <Thead>
                     <Tr>
-                      <Th className="w-[26%]">Concepto</Th>
+                      <Th className={ocultarAnterior ? "w-[35%]" : "w-[26%]"}>Concepto</Th>
                       <Th className="w-[17%] text-right">Contratado</Th>
-                      <Th className="w-[12%] text-right">Anterior</Th>
+                      {!ocultarAnterior && <Th className="w-[12%] text-right">Anterior</Th>}
                       <Th className="w-[17%] text-right">Esta semana</Th>
                       <Th className="w-[17%] text-right">Acumulado</Th>
-                      <Th className="w-[11%] text-right">Avance</Th>
+                      <Th className={`text-right ${ocultarAnterior ? "w-[14%]" : "w-[11%]"}`}>Avance</Th>
                     </Tr>
                   </Thead>
                   <tbody>
@@ -102,17 +100,7 @@ export function TablaEstimacion({
                       <Tr key={c.conceptoId}>
                         <Td>
                           <p className="text-[var(--foreground)]">{c.descripcionConcepto}</p>
-                          <p className="mt-0.5 text-xs text-[var(--muted)]">
-                            {c.unidad}
-                            {mostrarPorcentajeAplicado &&
-                              c.porcentajeAplicado !== null &&
-                              c.porcentajeAplicado !== undefined && (
-                                <span className="ml-1.5 rounded bg-black/[0.04] px-1 py-0.5 text-[10px] font-medium">
-                                  {etiquetaPorcentajeAplicado}{" "}
-                                  {c.porcentajeAplicado.toLocaleString("es-MX")}%
-                                </span>
-                              )}
-                          </p>
+                          <p className="mt-0.5 text-xs text-[var(--muted)]">{c.unidad}</p>
                         </Td>
                         <Td className="text-right">
                           <p className="font-medium tabular-nums text-[var(--foreground)]">
@@ -125,11 +113,13 @@ export function TablaEstimacion({
                             {formatMoneyOrDash(c.importeContratado)}
                           </p>
                         </Td>
-                        <Td className="text-right">
-                          <p className="tabular-nums text-[var(--muted)]">
-                            {formatCantidad(c.cantidadAnterior)} {c.unidad}
-                          </p>
-                        </Td>
+                        {!ocultarAnterior && (
+                          <Td className="text-right">
+                            <p className="tabular-nums text-[var(--muted)]">
+                              {formatCantidad(c.cantidadAnterior)} {c.unidad}
+                            </p>
+                          </Td>
+                        )}
                         <Td className="text-right">
                           <p className="font-medium tabular-nums text-[var(--foreground)]">
                             {formatCantidad(c.cantidadEstaSemana)} {c.unidad}
@@ -162,7 +152,7 @@ export function TablaEstimacion({
                       <Td className="text-right text-xs tabular-nums">
                         {formatMoneyOrDash(subtotalContratado)}
                       </Td>
-                      <Td />
+                      {!ocultarAnterior && <Td />}
                       <Td className="text-right text-xs tabular-nums">
                         {formatMoneyOrDash(subtotalEstaSemana)}
                       </Td>
