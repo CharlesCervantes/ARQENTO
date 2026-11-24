@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/server/db";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError } from "@/lib/server/control-de-obra/proyectos";
-import { puedeVerInformacionPrivada, puedeVerContabilidad } from "@/lib/server/permisos";
+import { puedeVerInformacionPrivada, puedeVerContabilidad, puedeVerInicio } from "@/lib/server/permisos";
 import { obtenerOCrearSemanaActual, formatearRangoSemana } from "@/lib/server/semanas";
 import {
   asegurarGastosRecurrentesGenerados,
@@ -435,6 +435,9 @@ export async function obtenerResumenEjecutivo(
   periodo: PeriodoDashboard
 ): Promise<ResumenEjecutivo> {
   if (!usuario.empresa) throw new SinPermisoError();
+  // Inicio es un módulo habilitable por Empresa: sin él no se consulta (ni
+  // se crea la semana actual ni se generan recurrentes) nada de obras.
+  if (!puedeVerInicio(usuario)) throw new SinPermisoError();
   const empresaId = usuario.empresa.id;
   const acceso = resolverAccesoDashboard(usuario, vista);
   const { nivelAcceso, puedeVerPrivado, vistaEfectiva } = acceso;

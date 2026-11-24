@@ -30,7 +30,9 @@ export type DocumentoCotizacion = {
   empresa: { nombre: string; razonSocial: string | null; logoRef: string | null };
   cliente: { nombre: string; contacto: string | null; telefono: string | null } | null;
   obra: { nombre: string; ubicacion: string | null } | null;
-  vendedor: { nombre: string };
+  // null = «Sin vendedor» (desde nov-2026). Las copias emitidas antes siempre
+  // traen vendedor y se leen igual.
+  vendedor: { nombre: string } | null;
   partidas: PartidaDocumento[];
   totales: TotalesCotizacion;
 };
@@ -48,7 +50,7 @@ const esquema = z.object({
   empresa: z.object({ nombre: z.string(), razonSocial: z.string().nullable(), logoRef: z.string().nullable() }),
   cliente: z.object({ nombre: z.string(), contacto: z.string().nullable(), telefono: z.string().nullable() }).nullable(),
   obra: z.object({ nombre: z.string(), ubicacion: z.string().nullable() }).nullable(),
-  vendedor: z.object({ nombre: z.string() }),
+  vendedor: z.object({ nombre: z.string() }).nullable(),
   partidas: z.array(
     z.object({
       codigo: z.string(),

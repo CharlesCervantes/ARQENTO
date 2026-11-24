@@ -8,6 +8,7 @@ import { ValidacionError } from "@/lib/server/control-de-obra/proyectos";
 import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructura-contractual";
 import { esAdministradorComercial } from "@/lib/server/permisos";
 import { SinPermisoComercialError, requerirUsoComercial } from "@/lib/server/comercializacion/acceso";
+import { FILTRO_SIN_VENDEDOR } from "@/lib/comercializacion/vendedor";
 import {
   calcularImportePartida,
   calcularTotalesCotizacion,
@@ -85,7 +86,7 @@ export async function listarVendedoresElegibles(usuario: UsuarioSesion): Promise
   });
 }
 
-async function vendedorEsElegible(tx: Prisma.TransactionClient, empresaId: string, vendedorId: string): Promise<boolean> {
+export async function vendedorEsElegible(tx: Prisma.TransactionClient, empresaId: string, vendedorId: string): Promise<boolean> {
   const u = await tx.usuario.findFirst({
     where: {
       id: vendedorId,
@@ -146,7 +147,8 @@ type DatosCotizacion = {
   clienteId: string | null;
   obraId: string | null;
   descripcion: string | null;
-  vendedorId: string | null;
+  // null = «Sin vendedor» (enviado vacío o null); undefined = no se envió.
+  vendedorId: string | null | undefined;
   fecha: string;
   vigenciaHasta: string | null;
   condiciones: string | null;
@@ -183,7 +185,11 @@ export function validarDatosCotizacion(datosCrudos: unknown): DatosCotizacion {
     return { id: p.id, productoId: p.productoId, cantidad, precioUnitario };
   });
 
-  // Mínimos de un borrador: folio, vendedor y fecha los pone el sistema; se
+  // «Sin vendedor» (campo enviado vacío o null) es distinto de no enviarlo:
+  // al editar, omitirlo conserva el vendedor guardado.
+  const vendedorEnviado = typeof datosCrudos === "object" && datosCrudos !== null && "vendedorId" in datosCrudos;
+
+  // Mínimos de un borrador: folio y fecha los pone el sistema; se
   // exige además AL MENOS un dato que lo identifique para el usuario
   // (cliente, descripción o una partida), para no guardar documentos vacíos.
   if (!d.clienteId && !d.descripcion && partidas.length === 0) {
@@ -194,7 +200,7 @@ export function validarDatosCotizacion(datosCrudos: unknown): DatosCotizacion {
     clienteId: d.clienteId,
     obraId: d.obraId,
     descripcion: d.descripcion,
-    vendedorId: d.vendedorId,
+    vendedorId: vendedorEnviado ? d.vendedorId : undefined,
     fecha,
     vigenciaHasta,
     condiciones: d.condiciones,
@@ -219,24 +225,31 @@ async function validarClienteObra(tx: Prisma.TransactionClient, empresaId: strin
   }
 }
 
-/** Vendedor efectivo según quien guarda. `actual` = vendedor ya guardado (edición). */
+/**
+ * Vendedor efectivo según quien guarda. `actual` = vendedor ya guardado
+ * (edición; null al crear o si está «Sin vendedor»).
+ * - Vendedor: siempre él mismo.
+ * - Administración/Dirección: el vendedor es OPCIONAL. null = «Sin vendedor»
+ *   (la venta la operan ellos; válido hasta la orden de venta). Si el campo
+ *   no se envía, al crear queda sin vendedor y al editar se conserva.
+ */
 async function resolverVendedor(
   tx: Prisma.TransactionClient,
   usuario: UsuarioSesion,
   empresaId: string,
-  solicitado: string | null,
+  solicitado: string | null | undefined,
   actual: string | null
-): Promise<string> {
+): Promise<string | null> {
   if (!esAdministradorComercial(usuario)) {
     if (solicitado && solicitado !== usuario.id) {
       throw new SinPermisoComercialError("Un vendedor no puede asignar la cotización a otra persona.");
     }
     return usuario.id;
   }
-  const vendedorId = solicitado ?? actual ?? usuario.id;
+  const vendedorId = solicitado === undefined ? actual : solicitado;
   // Solo se valida elegibilidad al ASIGNAR (alta o cambio): conservar al
   // vendedor ya guardado no falla si después perdió la función.
-  if (vendedorId !== actual && !(await vendedorEsElegible(tx, empresaId, vendedorId))) {
+  if (vendedorId && vendedorId !== actual && !(await vendedorEsElegible(tx, empresaId, vendedorId))) {
     throw new ValidacionError("El vendedor seleccionado no es elegible en tu empresa.");
   }
   return vendedorId;
@@ -684,7 +697,7 @@ export type FilaCotizacion = {
   descripcion: string | null;
   clienteNombre: string | null;
   obraNombre: string | null;
-  vendedorNombre: string;
+  vendedorNombre: string | null; // null = «Sin vendedor»
   fecha: string;
   vigenciaHasta: string | null;
   total: string;
@@ -707,7 +720,10 @@ export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: F
     ...(estatus ? { estatus } : {}),
     // Un vendedor no puede ampliar su alcance con este filtro: alcance() ya
     // fijó vendedorId y aquí solo se aplica para administración.
-    ...(filtros.vendedorId && esAdministradorComercial(usuario) ? { vendedorId: filtros.vendedorId } : {}),
+    // FILTRO_SIN_VENDEDOR = ventas sin vendedor asignado.
+    ...(filtros.vendedorId && esAdministradorComercial(usuario)
+      ? { vendedorId: filtros.vendedorId === FILTRO_SIN_VENDEDOR ? null : filtros.vendedorId }
+      : {}),
     ...(busqueda
       ? {
           OR: [
@@ -753,7 +769,7 @@ export async function listarCotizacionesVenta(usuario: UsuarioSesion, filtros: F
       descripcion: c.descripcion,
       clienteNombre: c.cliente?.nombre ?? null,
       obraNombre: c.obra?.nombre ?? null,
-      vendedorNombre: c.vendedor.nombre,
+      vendedorNombre: c.vendedor?.nombre ?? null,
       fecha: dateAFecha(c.fecha),
       vigenciaHasta,
       total: c.total.toFixed(2),
@@ -810,7 +826,7 @@ export type CotizacionDetalle = {
   clienteId: string | null;
   obraId: string | null;
   descripcion: string | null;
-  vendedor: OpcionVendedor;
+  vendedor: OpcionVendedor | null; // null = «Sin vendedor»
   creadoPorNombre: string;
   fecha: string;
   vigenciaHasta: string | null;

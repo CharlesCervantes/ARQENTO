@@ -13,6 +13,7 @@ import {
   ENTIDAD_COTIZACION,
   alcance,
   crearCotizacionVenta,
+  vendedorEsElegible,
 } from "@/lib/server/comercializacion/cotizaciones";
 import { calcularImportePartida, calcularTotalesCotizacion, comoTratamientoVenta } from "@/lib/comercializacion/importes";
 import { dateAFecha, hoyNegocio } from "@/lib/comercializacion/fechas";
@@ -91,7 +92,8 @@ function armarDocumento(c: CotizacionParaDocumento): DocumentoCotizacion {
     empresa: { nombre: c.empresa.nombre, razonSocial: c.empresa.razonSocial, logoRef: c.empresa.logoRef },
     cliente: c.cliente ? { nombre: c.cliente.nombre, contacto: c.cliente.contacto, telefono: c.cliente.telefono } : null,
     obra: c.obra ? { nombre: c.obra.nombre, ubicacion: c.obra.ubicacion } : null,
-    vendedor: { nombre: c.vendedor.nombre },
+    // null = «Sin vendedor»; queda así en la copia emitida.
+    vendedor: c.vendedor ? { nombre: c.vendedor.nombre } : null,
     partidas,
     totales: calcularTotalesCotizacion(partidas),
   };
@@ -113,16 +115,11 @@ async function faltantesParaEmitir(tx: Prisma.TransactionClient, c: CotizacionPa
   if (!c.descripcion?.trim()) faltan.push("descripción");
   if (!c.vigenciaHasta) faltan.push("vigencia");
   if (c.partidas.length === 0) faltan.push("al menos un material");
-  const vendedorElegible = await tx.usuario.findFirst({
-    where: {
-      id: c.vendedorId,
-      empresaId: c.empresaId,
-      activo: true,
-      OR: [{ rol: { in: ["ADMINISTRADOR", "DIRECTOR"] } }, { rol: "SUPERVISOR", vendedorComercial: true }],
-    },
-    select: { id: true },
-  });
-  if (!vendedorElegible) faltan.push("un vendedor elegible (el asignado ya no lo es)");
+  // El vendedor es opcional («Sin vendedor» se emite). Si hay uno asignado,
+  // debe seguir siendo elegible.
+  if (c.vendedorId && !(await vendedorEsElegible(tx, c.empresaId, c.vendedorId))) {
+    faltan.push("un vendedor elegible (el asignado ya no lo es; elige otro o «Sin vendedor»)");
+  }
   return faltan;
 }
 
@@ -209,7 +206,8 @@ export async function emitirCotizacionVenta(
  *   ajuste suyo si difiere del catálogo actual). El vendedor recibe el precio
  *   actual de catálogo: no puede usar el duplicado para fijar precios.
  * - Vendedor: el vendedor queda él mismo; administración conserva al vendedor
- *   original si sigue siendo elegible (si no, queda ella misma).
+ *   original si sigue siendo elegible (si no, o si no tenía, queda «Sin
+ *   vendedor»).
  * - Fecha = hoy; vigencia se conserva solo si sigue vigente.
  */
 export async function duplicarCotizacionVenta(
@@ -251,18 +249,13 @@ export async function duplicarCotizacionVenta(
       ...(esAdmin ? { precioUnitario: p.precioUnitario.toFixed(2) } : {}),
     }));
 
-  let vendedorId: string | undefined;
+  // Administración conserva al vendedor original si sigue siendo elegible;
+  // si no tenía o ya no es elegible, el duplicado queda «Sin vendedor». El
+  // vendedor no envía el campo (el servicio lo fija a él).
+  let vendedor: { vendedorId: string | null } | Record<string, never> = {};
   if (esAdmin) {
-    const elegible = await db.usuario.findFirst({
-      where: {
-        id: o.vendedorId,
-        empresaId,
-        activo: true,
-        OR: [{ rol: { in: ["ADMINISTRADOR", "DIRECTOR"] } }, { rol: "SUPERVISOR", vendedorComercial: true }],
-      },
-      select: { id: true },
-    });
-    vendedorId = elegible ? o.vendedorId : usuario.id;
+    const conserva = o.vendedorId !== null && (await vendedorEsElegible(db, empresaId, o.vendedorId));
+    vendedor = { vendedorId: conserva ? o.vendedorId : null };
   }
   const hoy = hoyNegocio();
   const vigencia = o.vigenciaHasta ? dateAFecha(o.vigenciaHasta) : null;
@@ -273,7 +266,7 @@ export async function duplicarCotizacionVenta(
       clienteId: o.clienteId,
       obraId: o.obraId,
       descripcion: o.descripcion,
-      ...(vendedorId ? { vendedorId } : {}),
+      ...vendedor,
       fecha: hoy,
       vigenciaHasta: vigencia && vigencia >= hoy ? vigencia : null,
       condiciones: o.condiciones,
