@@ -49,7 +49,7 @@ const clave = () => `clave-b6b-${++n}-${Date.now()}`;
 async function orden(total: string, u: UsuarioSesion = admin) {
   const { id } = await crearCotizacionVenta(
     u,
-    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B6B", vendedorId: vendedor.id, fecha: HOY_REAL, vigenciaHasta: HOY_REAL, partidas: [{ productoId: UNIDAD, cantidad: total }] },
+    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B6B", vendedorId: vendedor.id, impuestoVenta: "SIN_IVA", fecha: HOY_REAL, vigenciaHasta: HOY_REAL, partidas: [{ productoId: UNIDAD, cantidad: total }] },
     clave()
   );
   await emitirCotizacionVenta(u, id, 1);
@@ -262,7 +262,7 @@ describe("Indicador «Entregas pendientes»", () => {
   test("cuenta OV aceptadas con pendientes una vez por OV; completa sale; anular la entrega la regresa", async () => {
     assert.equal(await contarOrdenesConEntregaPendiente(admin), 0);
     // Cotización emitida sin aceptar: no cuenta.
-    const { id } = await crearCotizacionVenta(admin, { clienteId: CLIENTE, obraId: OBRA, descripcion: "Sin aceptar", fecha: HOY_REAL, vigenciaHasta: HOY_REAL, partidas: [{ productoId: UNIDAD, cantidad: "5" }] }, clave());
+    const { id } = await crearCotizacionVenta(admin, { clienteId: CLIENTE, obraId: OBRA, descripcion: "Sin aceptar", impuestoVenta: "SIN_IVA", fecha: HOY_REAL, vigenciaHasta: HOY_REAL, partidas: [{ productoId: UNIDAD, cantidad: "5" }] }, clave());
     await emitirCotizacionVenta(admin, id, 1);
     const a = await orden("10");
     const b = await orden("4");

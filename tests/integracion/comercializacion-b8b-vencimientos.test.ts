@@ -57,7 +57,7 @@ const clave = () => `clave-b8b-v-${++n}-${Date.now()}`;
 async function orden() {
   const { id } = await crearCotizacionVenta(
     admin,
-    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B8B", vendedorId: vendedor.id, fecha: dias(-30), vigenciaHasta: dias(10), partidas: [{ productoId: LOTE, cantidad: "1" }] },
+    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B8B", vendedorId: vendedor.id, impuestoVenta: "SIN_IVA", fecha: dias(-30), vigenciaHasta: dias(10), partidas: [{ productoId: LOTE, cantidad: "1" }] },
     clave()
   );
   await emitirCotizacionVenta(admin, id, 1);

@@ -6,7 +6,8 @@ import type { DetalleCuenta, ResumenSaldos } from "@/lib/server/comercializacion
 import type { ResumenEntregasOrden } from "@/lib/server/comercializacion/entregas";
 import type { ResumenGastosOrden } from "@/lib/server/comercializacion/gastos";
 import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
-import { formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
+import { etiquetaImpuestoPartidaVenta, formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
+import { filasImpuestoVenta } from "@/lib/comercializacion/totales-venta";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { ETIQUETA_ESTADO_ENTREGA } from "@/lib/comercializacion/entregas";
 import { ETIQUETA_METODO } from "@/lib/comercializacion/cuentas";
@@ -259,7 +260,15 @@ function Actividad({ d }: { d: DatosResumen }) {
 
 const VISTA_PREVIA = 5;
 
-function TablaMateriales({ partidas }: { partidas: NonNullable<CotizacionDetalle["emision"]>["documento"]["partidas"] }) {
+// La columna «Impuesto» solo aparece en documentos con impuesto por partida
+// (anteriores a la opción de IVA por cotización).
+function TablaMateriales({
+  partidas,
+  porPartida,
+}: {
+  partidas: NonNullable<CotizacionDetalle["emision"]>["documento"]["partidas"];
+  porPartida: boolean;
+}) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
       <table className="w-full text-sm">
@@ -268,7 +277,7 @@ function TablaMateriales({ partidas }: { partidas: NonNullable<CotizacionDetalle
             <th className="px-3 py-2.5">Material</th>
             <th className="px-3 py-2.5 text-right">Cantidad</th>
             <th className="px-3 py-2.5 text-right">Precio sin IVA</th>
-            <th className="px-3 py-2.5">Impuesto</th>
+            {porPartida && <th className="px-3 py-2.5">Impuesto</th>}
             <th className="px-3 py-2.5 text-right">Importe</th>
           </tr>
         </thead>
@@ -283,9 +292,7 @@ function TablaMateriales({ partidas }: { partidas: NonNullable<CotizacionDetalle
                 {formatearCantidad(p.cantidad)} <span className="text-xs text-[var(--muted)]">{p.unidad}</span>
               </td>
               <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{formatearImporte(p.precioUnitario)}</td>
-              <td className="whitespace-nowrap px-3 py-2.5">
-                {p.tratamientoImpuesto === "GRAVADO" && p.tasaIva ? `IVA ${Number(p.tasaIva)} %` : p.tratamientoImpuesto === "TASA_CERO" ? "Tasa 0 %" : "Exento"}
-              </td>
+              {porPartida && <td className="whitespace-nowrap px-3 py-2.5">{etiquetaImpuestoPartidaVenta(p.tratamientoImpuesto, p.tasaIva)}</td>}
               <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{formatearImporte(p.importe)}</td>
             </tr>
           ))}
@@ -441,7 +448,7 @@ export function ResumenOperacion(d: DatosResumen) {
             {doc.partidas.length} {doc.partidas.length === 1 ? "partida" : "partidas"} · copia emitida
           </span>
         </div>
-        <TablaMateriales partidas={doc.partidas.slice(0, VISTA_PREVIA)} />
+        <TablaMateriales partidas={doc.partidas.slice(0, VISTA_PREVIA)} porPartida={doc.impuestoVenta === null} />
         {doc.partidas.length > VISTA_PREVIA && (
           <details className="group" data-todos-materiales>
             <summary className={`${ACCION_EN_LINEA} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
@@ -449,7 +456,7 @@ export function ResumenOperacion(d: DatosResumen) {
               <span className="hidden group-open:inline">Ocultar la lista completa</span>
             </summary>
             <div className="mt-3">
-              <TablaMateriales partidas={doc.partidas} />
+              <TablaMateriales partidas={doc.partidas} porPartida={doc.impuestoVenta === null} />
             </div>
           </details>
         )}
@@ -458,26 +465,12 @@ export function ResumenOperacion(d: DatosResumen) {
             <span>Subtotal</span>
             <span className="tabular-nums">{formatearImporte(doc.totales.subtotal)}</span>
           </div>
-          {doc.totales.gravado.map((g) => (
-            <div key={g.tasa} className="flex justify-between gap-4">
-              <span>
-                IVA {Number(g.tasa)} % sobre {formatearImporte(g.base)}
-              </span>
-              <span className="tabular-nums">{formatearImporte(g.iva)}</span>
+          {filasImpuestoVenta(doc.totales, doc.impuestoVenta).map((f) => (
+            <div key={f.etiqueta} className={`flex justify-between gap-4 ${f.tenue ? "text-[var(--muted)]" : ""}`}>
+              <span>{f.etiqueta}</span>
+              <span className="tabular-nums">{formatearImporte(f.valor)}</span>
             </div>
           ))}
-          {doc.totales.baseTasaCero !== "0.00" && (
-            <div className="flex justify-between gap-4 text-[var(--muted)]">
-              <span>Base tasa 0 % (IVA $0.00)</span>
-              <span className="tabular-nums">{formatearImporte(doc.totales.baseTasaCero)}</span>
-            </div>
-          )}
-          {doc.totales.baseExenta !== "0.00" && (
-            <div className="flex justify-between gap-4 text-[var(--muted)]">
-              <span>Base exenta (sin IVA)</span>
-              <span className="tabular-nums">{formatearImporte(doc.totales.baseExenta)}</span>
-            </div>
-          )}
           <div className="flex justify-between gap-4 border-t border-[var(--border)] pt-1 text-base font-semibold text-[var(--foreground)]">
             <span>Total</span>
             <span className="tabular-nums">{formatearImporte(doc.totales.total)}</span>

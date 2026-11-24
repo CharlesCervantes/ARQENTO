@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, Thead, Th, Tr, Td } from "@/components/ui/table";
-import { calcularImpuesto, ETIQUETA_TRATAMIENTO, formatearImporte } from "@/lib/comercializacion/importes";
+import { formatearImporte } from "@/lib/comercializacion/importes";
 import type { ProductoParaVenta } from "@/lib/server/comercializacion/productos";
-import { coincideBusqueda, etiquetaImpuesto } from "./productos-comun";
+import { coincideBusqueda } from "./productos-comun";
 
 // Vista del vendedor: solo productos activos con su precio de venta. El tipo
 // ProductoParaVenta no tiene campos privados — el servidor no los envía.
@@ -19,7 +19,7 @@ export function ProductosVentaView({ productos }: { productos: ProductoParaVenta
       <div>
         <h1 className="text-2xl font-semibold text-[var(--foreground)]">Productos</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Catálogo de venta autorizado por administración. Precios sin IVA.
+          Catálogo de venta autorizado por administración. Precios de venta sin IVA; el IVA se elige en cada cotización.
         </p>
       </div>
 
@@ -43,9 +43,7 @@ export function ProductosVentaView({ productos }: { productos: ProductoParaVenta
               <Th>Código</Th>
               <Th>Descripción</Th>
               <Th>Unidad</Th>
-              <Th className="text-right">Precio sin IVA</Th>
-              <Th>Impuesto</Th>
-              <Th className="text-right">Precio con IVA</Th>
+              <Th className="text-right">Precio de venta sin IVA</Th>
             </tr>
           </Thead>
           <tbody>
@@ -55,12 +53,6 @@ export function ProductosVentaView({ productos }: { productos: ProductoParaVenta
                 <Td>{p.descripcion}</Td>
                 <Td className="whitespace-nowrap">{p.unidad}</Td>
                 <Td className="text-right tabular-nums whitespace-nowrap">{formatearImporte(p.precioVenta)}</Td>
-                <Td className="whitespace-nowrap" title={ETIQUETA_TRATAMIENTO[p.tratamientoImpuesto]}>
-                  {etiquetaImpuesto(p)}
-                </Td>
-                <Td className="text-right tabular-nums whitespace-nowrap">
-                  {formatearImporte(calcularImpuesto(p.precioVenta, p.tratamientoImpuesto, p.tasaIva).total)}
-                </Td>
               </Tr>
             ))}
           </tbody>

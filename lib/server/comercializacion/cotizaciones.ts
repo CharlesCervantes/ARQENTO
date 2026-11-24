@@ -14,9 +14,11 @@ import {
   calcularTotalesCotizacion,
   normalizarCantidad,
   normalizarImporte,
+  impuestoDePartidaVenta,
+  type ImpuestoVenta,
+  type ModoImpuestoCotizacion,
   type TotalesCotizacion,
-  type TratamientoImpuesto,
-  comoTratamientoVenta,
+  type TratamientoPartidaVenta,
 } from "@/lib/comercializacion/importes";
 import { dateAFecha, fechaADate, hoyNegocio, normalizarFecha } from "@/lib/comercializacion/fechas";
 import { leerDocumentoEmitido, type DocumentoCotizacion } from "@/lib/comercializacion/documento";
@@ -38,6 +40,11 @@ import { leerDocumentoEmitido, type DocumentoCotizacion } from "@/lib/comerciali
 // - Importes y totales: SIEMPRE calculados aquí (lib/comercializacion/
 //   importes.ts); campos de importe/impuesto enviados por el navegador se
 //   rechazan.
+// - IVA por cotización (nov-2026): la cotización guarda UNA opción («Con IVA»
+//   16 % o «Sin IVA») y el servidor fija con ella el impuesto de todas sus
+//   partidas, incluidas las que se agreguen después. Las cotizaciones
+//   anteriores (impuestoVenta null) conservan el impuesto copiado por partida
+//   hasta que alguien elija una de las dos opciones. Ver importes.ts.
 // - Folio COT- por Empresa; idempotencia de creación por claveCreacion;
 //   conflicto de edición por versión. Un borrador no crea OC, compra, cobro
 //   ni deuda.
@@ -139,6 +146,9 @@ const esquemaCotizacion = z.strictObject(
     condiciones: textoOpcional(2000, "Las condiciones"),
     observaciones: textoOpcional(2000, "Las observaciones"),
     partidas: z.array(esquemaPartida).max(MAX_PARTIDAS, `Máximo ${MAX_PARTIDAS} partidas por cotización.`),
+    // Opción de IVA de toda la venta. Omitida: al crear = «Con IVA»; al
+    // editar se conserva la guardada.
+    impuestoVenta: z.enum(["CON_IVA", "SIN_IVA"], { error: "Elige «Con IVA» o «Sin IVA»." }).optional(),
   },
   { error: (i) => (i.code === "unrecognized_keys" ? `Campo no permitido: ${i.keys.join(", ")}.` : undefined) }
 );
@@ -154,6 +164,7 @@ type DatosCotizacion = {
   condiciones: string | null;
   observaciones: string | null;
   partidas: { id: string | null; productoId: string; cantidad: string; precioUnitario: string | null }[];
+  impuestoVenta: ImpuestoVenta | undefined;
 };
 
 export function validarDatosCotizacion(datosCrudos: unknown): DatosCotizacion {
@@ -206,6 +217,7 @@ export function validarDatosCotizacion(datosCrudos: unknown): DatosCotizacion {
     condiciones: d.condiciones,
     observaciones: d.observaciones,
     partidas,
+    impuestoVenta: d.impuestoVenta,
   };
 }
 
@@ -261,7 +273,7 @@ type PartidaGuardada = {
   codigo: string;
   descripcion: string;
   unidad: string;
-  tratamientoImpuesto: TratamientoImpuesto;
+  tratamientoImpuesto: TratamientoPartidaVenta;
   tasaIva: Prisma.Decimal | null;
   precioBase: Prisma.Decimal;
   precioUnitario: Prisma.Decimal;
@@ -277,7 +289,7 @@ type PartidaResuelta = {
   codigo: string;
   descripcion: string;
   unidad: string;
-  tratamientoImpuesto: TratamientoImpuesto;
+  tratamientoImpuesto: TratamientoPartidaVenta;
   tasaIva: string | null;
   precioBase: string;
   precioUnitario: string;
@@ -287,13 +299,25 @@ type PartidaResuelta = {
   importe: string;
 };
 
+type ImpuestoPartida = { tratamientoImpuesto: TratamientoPartidaVenta; tasaIva: string | null };
+
+/**
+ * Impuesto de cada partida según la opción de la cotización:
+ * - CON_IVA / SIN_IVA: el de la opción, para TODAS (existentes y nuevas).
+ * - null (anterior) / PENDIENTE: las existentes conservan el suyo; una nueva
+ *   solo con `impuestosOrigen` (uso interno de Duplicar); si no, hay que
+ *   elegir una de las dos opciones para agregar materiales.
+ */
 async function resolverPartidas(
   tx: Prisma.TransactionClient,
   usuario: UsuarioSesion,
   empresaId: string,
   entrada: DatosCotizacion["partidas"],
-  guardadas: PartidaGuardada[]
+  guardadas: PartidaGuardada[],
+  modo: ModoImpuestoCotizacion,
+  impuestosOrigen?: ImpuestoPartida[]
 ): Promise<PartidaResuelta[]> {
+  const deOpcion = modo === "CON_IVA" || modo === "SIN_IVA" ? impuestoDePartidaVenta(modo) : null;
   const esAdmin = esAdministradorComercial(usuario);
   const porId = new Map(guardadas.map((p) => [p.id, p]));
   const nuevasIds = [...new Set(entrada.filter((p) => !p.id).map((p) => p.productoId))];
@@ -302,7 +326,7 @@ async function resolverPartidas(
     (
       await tx.productoComercial.findMany({
         where: { id: { in: nuevasIds }, empresaId, activo: true },
-        select: { id: true, codigo: true, descripcion: true, unidad: true, precioVenta: true, tratamientoImpuesto: true, tasaIva: true },
+        select: { id: true, codigo: true, descripcion: true, unidad: true, precioVenta: true },
       })
     ).map((p) => [p.id, p])
   );
@@ -324,8 +348,7 @@ async function resolverPartidas(
         codigo: g.codigo,
         descripcion: g.descripcion,
         unidad: g.unidad,
-        tratamientoImpuesto: g.tratamientoImpuesto,
-        tasaIva: g.tasaIva === null ? null : g.tasaIva.toFixed(2),
+        ...(deOpcion ?? { tratamientoImpuesto: g.tratamientoImpuesto, tasaIva: g.tasaIva === null ? null : g.tasaIva.toFixed(2) }),
         precioBase: g.precioBase.toFixed(2),
       };
       precioVigente = g.precioUnitario.toFixed(2);
@@ -333,14 +356,17 @@ async function resolverPartidas(
     } else {
       const prod = catalogo.get(p.productoId);
       if (!prod) throw new ValidacionError(`Partida ${n}: el producto no existe o está inactivo.`);
+      const impuesto = deOpcion ?? impuestosOrigen?.[orden];
+      if (!impuesto) {
+        throw new ValidacionError("Para agregar materiales a esta cotización elige «Con IVA» o «Sin IVA»; el impuesto se aplicará a todas las partidas.");
+      }
       base = {
         id: null,
         productoId: prod.id,
         codigo: prod.codigo,
         descripcion: prod.descripcion,
         unidad: prod.unidad,
-        tratamientoImpuesto: comoTratamientoVenta(prod.tratamientoImpuesto),
-        tasaIva: prod.tasaIva === null ? null : prod.tasaIva.toFixed(2),
+        ...impuesto,
         precioBase: prod.precioVenta.toFixed(2),
       };
       precioVigente = base.precioBase;
@@ -365,7 +391,7 @@ async function resolverPartidas(
   });
 }
 
-function totalesDe(partidas: { importe: string; tratamientoImpuesto: TratamientoImpuesto; tasaIva: string | null }[]): TotalesCotizacion {
+function totalesDe(partidas: { importe: string; tratamientoImpuesto: TratamientoPartidaVenta; tasaIva: string | null }[]): TotalesCotizacion {
   try {
     return calcularTotalesCotizacion(partidas);
   } catch {
@@ -388,7 +414,10 @@ export async function crearCotizacionVenta(
   datosCrudos: unknown,
   claveCreacionCruda?: unknown,
   // Solo uso interno del servidor (Duplicar, B3): nunca llega del navegador.
-  opciones: { origenId?: string } = {}
+  // `impuestosOrigen`: copia de un documento anterior que no se representa
+  // con «Con IVA»/«Sin IVA» — queda PENDIENTE con el impuesto de origen por
+  // partida hasta que se elija una opción.
+  opciones: { origenId?: string; impuestosOrigen?: ImpuestoPartida[] } = {}
 ): Promise<{ id: string; folio: string; reintento: boolean }> {
   const empresaId = requerirUsoComercial(usuario);
   const datos = validarDatosCotizacion(datosCrudos);
@@ -415,7 +444,8 @@ export async function crearCotizacionVenta(
     return await db.$transaction(async (tx) => {
       await validarClienteObra(tx, empresaId, datos);
       const vendedorId = await resolverVendedor(tx, usuario, empresaId, datos.vendedorId, null);
-      const partidas = await resolverPartidas(tx, usuario, empresaId, datos.partidas, []);
+      const modo: ModoImpuestoCotizacion = datos.impuestoVenta ?? (opciones.impuestosOrigen ? "PENDIENTE" : "CON_IVA");
+      const partidas = await resolverPartidas(tx, usuario, empresaId, datos.partidas, [], modo, opciones.impuestosOrigen);
       const totales = totalesDe(partidas);
 
       // Consecutivo PROPIO de cotizaciones (no consume ultimoFolioOrdenCompra).
@@ -440,6 +470,7 @@ export async function crearCotizacionVenta(
           vigenciaHasta: datos.vigenciaHasta ? fechaADate(datos.vigenciaHasta) : null,
           condiciones: datos.condiciones,
           observaciones: datos.observaciones,
+          impuestoVenta: modo,
           subtotal: totales.subtotal,
           iva: totales.iva,
           total: totales.total,
@@ -482,6 +513,7 @@ export async function crearCotizacionVenta(
           vendedorId,
           clienteId: datos.clienteId,
           obraId: datos.obraId,
+          impuestoVenta: modo,
           partidas: partidas.map((p) => ({ codigo: p.codigo, cantidad: p.cantidad, precioUnitario: p.precioUnitario, precioBase: p.precioBase })),
           total: totales.total,
         },
@@ -549,7 +581,11 @@ export async function actualizarCotizacionVenta(
 
     await validarClienteObra(tx, empresaId, datos);
     const vendedorId = await resolverVendedor(tx, usuario, empresaId, datos.vendedorId, actual.vendedorId);
-    const partidas = await resolverPartidas(tx, usuario, empresaId, datos.partidas, actual.partidas.map((p) => ({ ...p, tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto) })));
+    // Sin elección nueva se conserva la guardada (incluida la anterior por
+    // partida o PENDIENTE). Elegir «Con IVA»/«Sin IVA» rehace el impuesto de
+    // todas las partidas; cantidades y precios negociados no cambian.
+    const modo: ModoImpuestoCotizacion = datos.impuestoVenta ?? actual.impuestoVenta;
+    const partidas = await resolverPartidas(tx, usuario, empresaId, datos.partidas, actual.partidas, modo);
     const totales = totalesDe(partidas);
 
     // --- Diferencias para bitácora (y para saber si hay algo que guardar) ---
@@ -562,6 +598,7 @@ export async function actualizarCotizacionVenta(
       vigenciaHasta: actual.vigenciaHasta ? dateAFecha(actual.vigenciaHasta) : null,
       condiciones: actual.condiciones,
       observaciones: actual.observaciones,
+      impuestoVenta: actual.impuestoVenta,
     };
     const encabezadoDespues: Record<string, string | null> = {
       clienteId: datos.clienteId,
@@ -572,6 +609,7 @@ export async function actualizarCotizacionVenta(
       vigenciaHasta: datos.vigenciaHasta,
       condiciones: datos.condiciones,
       observaciones: datos.observaciones,
+      impuestoVenta: modo,
     };
     const camposCambiados = Object.keys(encabezadoDespues).filter((k) => encabezadoAntes[k] !== encabezadoDespues[k]);
 
@@ -583,9 +621,15 @@ export async function actualizarCotizacionVenta(
       .filter((p) => p.id)
       .map((p) => ({ p, g: guardadasPorId.get(p.id as string)! }))
       .filter(({ p, g }) => g.cantidad.toFixed(3) !== p.cantidad || g.precioUnitario.toFixed(2) !== p.precioUnitario);
+    const impuestoPartidas = partidas
+      .filter((p) => p.id)
+      .some((p) => {
+        const g = guardadasPorId.get(p.id as string)!;
+        return g.tratamientoImpuesto !== p.tratamientoImpuesto || (g.tasaIva === null ? null : g.tasaIva.toFixed(2)) !== p.tasaIva;
+      });
     const reordenadas = partidas.some((p, i) => p.id && actual.partidas[i]?.id !== p.id);
 
-    if (camposCambiados.length === 0 && eliminadas.length === 0 && agregadas.length === 0 && modificadas.length === 0 && !reordenadas) {
+    if (camposCambiados.length === 0 && eliminadas.length === 0 && agregadas.length === 0 && modificadas.length === 0 && !reordenadas && !impuestoPartidas) {
       return { id: cotizacionId, version: actual.version, sinCambios: true };
     }
 
@@ -597,6 +641,8 @@ export async function actualizarCotizacionVenta(
         where: { id: p.id as string },
         data: {
           orden: p.orden,
+          tratamientoImpuesto: p.tratamientoImpuesto,
+          tasaIva: p.tasaIva,
           cantidad: p.cantidad,
           precioUnitario: p.precioUnitario,
           precioAjustadoPorId: p.precioAjustadoPorId,
@@ -639,6 +685,7 @@ export async function actualizarCotizacionVenta(
         vigenciaHasta: datos.vigenciaHasta ? fechaADate(datos.vigenciaHasta) : null,
         condiciones: datos.condiciones,
         observaciones: datos.observaciones,
+        impuestoVenta: modo,
         subtotal: totales.subtotal,
         iva: totales.iva,
         total: totales.total,
@@ -655,11 +702,15 @@ export async function actualizarCotizacionVenta(
       accion: "EDITAR",
       valorAnterior: {
         ...Object.fromEntries(camposCambiados.map((k) => [k, encabezadoAntes[k]])),
+        subtotal: actual.subtotal.toFixed(2),
+        iva: actual.iva.toFixed(2),
         total: actual.total.toFixed(2),
         version: actual.version,
       },
       valorNuevo: {
         ...Object.fromEntries(camposCambiados.map((k) => [k, encabezadoDespues[k]])),
+        subtotal: totales.subtotal,
+        iva: totales.iva,
         total: totales.total,
         version: nuevaVersion,
         partidasAgregadas: agregadas.map((p) => ({ codigo: p.codigo, cantidad: p.cantidad, precioUnitario: p.precioUnitario })),
@@ -795,7 +846,7 @@ export type PartidaDetalle = {
   codigo: string;
   descripcion: string;
   unidad: string;
-  tratamientoImpuesto: TratamientoImpuesto;
+  tratamientoImpuesto: TratamientoPartidaVenta;
   tasaIva: string | null;
   cantidad: string;
   precioBase: string;
@@ -832,6 +883,8 @@ export type CotizacionDetalle = {
   vigenciaHasta: string | null;
   condiciones: string | null;
   observaciones: string | null;
+  // Opción de IVA (null = esquema anterior por partida; ver importes.ts).
+  impuestoVenta: ModoImpuestoCotizacion;
   partidas: PartidaDetalle[];
   totales: TotalesCotizacion;
   actualizadoEn: string;
@@ -861,6 +914,7 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
       vigenciaHasta: true,
       condiciones: true,
       observaciones: true,
+      impuestoVenta: true,
       updatedAt: true,
       emitidaEn: true,
       documentoEmitido: true,
@@ -902,7 +956,7 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
     codigo: p.codigo,
     descripcion: p.descripcion,
     unidad: p.unidad,
-    tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto),
+    tratamientoImpuesto: p.tratamientoImpuesto,
     tasaIva: p.tasaIva === null ? null : p.tasaIva.toFixed(2),
     cantidad: p.cantidad.toFixed(3),
     precioBase: p.precioBase.toFixed(2),
@@ -927,6 +981,7 @@ export async function obtenerCotizacionVenta(usuario: UsuarioSesion, cotizacionI
     vigenciaHasta,
     condiciones: c.condiciones,
     observaciones: c.observaciones,
+    impuestoVenta: c.impuestoVenta,
     partidas,
     totales: calcularTotalesCotizacion(partidas),
     actualizadoEn: c.updatedAt.toISOString(),

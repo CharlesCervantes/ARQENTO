@@ -64,26 +64,32 @@ const auditoria = (entidadId: string) =>
   db.registroAuditoria.findMany({ where: { entidadId }, orderBy: { createdAt: "asc" } });
 
 describe("Esquema", () => {
-  test("Usuario nuevo nace sin marca de vendedor; producto nuevo nace activo y gravado", async () => {
+  test("Usuario nuevo nace sin marca de vendedor; producto nuevo nace activo y sin datos fiscales", async () => {
     const u = await db.usuario.findUniqueOrThrow({ where: { id: supervisor.id } });
     assert.equal(u.vendedorComercial, false);
     const { id } = await crearProductoComercial(admin, producto());
     const p = await db.productoComercial.findUniqueOrThrow({ where: { id } });
     assert.equal(p.activo, true);
-    assert.equal(p.tratamientoImpuesto, "GRAVADO");
+    // IVA por cotización (nov-2026): el producto no captura impuesto.
+    assert.equal(p.tratamientoImpuesto, null);
     assert.equal(p.precioVenta.toFixed(2), "245.50");
-    assert.equal(p.tasaIva?.toFixed(2), "16.00");
+    assert.equal(p.tasaIva, null);
   });
 
-  test("CHECK de la base rechaza precio 0, gravado sin tasa y tasa con Exento", async () => {
+  test("CHECK de la base rechaza precio 0, gravado sin tasa, tasa sin tratamiento y tasa con Exento", async () => {
     const base = { empresaId: EMPRESA, codigo: "X", descripcion: "x", unidad: "pza", creadoPorId: admin.id };
-    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "0", tasaIva: "16" } }));
-    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "1", tasaIva: null } }));
+    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "0" } }));
+    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "1", tratamientoImpuesto: "GRAVADO", tasaIva: null } }));
+    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "1", tasaIva: "16" } }));
+    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "1", tratamientoImpuesto: "SIN_IVA" } }));
     await assert.rejects(
       db.productoComercial.create({ data: { ...base, precioVenta: "1", tratamientoImpuesto: "EXENTO", tasaIva: "16" } })
     );
-    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "1", tasaIva: "16", costoReferencia: "-1" } }));
+    await assert.rejects(db.productoComercial.create({ data: { ...base, precioVenta: "1", costoReferencia: "-1" } }));
     assert.equal(await db.productoComercial.count(), 0);
+    // Sin datos fiscales es válido; un producto anterior conserva los suyos.
+    await db.productoComercial.create({ data: { ...base, precioVenta: "1" } });
+    await db.productoComercial.create({ data: { ...base, codigo: "Y", precioVenta: "1", tratamientoImpuesto: "TASA_CERO" } });
   });
 
   test("Importes grandes se guardan exactos (sin float)", async () => {
@@ -159,8 +165,6 @@ describe("Vendedor", () => {
       "descripcion",
       "id",
       "precioVenta",
-      "tasaIva",
-      "tratamientoImpuesto",
       "unidad",
     ]);
   });
@@ -239,12 +243,18 @@ describe("Bitácora e historial", () => {
     assert.equal((await auditoria(id)).length, 1);
   });
 
-  test("Cambiar tratamiento de impuesto registra tasa anterior y nueva", async () => {
+  test("Editar un producto anterior conserva su impuesto histórico y no lo registra como cambio", async () => {
     const { id } = await crearProductoComercial(admin, producto());
-    await editarProductoComercial(admin, id, producto({ tratamientoImpuesto: "EXENTO", tasaIva: "" }));
+    await db.productoComercial.update({ where: { id }, data: { tratamientoImpuesto: "EXENTO", tasaIva: null } });
+    // Un formulario anterior que aún envíe impuesto no lo cambia.
+    const r = await editarProductoComercial(admin, id, producto({ precioVenta: "300", tratamientoImpuesto: "GRAVADO", tasaIva: "8" }));
+    assert.deepEqual(r.cambios, ["precioVenta"]);
+    const p = await db.productoComercial.findUniqueOrThrow({ where: { id } });
+    assert.equal(p.tratamientoImpuesto, "EXENTO");
+    assert.equal(p.tasaIva, null);
     const [, edicion] = await auditoria(id);
-    assert.deepEqual(edicion.valorAnterior, { tratamientoImpuesto: "GRAVADO", tasaIva: "16.00" });
-    assert.deepEqual(edicion.valorNuevo, { tratamientoImpuesto: "EXENTO", tasaIva: null });
+    assert.deepEqual(edicion.valorAnterior, { precioVenta: "245.50" });
+    assert.deepEqual(edicion.valorNuevo, { precioVenta: "300.00" });
   });
 });
 
