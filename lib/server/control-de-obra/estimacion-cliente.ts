@@ -15,6 +15,7 @@ import {
 } from "@/lib/control-de-obra/contrato-general";
 import { sumaEjecutadaPorConcepto } from "./avance-calculo";
 import { baseDeImporteCongelado, importesBase } from "@/lib/control-de-obra/presentacion-estimacion-privada";
+import { exigirEstimacionesPermitidas, motivoBloqueoEstimaciones } from "./bloqueo-estimaciones";
 import { ajustesEstimadoCapa, estimaAlgoEstaSemana, valorarConceptoEnCapa } from "./estimado-capa";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
@@ -1140,6 +1141,8 @@ export async function asegurarEstimacionDeSemanaCerradaTx(
   if (!cierre || cierre.estatus !== "CERRADA") return false;
   // Semana histórica migrada: su estimación se emitió fuera de ARQENTO.
   if (cierre.historicoImportado) return false;
+  // Obra bloqueada: el gasto se aprueba, pero no genera estimación.
+  if (await motivoBloqueoEstimaciones(tx, ctx.proyectoId)) return false;
 
   const existente = await tx.estimacionCliente.findUnique({
     where: { proyectoId_semanaId: { proyectoId: ctx.proyectoId, semanaId: ctx.semanaId } },
@@ -1181,6 +1184,9 @@ export async function asegurarFisicoYCapas(
   },
   semana: { id: string; fechaInicio: Date }
 ): Promise<ResultadoAsegurarCapas> {
+  // Única función que crea estimaciones (cierre, materialización y gasto).
+  await exigirEstimacionesPermitidas(tx, ctx.proyectoId);
+
   const existente = await tx.estimacionCliente.findUnique({
     where: { proyectoId_semanaId: { proyectoId: ctx.proyectoId, semanaId: ctx.semanaId } },
     include: { detalle: true, capas: true },
@@ -1458,6 +1464,7 @@ export async function emitirEstimacion(
     if (capaRow.estatus === "EMITIDA") throw new ValidacionError("Esta estimación ya fue emitida.");
 
     const proyectoId = capaRow.estimacionCliente.proyectoId;
+    await exigirEstimacionesPermitidas(tx, proyectoId);
     const { esquemaContractual, porcentajesDefault } = await obtenerContextoProyecto(tx, proyectoId);
     const detalleFisico = capaRow.estimacionCliente.detalle.map(detalleFisicoDesdeConcepto);
     const { filas, totales, gastos } = await valorizarCapaEnVivo(tx, {

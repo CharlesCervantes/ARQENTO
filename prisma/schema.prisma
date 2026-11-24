@@ -566,6 +566,13 @@ model Proyecto {
   // porque ya es 100% privada — el motor operativo nunca la usa.
   porcentajeAdministracionPrivadoDefault Decimal? @db.Decimal(5, 2)
 
+  // Bloqueo de cierre y estimaciones de ESTA obra (noviembre 2026): con texto,
+  // el servidor rechaza cerrar semanas y generar o emitir estimaciones; null =
+  // sin bloqueo. Se pone y quita con scripts/mantenimiento/bloqueo-estimaciones.ts
+  // (bitácora). El texto se muestra a cualquier rol que vea la obra: no debe
+  // incluir información privada.
+  motivoBloqueoEstimaciones String?
+
   // Contador atómico de Estimación Cliente (sección "Cliente" de
   // 04-modulo-control-de-obra.md) — correlativo POR PROYECTO (a diferencia
   // del folio de Recibos, que es por empresa). Se incrementa con `increment`

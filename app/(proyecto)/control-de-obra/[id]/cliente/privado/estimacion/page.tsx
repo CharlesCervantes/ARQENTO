@@ -159,12 +159,18 @@ export default async function ClientePrivadoEstimacionPage({
         </p>
       )}
 
+      {resumenCierre.motivoBloqueo && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          El cierre de semanas y las estimaciones de esta obra están bloqueados: {resumenCierre.motivoBloqueo}
+        </p>
+      )}
+
       {sinSnapshot ? (
         resumenCierre.historicoImportado ? (
           <Card className="p-6 text-sm text-[var(--muted)]">
             Semana histórica migrada desde Excel: su estimación se emitió fuera de ARQENTO.
           </Card>
-        ) : puedeMaterializarEstimacionHistorica(usuario) ? (
+        ) : puedeMaterializarEstimacionHistorica(usuario) && !resumenCierre.motivoBloqueo ? (
           <MaterializarEstimacionHistorica
             proyectoId={id}
             semanaId={semana.id}
@@ -218,7 +224,7 @@ export default async function ClientePrivadoEstimacionPage({
                 generadoPorNombre={congelado.estimacion.generadoPorNombre}
                 emitidoPorNombre={congelado.estimacion.emitidoPorNombre}
                 emitidoEn={congelado.estimacion.emitidoEn}
-                puedeEmitir={puedeEmitirEstimacionCliente(usuario)}
+                puedeEmitir={puedeEmitirEstimacionCliente(usuario) && !resumenCierre.motivoBloqueo}
                 fondoDisponible={fondoDisponible}
               />
             </>

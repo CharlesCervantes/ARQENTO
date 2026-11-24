@@ -59,6 +59,9 @@ export function CierreSemanaAbierta({
 
       {bloqueado && (
         <div className="mt-4 space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          {resumen.motivoBloqueo && (
+            <p>El cierre de semanas y las estimaciones de esta obra están bloqueados: {resumen.motivoBloqueo}</p>
+          )}
           {resumen.pendientesPorAprobar > 0 && (
             <p>
               Hay {resumen.pendientesPorAprobar} avance
