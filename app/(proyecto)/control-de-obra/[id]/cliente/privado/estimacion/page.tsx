@@ -28,6 +28,7 @@ import { ConfigurarIvaEstimacion } from "@/components/control-de-obra/configurar
 import { EmitirEstimacion } from "@/components/control-de-obra/emitir-estimacion";
 import { MaterializarEstimacionHistorica } from "@/components/control-de-obra/materializar-estimacion-historica";
 import { Card } from "@/components/ui/card";
+import { etiquetaCargo, importesBase, tasasDeTrabajos } from "@/lib/control-de-obra/presentacion-estimacion-privada";
 
 // Semana abierta: capa base (antes de administración/utilidad), para que
 // cantidad × P.U. mostrado siempre cuadre con el importe mostrado en cada
@@ -49,13 +50,11 @@ function aFilaTablaEnVivo(f: FilaEstimacion): FilaTablaEstimacion {
     cantidadPorEjercer: f.cantidadPorEjercer,
     importePorEjercer: f.importePorEjercerBasePrivado,
     avancePorcentaje: f.avancePorcentaje,
-    porcentajeAplicado: f.porcentajeAplicadoPrivado,
   };
 }
 
-// Semana cerrada: la capa ya viene en su forma base (precioUnitarioBase) —
-// misma razón de siempre, cantidad × P.U. mostrado debe cuadrar exacto con
-// el importe.
+// Semana cerrada: los importes de la capa vienen con administración; aquí se
+// muestran en la misma base que el P.U. (cantidad × P.U. cuadra con el importe).
 function aFilaTablaCapa(f: FilaEstimacionCapa): FilaTablaEstimacion {
   return {
     conceptoId: f.conceptoId,
@@ -63,16 +62,12 @@ function aFilaTablaCapa(f: FilaEstimacionCapa): FilaTablaEstimacion {
     unidad: f.unidad,
     cantidadContratada: f.cantidadContratada,
     precioUnitario: f.precioUnitarioBase,
-    importeContratado: f.importeContratado,
+    ...importesBase(f),
     cantidadAnterior: f.cantidadAnterior,
     cantidadEstaSemana: f.cantidadEstaSemana,
     cantidadAcumulada: f.cantidadAcumulada,
-    importeEstaSemana: f.importeEstaSemana,
-    importeAcumulado: f.importeAcumulado,
     cantidadPorEjercer: f.cantidadPorEjercer,
-    importePorEjercer: f.importePorEjercer,
     avancePorcentaje: f.avancePorcentaje,
-    porcentajeAplicado: f.porcentajeAplicado,
   };
 }
 
@@ -132,6 +127,8 @@ export default async function ClientePrivadoEstimacionPage({
         conceptos: p.conceptos.map(aFilaTablaEnVivo),
       }));
 
+  const esquemaContractual = congelado?.estimacion.esquemaContractualUsado ?? proyecto.esquemaContractual;
+
   const fechaAnterior = new Date(semana.fechaInicio);
   fechaAnterior.setDate(fechaAnterior.getDate() - 7);
   const fechaSiguiente = new Date(semana.fechaInicio);
@@ -181,19 +178,23 @@ export default async function ClientePrivadoEstimacionPage({
         <>
           <TablaEstimacion
             partidas={partidas}
-            mostrarPorcentajeAplicado
-            etiquetaPorcentajeAplicado={proyecto.esquemaContractual === "ADMINISTRACION" ? "ADM" : "UTIL"}
+            ocultarAnterior
+            nota={`Importes sin ${etiquetaCargo(esquemaContractual).toLowerCase()} y sin IVA.`}
           />
 
           {congelado ? (
             <>
               <TablaGastosEstimacion gastos={congelado.gastos} />
               <ResumenEstimacionPrivada
-                esquemaContractual={proyecto.esquemaContractual}
+                esquemaContractual={esquemaContractual}
                 subtotalTrabajos={congelado.estimacion.subtotal}
                 gastosCobrables={congelado.estimacion.subtotalGastosCobrables}
-                administracion={congelado.estimacion.montoAdministracionTotal}
+                administracionTrabajos={congelado.estimacion.montoAdministracionTrabajos}
+                tasasTrabajos={tasasDeTrabajos(congelado.filas)}
+                administracionGastos={congelado.estimacion.montoAdministracionGastos}
+                porcentajeAdministracionGastos={congelado.estimacion.porcentajeAdministracionGastos}
                 aplicaIVA={congelado.estimacion.aplicaIVA}
+                porcentajeIVA={congelado.estimacion.porcentajeIVA}
                 montoIVA={congelado.estimacion.montoIVA}
                 total={congelado.estimacion.total}
               />
@@ -224,11 +225,21 @@ export default async function ClientePrivadoEstimacionPage({
             <>
               <TablaGastosEstimacion gastos={preliminar.gastos} />
               <ResumenEstimacionPrivada
-                esquemaContractual={proyecto.esquemaContractual}
+                esquemaContractual={esquemaContractual}
                 subtotalTrabajos={preliminar.totales.subtotal}
                 gastosCobrables={preliminar.totales.subtotalGastosCobrables}
-                administracion={preliminar.totales.montoAdministracionTotal}
+                administracionTrabajos={preliminar.totales.montoAdministracionTrabajos}
+                tasasTrabajos={tasasDeTrabajos(
+                  enVivoCandidato.filas.map((f) => ({
+                    precioUnitarioBase: f.precioUnitarioBasePrivado,
+                    cantidadEstaSemana: f.cantidadEstaSemana,
+                    porcentajeAplicado: f.porcentajeAplicadoPrivado,
+                  }))
+                )}
+                administracionGastos={preliminar.totales.montoAdministracionGastos}
+                porcentajeAdministracionGastos={preliminar.totales.porcentajeAdministracionGastos}
                 aplicaIVA={preliminar.aplicaIVA}
+                porcentajeIVA={preliminar.porcentajeIVA}
                 montoIVA={preliminar.totales.montoIVA}
                 total={preliminar.totales.total}
               />

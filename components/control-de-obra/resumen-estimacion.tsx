@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { formatMoney } from "@/lib/dinero";
+import { etiquetaCargo, sufijoTasa, type TasaTrabajos } from "@/lib/control-de-obra/presentacion-estimacion-privada";
 import type { EsquemaContractual } from "@/lib/generated/prisma/enums";
 
 // Desglose obligatorio de 6 líneas (sección 8 del rediseño de Estimación
@@ -48,13 +49,70 @@ export function ResumenEstimacionOperativa(props: { total: number } | ResumenCom
   );
 }
 
+// Cliente Priv.: la tabla va sin administración, así que el cargo se ve aquí
+// separado (trabajos / gastos) con su tasa. Si los trabajos combinan tasas se
+// desglosan y no se muestra una tasa única.
 export function ResumenEstimacionPrivada({
   esquemaContractual,
-  ...resto
-}: ResumenCompleto & { esquemaContractual: EsquemaContractual | null }) {
-  const etiquetaMonto = esquemaContractual === "ADMINISTRACION" ? "Administración" : "Utilidad";
+  subtotalTrabajos,
+  gastosCobrables,
+  administracionTrabajos,
+  tasasTrabajos,
+  administracionGastos,
+  porcentajeAdministracionGastos,
+  aplicaIVA,
+  porcentajeIVA,
+  montoIVA,
+  total,
+}: {
+  esquemaContractual: EsquemaContractual | null;
+  subtotalTrabajos: number;
+  gastosCobrables: number;
+  administracionTrabajos: number;
+  tasasTrabajos: TasaTrabajos[];
+  administracionGastos: number;
+  porcentajeAdministracionGastos: number | null;
+  aplicaIVA: boolean;
+  porcentajeIVA: number | null;
+  montoIVA: number;
+  total: number;
+}) {
+  const cargo = etiquetaCargo(esquemaContractual);
+  const tasaUnica = tasasTrabajos.length === 1 ? tasasTrabajos[0].porcentaje : null;
   return (
-    <ResumenLineas titulo="Resumen comercial de esta estimación" etiquetaMonto={etiquetaMonto} {...resto} />
+    <Card className="enter p-5 ring-2 ring-emerald-200">
+      <p className="text-xs font-semibold tracking-wide text-[var(--muted)] uppercase">
+        Resumen comercial de esta estimación
+      </p>
+      <div className="mt-3 space-y-1.5">
+        <Linea label={`Trabajos sin ${cargo.toLowerCase()}`} valor={subtotalTrabajos} />
+        <Linea label="Gastos cobrables" valor={gastosCobrables} />
+        <Linea
+          label={`Subtotal antes de ${cargo.toLowerCase()}`}
+          valor={subtotalTrabajos + gastosCobrables}
+          destacado
+        />
+        <Linea label={`${cargo} sobre trabajos${sufijoTasa(tasaUnica)}`} valor={administracionTrabajos} />
+        {tasasTrabajos.length > 1 &&
+          tasasTrabajos.map((t) => (
+            <p key={t.porcentaje} className="flex justify-between pl-4 text-xs tabular-nums text-[var(--muted)]">
+              <span>
+                {t.porcentaje.toLocaleString("es-MX")}% sobre {formatMoney(t.base)}
+              </span>
+              <span>{formatMoney(t.monto)}</span>
+            </p>
+          ))}
+        <Linea
+          label={`${cargo} sobre gastos${sufijoTasa(porcentajeAdministracionGastos)}`}
+          valor={administracionGastos}
+        />
+        {aplicaIVA && <Linea label={`IVA${sufijoTasa(porcentajeIVA)}`} valor={montoIVA} />}
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
+        <span className="text-sm font-medium text-[var(--muted)]">Total de la estimación</span>
+        <span className="text-lg font-semibold tabular-nums text-[var(--foreground)]">{formatMoney(total)}</span>
+      </div>
+    </Card>
   );
 }
 
