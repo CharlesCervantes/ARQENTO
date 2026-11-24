@@ -8,6 +8,7 @@ import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
 import { asegurarFisicoYCapas } from "./estimacion-cliente";
+import { exigirEstimacionesPermitidas, motivoBloqueoEstimaciones } from "./bloqueo-estimaciones";
 
 type Cliente = Prisma.TransactionClient;
 
@@ -167,6 +168,8 @@ export type ResumenCierreSemana = {
   motivoReapertura: string | null;
   // Semana histórica migrada desde Excel — nunca se reabre ni se materializa.
   historicoImportado: boolean;
+  // Cierre y estimaciones bloqueados en esta obra; null = sin bloqueo.
+  motivoBloqueo: string | null;
   conceptosConAvance: number;
   avancesAprobados: number;
   pendientesPorAprobar: number;
@@ -195,7 +198,8 @@ export async function obtenerResumenCierreSemana(
 ): Promise<ResumenCierreSemana> {
   await obtenerProyecto(usuario, proyectoId);
 
-  const [cierre, conceptosConAvance, pendientes, lineas, cortes] = await Promise.all([
+  const [motivoBloqueo, cierre, conceptosConAvance, pendientes, lineas, cortes] = await Promise.all([
+    motivoBloqueoEstimaciones(db, proyectoId),
     db.cierreSemanaProyecto.findUnique({
       where: { proyectoId_semanaId: { proyectoId, semanaId } },
       include: {
@@ -242,6 +246,7 @@ export async function obtenerResumenCierreSemana(
     reabiertoEn: cierre?.reabiertoEn?.toISOString() ?? null,
     motivoReapertura: cierre?.motivoReapertura ?? null,
     historicoImportado: cierre?.historicoImportado ?? false,
+    motivoBloqueo,
     conceptosConAvance,
     avancesAprobados: lineas.length,
     pendientesPorAprobar: pendientes,
@@ -251,7 +256,7 @@ export async function obtenerResumenCierreSemana(
       id,
       descripcion,
     })),
-    puedeCerrar: pendientes === 0 && conceptosSinContratistaMap.size === 0,
+    puedeCerrar: motivoBloqueo === null && pendientes === 0 && conceptosSinContratistaMap.size === 0,
     cortes: cortes.map((c) => ({
       beneficiarioProyectoId: c.beneficiarioProyectoId,
       nombreContratista: c.beneficiarioProyecto.beneficiario.nombre,
@@ -564,6 +569,8 @@ export async function cerrarSemana(
             estimacionClienteOmitidaPorEmitida: false,
           };
         }
+
+        await exigirEstimacionesPermitidas(tx, proyectoId);
 
         // Se revalidan las reglas de bloqueo DENTRO de la transacción — evita
         // que algo cambie entre ver el resumen y darle clic al botón.

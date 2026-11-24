@@ -1756,3 +1756,11 @@ Reglas de la captura privada (Cliente Priv. → Estimación):
 - La capa General solo tiene filas importadas de semanas históricas. No se captura en semanas nuevas.
 
 Una obra sin semanas históricas importadas y sin capturas privadas se comporta exactamente igual que antes.
+
+## 49.12 Bloqueo de cierre y estimaciones por obra (noviembre 2026)
+
+`Proyecto.motivoBloqueoEstimaciones` con texto hace que el servidor rechace, solo en esa obra: cerrar semanas, crear estimaciones (cierre o materialización) y emitirlas. Aprobar un gasto sigue permitido, pero no crea estimación. Vacío = opera normal.
+
+Se usa cuando operar duplicaría cargos resueltos fuera de ARQENTO. Primera obra: MISSISSIPPI, mientras no se represente la estimación privada 42 en su periodo. Se pone y se quita con `scripts/mantenimiento/bloqueo-estimaciones.ts` (bitácora). El motivo lo ve cualquier rol de la obra: no debe incluir información privada.
+
+Capturar y aprobar avance físico, y asignar contratistas, sigue permitido.
