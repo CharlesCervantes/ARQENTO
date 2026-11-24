@@ -68,7 +68,7 @@ const clave = () => `clave-b5-${++n}-${Date.now()}`;
 async function ordenDe12000(u: UsuarioSesion = admin) {
   const { id } = await crearCotizacionVenta(
     u,
-    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B5", vendedorId: vendedor.id, fecha: dias(-30), vigenciaHasta: dias(10), partidas: [{ productoId: LOTE, cantidad: "1" }] },
+    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B5", vendedorId: vendedor.id, impuestoVenta: "SIN_IVA", fecha: dias(-30), vigenciaHasta: dias(10), partidas: [{ productoId: LOTE, cantidad: "1" }] },
     clave()
   );
   await emitirCotizacionVenta(u, id, 1);
@@ -116,7 +116,7 @@ describe("Origen de las cuentas", () => {
     assert.equal((await cuentaDeCompra(compra)).tipo, "POR_PAGAR");
     await assert.rejects(db.cuentaComercial.create({ data: { empresaId: EMPRESA, tipo: "POR_COBRAR", ordenVentaId: ov.ordenId, total: "1" } }));
     // Cotización emitida sin aceptar: sin cuenta.
-    const { id } = await crearCotizacionVenta(admin, { clienteId: CLIENTE, obraId: OBRA, descripcion: "x", fecha: HOY, vigenciaHasta: dias(5), partidas: [{ productoId: LOTE, cantidad: "1" }] }, clave());
+    const { id } = await crearCotizacionVenta(admin, { clienteId: CLIENTE, obraId: OBRA, descripcion: "x", impuestoVenta: "SIN_IVA", fecha: HOY, vigenciaHasta: dias(5), partidas: [{ productoId: LOTE, cantidad: "1" }] }, clave());
     await emitirCotizacionVenta(admin, id, 1);
     assert.equal(await db.cuentaComercial.count(), 2);
   });

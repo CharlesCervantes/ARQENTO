@@ -58,7 +58,7 @@ const refsEnBase = async () => (await db.evidenciaEntregaComercial.findMany({ se
 async function ordenConEntrega(vendedorId = vendedor.id) {
   const { id } = await crearCotizacionVenta(
     admin,
-    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia cierre B6", vendedorId, fecha: HOY, vigenciaHasta: HOY, partidas: [{ productoId: POSTE, cantidad: "100" }] },
+    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia cierre B6", vendedorId, impuestoVenta: "SIN_IVA", fecha: HOY, vigenciaHasta: HOY, partidas: [{ productoId: POSTE, cantidad: "100" }] },
     clave()
   );
   await emitirCotizacionVenta(admin, id, 1);
@@ -237,7 +237,7 @@ describe("Límite por carga (4 MB) en todas las cargas del módulo", () => {
   test("aceptación, documento de compra, comprobante y entregas: rechazo comprensible y nada guardado", async () => {
     const o = await ordenConEntrega();
     // Aceptación.
-    const { id } = await crearCotizacionVenta(admin, { clienteId: CLIENTE, obraId: OBRA, descripcion: "x", fecha: HOY, vigenciaHasta: HOY, partidas: [{ productoId: POSTE, cantidad: "1" }] }, clave());
+    const { id } = await crearCotizacionVenta(admin, { clienteId: CLIENTE, obraId: OBRA, descripcion: "x", impuestoVenta: "SIN_IVA", fecha: HOY, vigenciaHasta: HOY, partidas: [{ productoId: POSTE, cantidad: "1" }] }, clave());
     await emitirCotizacionVenta(admin, id, 1);
     await assert.rejects(registrarAceptacionCotizacion(admin, id, { fechaAceptacion: HOY }, { nombre: "oc.pdf", bytes: pdfDe(4.1) }), /pesa 4\.\d MB; el máximo es 4 MB/);
     assert.equal((await db.cotizacionVenta.findUniqueOrThrow({ where: { id } })).estatus, "EMITIDA");

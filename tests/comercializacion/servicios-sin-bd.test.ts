@@ -31,26 +31,23 @@ const valido = {
   unidad: "bulto",
   precioVenta: "245.5",
   costoReferencia: "",
-  tratamientoImpuesto: "GRAVADO",
-  tasaIva: "16",
 };
 
 describe("validarDatosProducto", () => {
-  test("normaliza importes y tasa", () => {
+  test("normaliza importes; solo código, descripción, unidad, precio y costo", () => {
     const d = validarDatosProducto(valido);
     assert.equal(d.precioVenta, "245.50");
-    assert.equal(d.tasaIva, "16.00");
     assert.equal(d.costoReferencia, null);
+    assert.deepEqual(Object.keys(d).sort(), ["codigo", "costoReferencia", "descripcion", "precioVenta", "unidad"]);
   });
-  test("tasa editable distinta de 16", () => {
-    assert.equal(validarDatosProducto({ ...valido, tasaIva: "8" }).tasaIva, "8.00");
+  test("IVA por cotización: el producto no captura ni guarda datos fiscales", () => {
+    // Un navegador anterior que aún los envíe no los hace llegar a la base.
+    const d = validarDatosProducto({ ...valido, tratamientoImpuesto: "EXENTO", tasaIva: "8" }) as Record<string, unknown>;
+    assert.equal("tratamientoImpuesto" in d, false);
+    assert.equal("tasaIva" in d, false);
   });
-  test("Tasa 0 % y Exento guardan tasa nula y se distinguen", () => {
-    const cero = validarDatosProducto({ ...valido, tratamientoImpuesto: "TASA_CERO", tasaIva: "" });
-    const exento = validarDatosProducto({ ...valido, tratamientoImpuesto: "EXENTO", tasaIva: "" });
-    assert.equal(cero.tasaIva, null);
-    assert.equal(exento.tasaIva, null);
-    assert.notEqual(cero.tratamientoImpuesto, exento.tratamientoImpuesto);
+  test("costo de referencia 0 permitido (privado, opcional)", () => {
+    assert.equal(validarDatosProducto({ ...valido, costoReferencia: "0" }).costoReferencia, "0.00");
   });
   const rechazos: [string, Record<string, unknown>][] = [
     ["precio 0", { precioVenta: "0" }],
@@ -58,12 +55,7 @@ describe("validarDatosProducto", () => {
     ["precio con 3 decimales", { precioVenta: "10.005" }],
     ["precio no numérico", { precioVenta: "diez" }],
     ["costo negativo", { costoReferencia: "-1" }],
-    ["gravado sin tasa", { tasaIva: "" }],
-    ["gravado con tasa 0", { tasaIva: "0" }],
-    ["tasa > 100", { tasaIva: "116" }],
-    ["tasa positiva con Exento", { tratamientoImpuesto: "EXENTO", tasaIva: "16" }],
-    ["tasa positiva con Tasa 0 %", { tratamientoImpuesto: "TASA_CERO", tasaIva: "16" }],
-    ["tratamiento desconocido", { tratamientoImpuesto: "IEPS" }],
+    ["sin precio", { precioVenta: "" }],
     ["código vacío", { codigo: "  " }],
     ["código con espacios", { codigo: "CEM 50" }],
     ["sin descripción", { descripcion: "" }],

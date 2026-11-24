@@ -69,6 +69,7 @@ async function ordenPostesYTubo(vendedorId = vendedor.id): Promise<Orden> {
       obraId: OBRA,
       descripcion: "Venta ficticia B6A",
       vendedorId,
+      impuestoVenta: "SIN_IVA",
       fecha: dias(-10),
       vigenciaHasta: dias(10),
       partidas: [

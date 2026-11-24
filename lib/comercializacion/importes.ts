@@ -57,9 +57,57 @@ export function esImpuestoCompraVigente(t: TratamientoImpuestoCompra | null, tas
   return t === "SIN_IVA" || (t === "GRAVADO" && tasa === TASA_IVA_COMPRA);
 }
 
-// Valor inicial del formulario de producto, editable por administración —
-// nunca una regla fija para todos los productos.
-export const TASA_IVA_INICIAL = "16.00";
+// ---------------------------------------------------------------------------
+// IVA por cotización (nov-2026). El catálogo guarda el precio de venta sin
+// IVA; el impuesto se decide UNA vez por cotización y el servidor lo aplica a
+// todas sus partidas:
+// - CON_IVA: cada partida queda GRAVADO al 16 %. Como todas comparten tasa,
+//   IVA = round_half_up(subtotal × 16 %) al centavo (calcularTotalesCotizacion).
+// - SIN_IVA: opción comercial propia (no es tasa 0 % ni exención); IVA $0.00
+//   y total = subtotal.
+// - PENDIENTE (solo borradores): copia de un documento anterior que no se
+//   representa con esas dos opciones; hay que elegir antes de emitir.
+// - null: esquema anterior (tratamiento y tasa copiados por partida). Las
+//   cotizaciones previas lo conservan mientras nadie elija otra opción.
+// ---------------------------------------------------------------------------
+
+export type ImpuestoVenta = "CON_IVA" | "SIN_IVA";
+export type ModoImpuestoCotizacion = ImpuestoVenta | "PENDIENTE" | null;
+/** Tratamiento de una partida de venta (incluye «Sin IVA» desde nov-2026). */
+export type TratamientoPartidaVenta = TratamientoImpuestoCompra;
+
+export const TASA_IVA_VENTA = "16.00";
+export const OPCIONES_IMPUESTO_VENTA: readonly { valor: ImpuestoVenta; etiqueta: string }[] = [
+  { valor: "CON_IVA", etiqueta: "Con IVA" },
+  { valor: "SIN_IVA", etiqueta: "Sin IVA" },
+];
+
+export function esImpuestoVenta(valor: unknown): valor is ImpuestoVenta {
+  return valor === "CON_IVA" || valor === "SIN_IVA";
+}
+
+/** Tratamiento y tasa que la opción de la cotización fija en cada partida. */
+export function impuestoDePartidaVenta(opcion: ImpuestoVenta): { tratamientoImpuesto: TratamientoPartidaVenta; tasaIva: string | null } {
+  return opcion === "CON_IVA" ? { tratamientoImpuesto: "GRAVADO", tasaIva: TASA_IVA_VENTA } : { tratamientoImpuesto: "SIN_IVA", tasaIva: null };
+}
+
+/**
+ * Opción equivalente a los impuestos de unas partidas, si existe con
+ * fidelidad: todas gravadas al 16 % → CON_IVA; todas «Sin IVA» → SIN_IVA.
+ * Tasa 0 %, Exento, otras tasas o mezclas → null (no se representan).
+ */
+export function impuestoVentaEquivalente(partidas: { tratamientoImpuesto: TratamientoPartidaVenta; tasaIva: string | null }[]): ImpuestoVenta | null {
+  if (partidas.every((p) => p.tratamientoImpuesto === "GRAVADO" && p.tasaIva === TASA_IVA_VENTA)) return "CON_IVA";
+  if (partidas.every((p) => p.tratamientoImpuesto === "SIN_IVA")) return "SIN_IVA";
+  return null;
+}
+
+/** Etiqueta del impuesto de una partida de venta (incluye históricos). */
+export function etiquetaImpuestoPartidaVenta(t: TratamientoPartidaVenta, tasa: string | null): string {
+  if (t === "SIN_IVA") return "Sin IVA";
+  if (t === "GRAVADO") return tasa ? `IVA ${Number(tasa)} %` : "IVA";
+  return ETIQUETA_TRATAMIENTO[t];
+}
 
 const MAX_DIGITOS_ENTEROS = 12;
 

@@ -61,8 +61,6 @@ function datosDeFormulario(formData: FormData) {
     unidad: leer("unidad"),
     precioVenta: leer("precioVenta"),
     costoReferencia: leer("costoReferencia"),
-    tratamientoImpuesto: leer("tratamientoImpuesto"),
-    tasaIva: leer("tasaIva"),
   };
 }
 

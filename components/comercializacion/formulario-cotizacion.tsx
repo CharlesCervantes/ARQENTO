@@ -10,13 +10,20 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   calcularImportePartida,
   calcularTotalesCotizacion,
-  ETIQUETA_TRATAMIENTO,
+  esImpuestoVenta,
+  etiquetaImpuestoPartidaVenta,
   formatearCantidad,
   formatearImporte,
+  impuestoDePartidaVenta,
   normalizarCantidad,
   normalizarImporte,
-  type TratamientoImpuesto,
+  OPCIONES_IMPUESTO_VENTA,
+  TASA_IVA_VENTA,
+  type ImpuestoVenta,
+  type ModoImpuestoCotizacion,
+  type TratamientoPartidaVenta,
 } from "@/lib/comercializacion/importes";
+import { filasImpuestoVenta } from "@/lib/comercializacion/totales-venta";
 import type { ProductoParaVenta } from "@/lib/server/comercializacion/productos";
 import type { OpcionCliente, OpcionObra } from "@/lib/server/comercializacion/clientes";
 import type { CotizacionDetalle, OpcionVendedor } from "@/lib/server/comercializacion/cotizaciones";
@@ -27,12 +34,13 @@ import {
   emitirCotizacionAction,
   guardarCotizacionAction,
 } from "@/app/(app)/comercializacion/actions";
-import { coincideBusqueda, etiquetaImpuesto } from "./productos-comun";
+import { coincideBusqueda } from "./productos-comun";
 
 // Formulario único de cotización (nueva y borrador existente) — §5.2. Los
 // importes que se ven aquí son una VISTA PREVIA con las mismas funciones
 // exactas del servidor; el servidor vuelve a calcular todo al guardar y
-// nunca recibe importes, impuestos ni (si es vendedor) precios.
+// nunca recibe importes, impuestos ni (si es vendedor) precios. Del IVA solo
+// recibe la opción de la venta («Con IVA»/«Sin IVA»).
 
 const claseSelect =
   "w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15 disabled:opacity-60";
@@ -46,7 +54,9 @@ type Linea = {
   codigo: string;
   descripcion: string;
   unidad: string;
-  tratamientoImpuesto: TratamientoImpuesto;
+  // Impuesto guardado de la partida (cotizaciones anteriores o pendientes).
+  // null en partidas nuevas: lo fija la opción de IVA de la cotización.
+  tratamientoImpuesto: TratamientoPartidaVenta | null;
   tasaIva: string | null;
   precioBase: string;
   precioUnitario: string; // texto editable (solo administración)
@@ -98,6 +108,11 @@ export function FormularioCotizacion({
   const [vigenciaHasta, setVigenciaHasta] = useState(cotizacion?.vigenciaHasta ?? "");
   const [condiciones, setCondiciones] = useState(cotizacion?.condiciones ?? "");
   const [observaciones, setObservaciones] = useState(cotizacion?.observaciones ?? "");
+  // Opción de IVA de toda la venta. Nueva: «Con IVA». Una cotización anterior
+  // (null) o una copia PENDIENTE abren sin opción elegida: conservan su
+  // impuesto por partida hasta que alguien elija explícitamente.
+  const modoGuardado: ModoImpuestoCotizacion = cotizacion ? cotizacion.impuestoVenta : "CON_IVA";
+  const [impuesto, setImpuesto] = useState<ImpuestoVenta | null>(esImpuestoVenta(modoGuardado) ? modoGuardado : null);
   const [lineas, setLineas] = useState<Linea[]>(() =>
     (cotizacion?.partidas ?? []).map((p) => ({
       clave: p.id,
@@ -129,8 +144,10 @@ export function FormularioCotizacion({
   const obrasDelCliente = obras.filter((o) => o.clienteId === clienteId);
   const nombreVendedor = vendedorId ? (vendedores.find((v) => v.id === vendedorId)?.nombre ?? usuarioActual.nombre) : ETIQUETA_SIN_VENDEDOR;
 
-  // Vista previa de importes (mismas funciones exactas que el servidor).
+  // Vista previa de importes (mismas funciones exactas que el servidor). Con
+  // una opción elegida, su impuesto se aplica a TODAS las partidas.
   const vista = useMemo(() => {
+    const deOpcion = impuesto ? impuestoDePartidaVenta(impuesto) : null;
     const importes = lineas.map((l) => {
       const cantidad = normalizarCantidad(l.cantidad);
       const precio = esAdmin ? normalizarImporte(l.precioUnitario, { permitirCero: false }) : l.precioUnitario;
@@ -141,17 +158,22 @@ export function FormularioCotizacion({
         return null;
       }
     });
+    const sinImpuesto = !deOpcion && lineas.some((l) => !l.tratamientoImpuesto);
     const validas = lineas
-      .map((l, i) => ({ importe: importes[i], tratamientoImpuesto: l.tratamientoImpuesto, tasaIva: l.tasaIva }))
-      .filter((p): p is { importe: string; tratamientoImpuesto: TratamientoImpuesto; tasaIva: string | null } => p.importe !== null);
+      .map((l, i) => ({ importe: importes[i], ...(deOpcion ?? { tratamientoImpuesto: l.tratamientoImpuesto, tasaIva: l.tasaIva }) }))
+      .filter(
+        (p): p is { importe: string; tratamientoImpuesto: TratamientoPartidaVenta; tasaIva: string | null } =>
+          p.importe !== null && p.tratamientoImpuesto !== null
+      );
     let totales = null;
     try {
       totales = calcularTotalesCotizacion(validas);
     } catch {
       totales = null;
     }
-    return { importes, totales, incompleta: validas.length !== lineas.length };
-  }, [lineas, esAdmin]);
+    return { importes, totales, incompleta: validas.length !== lineas.length, sinImpuesto };
+  }, [lineas, esAdmin, impuesto]);
+  const cambiaImpuesto = Boolean(cotizacion) && impuesto !== null && impuesto !== modoGuardado;
 
   function agregarProducto(p: ProductoParaVenta) {
     setLineas((ls) => [
@@ -163,8 +185,8 @@ export function FormularioCotizacion({
         codigo: p.codigo,
         descripcion: p.descripcion,
         unidad: p.unidad,
-        tratamientoImpuesto: p.tratamientoImpuesto,
-        tasaIva: p.tasaIva,
+        tratamientoImpuesto: null,
+        tasaIva: null,
         precioBase: p.precioVenta,
         precioUnitario: p.precioVenta,
         precioGuardado: null,
@@ -191,6 +213,9 @@ export function FormularioCotizacion({
       vigenciaHasta: vigenciaHasta || null,
       condiciones,
       observaciones,
+      // Sin opción elegida (cotización anterior o pendiente) no se envía: el
+      // servidor conserva el impuesto guardado.
+      ...(impuesto ? { impuestoVenta: impuesto } : {}),
       partidas: lineas.map((l) => ({
         id: l.id,
         productoId: l.productoId,
@@ -338,7 +363,7 @@ export function FormularioCotizacion({
         <div>
           <h2 className="text-base font-semibold text-[var(--foreground)]">Materiales</h2>
           <p className="text-xs text-[var(--muted)]">
-            Precios sin IVA del catálogo.{" "}
+            Precios de venta sin IVA del catálogo; el IVA se elige abajo para toda la cotización.{" "}
             {esAdmin ? "Como administración puedes ajustar el precio de esta cotización; el catálogo no cambia." : "El precio lo autoriza administración."}
           </p>
         </div>
@@ -355,7 +380,7 @@ export function FormularioCotizacion({
                   <th className="border-b border-[var(--border)] px-3 py-2.5">Material</th>
                   <th className="border-b border-[var(--border)] px-3 py-2.5">Cantidad</th>
                   <th className="border-b border-[var(--border)] px-3 py-2.5 text-right">Precio sin IVA</th>
-                  <th className="border-b border-[var(--border)] px-3 py-2.5">Impuesto</th>
+                  {!impuesto && <th className="border-b border-[var(--border)] px-3 py-2.5">Impuesto</th>}
                   <th className="border-b border-[var(--border)] px-3 py-2.5 text-right">Importe</th>
                   <th className="border-b border-[var(--border)] px-3 py-2.5" />
                 </tr>
@@ -404,9 +429,15 @@ export function FormularioCotizacion({
                           </>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" title={ETIQUETA_TRATAMIENTO[l.tratamientoImpuesto]}>
-                        {etiquetaImpuesto(l)}
-                      </td>
+                      {!impuesto && (
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {l.tratamientoImpuesto ? (
+                            etiquetaImpuestoPartidaVenta(l.tratamientoImpuesto, l.tasaIva)
+                          ) : (
+                            <span className="text-amber-700">Elige la opción de IVA</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                         {vista.importes[i] ? formatearImporte(vista.importes[i]) : <span className="text-[var(--muted)]">—</span>}
                       </td>
@@ -428,20 +459,35 @@ export function FormularioCotizacion({
           </div>
         )}
 
-        {vista.totales && lineas.length > 0 && (
-          <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
-            <FilaTotal etiqueta="Subtotal" valor={vista.totales.subtotal} />
-            {vista.totales.gravado.map((g) => (
-              <FilaTotal key={g.tasa} etiqueta={`IVA ${Number(g.tasa)} % sobre ${formatearImporte(g.base)}`} valor={g.iva} />
-            ))}
-            {vista.totales.baseTasaCero !== "0.00" && <FilaTotal etiqueta="Base tasa 0 % (IVA $0.00)" valor={vista.totales.baseTasaCero} tenue />}
-            {vista.totales.baseExenta !== "0.00" && <FilaTotal etiqueta="Base exenta (sin IVA)" valor={vista.totales.baseExenta} tenue />}
-            <div className="border-t border-[var(--border)] pt-1">
-              <FilaTotal etiqueta="Total" valor={vista.totales.total} fuerte />
+        <div className="ml-auto w-full max-w-sm space-y-3 text-sm">
+          <SelectorImpuesto
+            impuesto={impuesto}
+            modoGuardado={modoGuardado}
+            onCambiar={setImpuesto}
+          />
+          {vista.totales && lineas.length > 0 && (
+            <div className="space-y-1" data-resumen-importes>
+              <FilaTotal etiqueta="Subtotal" valor={vista.totales.subtotal} />
+              {filasImpuestoVenta(vista.totales, impuesto).map((f) => (
+                <FilaTotal key={f.etiqueta} etiqueta={f.etiqueta} valor={f.valor} tenue={f.tenue} />
+              ))}
+              <div className="border-t border-[var(--border)] pt-1">
+                <FilaTotal etiqueta="Total" valor={vista.totales.total} fuerte />
+              </div>
+              {cambiaImpuesto && cotizacion && !vista.incompleta && (
+                <p className="text-xs text-[var(--muted)]">
+                  Total guardado: {formatearImporte(cotizacion.totales.total)}. Al guardar queda en {formatearImporte(vista.totales.total)}.
+                </p>
+              )}
+              {vista.sinImpuesto && (
+                <p className="text-xs text-amber-700">Para agregar materiales a esta cotización elige «Con IVA» o «Sin IVA».</p>
+              )}
+              {vista.incompleta && !vista.sinImpuesto && (
+                <p className="text-xs text-amber-700">Hay partidas con cantidad o precio inválidos; no se incluyen en la vista previa.</p>
+              )}
             </div>
-            {vista.incompleta && <p className="text-xs text-amber-700">Hay partidas con cantidad o precio inválidos; no se incluyen en la vista previa.</p>}
-          </div>
-        )}
+          )}
+        </div>
       </Card>
 
       <Card className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
@@ -475,9 +521,14 @@ export function FormularioCotizacion({
           <p className="font-medium text-[var(--foreground)]">¿Emitir la cotización {cotizacion.folio}?</p>
           <p className="mt-1 text-[var(--muted)]">
             Se guardan los cambios y el documento queda congelado: ya no podrás editarlo (para corregirlo se duplica con un folio
-            nuevo). Emitir no lo envía al cliente ni significa que lo aceptó. Requiere cliente, obra, descripción, vigencia y al
-            menos un material.
+            nuevo). Emitir no lo envía al cliente ni significa que lo aceptó. Requiere cliente, obra, descripción, vigencia, al
+            menos un material y la opción de IVA.
           </p>
+          {impuesto && vista.totales && (
+            <p className="mt-1 text-[var(--muted)]">
+              {impuesto === "CON_IVA" ? `Con IVA (${Number(TASA_IVA_VENTA)} %)` : "Sin IVA"} · Total {formatearImporte(vista.totales.total)}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <Button type="button" onClick={emitir} disabled={guardando}>
               {guardando ? "Emitiendo…" : "Confirmar emisión"}
@@ -518,6 +569,70 @@ function Campo({ etiqueta, children }: { etiqueta: string; children: React.React
       <span className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">{etiqueta}</span>
       {children}
     </label>
+  );
+}
+
+/**
+ * Opción de IVA de toda la cotización. Para un borrador anterior (impuesto
+ * por partida) o una copia pendiente, ninguna opción está marcada hasta que
+ * el usuario elige; puede volver a conservar el impuesto guardado.
+ */
+function SelectorImpuesto({
+  impuesto,
+  modoGuardado,
+  onCambiar,
+}: {
+  impuesto: ImpuestoVenta | null;
+  modoGuardado: ModoImpuestoCotizacion;
+  onCambiar: (v: ImpuestoVenta | null) => void;
+}) {
+  const anterior = !esImpuestoVenta(modoGuardado);
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1.5 text-sm font-medium text-[var(--foreground)]">IVA de la cotización</legend>
+      <div className="grid grid-cols-2 gap-2">
+        {OPCIONES_IMPUESTO_VENTA.map((o) => {
+          const activa = impuesto === o.valor;
+          return (
+            <label
+              key={o.valor}
+              className={`relative flex cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--brand)]/30 ${
+                activa
+                  ? "border-[var(--brand)] bg-[var(--brand)]/10 text-[var(--foreground)]"
+                  : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              <input
+                type="radio"
+                name="impuestoVenta"
+                value={o.valor}
+                checked={activa}
+                onChange={() => onCambiar(o.valor)}
+                className="sr-only"
+              />
+              {o.valor === "CON_IVA" ? `${o.etiqueta} (${Number(TASA_IVA_VENTA)} %)` : o.etiqueta}
+            </label>
+          );
+        })}
+      </div>
+      {anterior && (
+        <div className="space-y-1 text-xs text-[var(--muted)]">
+          {modoGuardado === "PENDIENTE" ? (
+            <p className="text-amber-700">
+              Copia de un documento anterior cuyo impuesto (tasa 0 %, exento u otra tasa) no corresponde a estas opciones. Elige «Con IVA» o
+              «Sin IVA» antes de emitir.
+            </p>
+          ) : (
+            <p>Cotización anterior: conserva el impuesto de cada partida. Si eliges una opción, se aplica a todas las partidas.</p>
+          )}
+          {impuesto && (
+            <button type="button" onClick={() => onCambiar(null)} className={claseEnlace}>
+              {modoGuardado === "PENDIENTE" ? "Decidir después" : "Conservar el impuesto anterior"}
+            </button>
+          )}
+        </div>
+      )}
+    </fieldset>
   );
 }
 

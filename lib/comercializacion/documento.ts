@@ -1,5 +1,5 @@
 import * as z from "zod";
-import type { TotalesCotizacion, TratamientoImpuesto } from "@/lib/comercializacion/importes";
+import type { ImpuestoVenta, TotalesCotizacion, TratamientoPartidaVenta } from "@/lib/comercializacion/importes";
 
 // Copia histórica de una cotización de venta (B3). Se congela al EMITIR y es
 // la ÚNICA fuente del PDF y de la vista de una cotización emitida/aceptada:
@@ -15,7 +15,7 @@ export type PartidaDocumento = {
   cantidad: string; // "2.375"
   precioUnitario: string; // "123.45", sin IVA
   importe: string; // "293.19"
-  tratamientoImpuesto: TratamientoImpuesto;
+  tratamientoImpuesto: TratamientoPartidaVenta;
   tasaIva: string | null;
 };
 
@@ -33,6 +33,9 @@ export type DocumentoCotizacion = {
   // null = «Sin vendedor» (desde nov-2026). Las copias emitidas antes siempre
   // traen vendedor y se leen igual.
   vendedor: { nombre: string } | null;
+  // Opción de IVA de la venta (nov-2026). null = documento con impuesto por
+  // partida (todas las copias emitidas antes de esa fecha).
+  impuestoVenta: ImpuestoVenta | null;
   partidas: PartidaDocumento[];
   totales: TotalesCotizacion;
 };
@@ -51,6 +54,7 @@ const esquema = z.object({
   cliente: z.object({ nombre: z.string(), contacto: z.string().nullable(), telefono: z.string().nullable() }).nullable(),
   obra: z.object({ nombre: z.string(), ubicacion: z.string().nullable() }).nullable(),
   vendedor: z.object({ nombre: z.string() }).nullable(),
+  impuestoVenta: z.enum(["CON_IVA", "SIN_IVA"]).nullable().default(null),
   partidas: z.array(
     z.object({
       codigo: z.string(),
@@ -59,7 +63,7 @@ const esquema = z.object({
       cantidad: z.string().regex(/^\d+\.\d{3}$/),
       precioUnitario: importe,
       importe,
-      tratamientoImpuesto: z.enum(["GRAVADO", "TASA_CERO", "EXENTO"]),
+      tratamientoImpuesto: z.enum(["GRAVADO", "TASA_CERO", "EXENTO", "SIN_IVA"]),
       tasaIva: importe.nullable(),
     })
   ),
@@ -68,6 +72,8 @@ const esquema = z.object({
     gravado: z.array(z.object({ tasa: importe, base: importe, iva: importe })),
     baseTasaCero: importe,
     baseExenta: importe,
+    // Copias anteriores a «Sin IVA» en ventas no traen este campo.
+    baseSinIva: importe.default("0.00"),
     iva: importe,
     total: importe,
   }),
