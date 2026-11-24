@@ -1,6 +1,7 @@
 import "server-only";
 import { puedeVerContratoGeneralPrivado } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
+import type { EsquemaContractual } from "@/lib/generated/prisma/enums";
 import { formatearRangoSemana } from "@/lib/server/semanas";
 import { db } from "@/lib/server/db";
 import { brandingDesdeEmpresa, type BrandingEmpresa } from "@/lib/server/branding";
@@ -63,8 +64,12 @@ export type DatosDocumentoEstimacion = {
   controlContractual: ControlContractual;
   historial: FilaHistorialEstimacion[];
   estimacionSemanal: {
+    esquemaContractual: EsquemaContractual | null;
     subtotalTrabajos: number;
     administracion: number;
+    administracionTrabajos: number;
+    administracionGastos: number;
+    porcentajeAdministracionGastos: number | null;
     gastosCobrables: number;
     aplicaIVA: boolean;
     porcentajeIVA: number | null;
@@ -146,8 +151,12 @@ export async function obtenerDatosDocumentoEstimacion(
     controlContractual,
     historial,
     estimacionSemanal: {
+      esquemaContractual: congelado.estimacion.esquemaContractualUsado ?? proyecto.esquemaContractual,
       subtotalTrabajos: congelado.estimacion.subtotal,
       administracion: congelado.estimacion.montoAdministracionTotal,
+      administracionTrabajos: congelado.estimacion.montoAdministracionTrabajos,
+      administracionGastos: congelado.estimacion.montoAdministracionGastos,
+      porcentajeAdministracionGastos: congelado.estimacion.porcentajeAdministracionGastos,
       gastosCobrables: congelado.estimacion.subtotalGastosCobrables,
       aplicaIVA: congelado.estimacion.aplicaIVA,
       porcentajeIVA: congelado.estimacion.porcentajeIVA,

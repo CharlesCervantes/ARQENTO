@@ -5,16 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, Thead, Th, Tr, Td } from "@/components/ui/table";
-import {
-  calcularImpuesto,
-  ETIQUETA_TRATAMIENTO,
-  formatearImporte,
-  normalizarImporte,
-  normalizarTasa,
-  TASA_IVA_INICIAL,
-  TRATAMIENTOS_IMPUESTO,
-  type TratamientoImpuesto,
-} from "@/lib/comercializacion/importes";
+import { ETIQUETA_TRATAMIENTO, formatearImporte, normalizarImporte, type TratamientoImpuesto } from "@/lib/comercializacion/importes";
 import type { EntradaHistorialProducto, ProductoAdministracion } from "@/lib/server/comercializacion/productos";
 import {
   cambiarEstatusProductoAction,
@@ -23,10 +14,7 @@ import {
   historialProductoAction,
   type ProductoFormState,
 } from "@/app/(app)/comercializacion/actions";
-import { coincideBusqueda, etiquetaImpuesto } from "./productos-comun";
-
-const claseSelect =
-  "w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15";
+import { coincideBusqueda } from "./productos-comun";
 
 const claseEnlace = "text-sm font-medium text-[var(--brand)] hover:underline";
 const claseSecundaria = "text-sm text-[var(--muted)] hover:text-[var(--foreground)]";
@@ -66,7 +54,7 @@ export function ProductosAdministracionView({ productos }: { productos: Producto
         <div>
           <h1 className="text-2xl font-semibold text-[var(--foreground)]">Productos</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Catálogo de venta de tu empresa. Precios sin IVA. El costo de referencia es privado: el vendedor no lo ve.
+            Catálogo de venta de tu empresa. Precios de venta sin IVA; el IVA se elige en cada cotización. El costo de referencia es privado: el vendedor no lo ve.
           </p>
         </div>
         {!creando && (
@@ -123,8 +111,7 @@ export function ProductosAdministracionView({ productos }: { productos: Producto
               <Th>Código</Th>
               <Th>Descripción</Th>
               <Th>Unidad</Th>
-              <Th className="text-right">Precio sin IVA</Th>
-              <Th>Impuesto</Th>
+              <Th className="text-right">Precio de venta sin IVA</Th>
               <Th className="text-right">Costo ref.</Th>
               <Th>Estado</Th>
               <Th className="text-right">Acciones</Th>
@@ -180,9 +167,6 @@ function FilaProducto({
         <Td>{p.descripcion}</Td>
         <Td className="whitespace-nowrap">{p.unidad}</Td>
         <Td className="text-right tabular-nums whitespace-nowrap">{formatearImporte(p.precioVenta)}</Td>
-        <Td className="whitespace-nowrap" title={ETIQUETA_TRATAMIENTO[p.tratamientoImpuesto]}>
-          {etiquetaImpuesto(p)}
-        </Td>
         <Td className="text-right tabular-nums whitespace-nowrap">{formatearImporte(p.costoReferencia)}</Td>
         <Td className="whitespace-nowrap">
           {p.activo ? (
@@ -272,8 +256,9 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   codigo: "Código",
   descripcion: "Descripción",
   unidad: "Unidad",
-  precioVenta: "Precio sin IVA",
+  precioVenta: "Precio de venta sin IVA",
   costoReferencia: "Costo de referencia",
+  // Solo para entradas anteriores a nov-2026 (el producto ya no captura impuesto).
   tratamientoImpuesto: "Impuesto",
   tasaIva: "Tasa IVA",
   activo: "Estado",
@@ -366,16 +351,8 @@ function FormularioProducto({ producto, onListo }: { producto?: ProductoAdminist
   const [unidad, setUnidad] = useState(producto?.unidad ?? "");
   const [costo, setCosto] = useState(producto?.costoReferencia ?? "");
   const [precio, setPrecio] = useState(producto?.precioVenta ?? "");
-  const [tratamiento, setTratamiento] = useState<TratamientoImpuesto>(producto?.tratamientoImpuesto ?? "GRAVADO");
-  const [tasa, setTasa] = useState(producto?.tasaIva ? String(Number(producto.tasaIva)) : String(Number(TASA_IVA_INICIAL)));
-
-  // Vista previa solamente — el servidor vuelve a validar y calcular.
-  const precioNormalizado = normalizarImporte(precio, { permitirCero: false });
-  const tasaNormalizada = tratamiento === "GRAVADO" ? normalizarTasa(tasa) : null;
-  const vistaPrevia =
-    precioNormalizado && (tratamiento !== "GRAVADO" || tasaNormalizada)
-      ? calcularImpuesto(precioNormalizado, tratamiento, tasaNormalizada)
-      : null;
+  // Solo para el aviso de captura — el servidor vuelve a validar.
+  const precioValido = normalizarImporte(precio, { permitirCero: false }) !== null;
 
   return (
     <form action={formAction} className="space-y-3">
@@ -401,25 +378,6 @@ function FormularioProducto({ producto, onListo }: { producto?: ProductoAdminist
             onChange={(e) => setPrecio(e.target.value)}
           />
         </Campo>
-        <Campo etiqueta="Impuesto">
-          <select
-            name="tratamientoImpuesto"
-            value={tratamiento}
-            onChange={(e) => setTratamiento(e.target.value as TratamientoImpuesto)}
-            className={claseSelect}
-          >
-            {TRATAMIENTOS_IMPUESTO.map((t) => (
-              <option key={t} value={t}>
-                {ETIQUETA_TRATAMIENTO[t]}
-              </option>
-            ))}
-          </select>
-        </Campo>
-        {tratamiento === "GRAVADO" && (
-          <Campo etiqueta="Tasa de IVA (%)">
-            <Input name="tasaIva" required inputMode="decimal" value={tasa} onChange={(e) => setTasa(e.target.value)} />
-          </Campo>
-        )}
         <Campo etiqueta="Costo de referencia (privado, opcional)">
           <Input
             name="costoReferencia"
@@ -431,8 +389,8 @@ function FormularioProducto({ producto, onListo }: { producto?: ProductoAdminist
         </Campo>
       </div>
       <p className="text-xs text-[var(--muted)]">
-        {vistaPrevia
-          ? `Precio con impuesto: ${formatearImporte(vistaPrevia.total)} (IVA ${formatearImporte(vistaPrevia.iva)}).`
+        {precioValido
+          ? "Precio en MXN, sin IVA. El IVA se elige al cotizar."
           : "Captura un precio mayor que 0 con máximo 2 decimales."}
         {producto && " Cambiar el precio aquí no modifica cotizaciones ya guardadas."}
       </p>

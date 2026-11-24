@@ -7,13 +7,7 @@ import { registrarAuditoriaTx } from "@/lib/server/auditoria";
 import { ValidacionError } from "@/lib/server/control-de-obra/proyectos";
 import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructura-contractual";
 import { requerirAdministracionComercial, requerirUsoComercial } from "@/lib/server/comercializacion/acceso";
-import {
-  TRATAMIENTOS_IMPUESTO,
-  normalizarImporte,
-  normalizarTasa,
-  type TratamientoImpuesto,
-  comoTratamientoVenta,
-} from "@/lib/comercializacion/importes";
+import { normalizarImporte } from "@/lib/comercializacion/importes";
 
 // Catálogo de productos de Comercialización — B1 (noviembre 2026).
 // docs/negocio/comercializacion.md §6. Reglas:
@@ -26,6 +20,10 @@ import {
 // - Cada alta/edición/(des)activación queda en la bitácora general
 //   (RegistroAuditoria, entidad "ProductoComercial") con valor anterior y
 //   nuevo — es el historial de precios/costos, visible solo a administración.
+// - Impuesto (nov-2026): el producto ya no captura impuesto. Su precio es el
+//   precio de venta sin IVA y el IVA se decide una vez por cotización. Las
+//   columnas tratamientoImpuesto/tasaIva quedan como dato histórico de los
+//   productos anteriores: ni se leen ni se modifican aquí.
 
 export const ENTIDAD_PRODUCTO = "ProductoComercial";
 
@@ -40,8 +38,6 @@ export type ProductoParaVenta = {
   descripcion: string;
   unidad: string;
   precioVenta: string; // canónico "1234.50", sin IVA
-  tratamientoImpuesto: TratamientoImpuesto;
-  tasaIva: string | null; // "16.00" solo si GRAVADO
 };
 
 export type ProductoAdministracion = ProductoParaVenta & {
@@ -56,8 +52,6 @@ const SELECT_VENTA = {
   descripcion: true,
   unidad: true,
   precioVenta: true,
-  tratamientoImpuesto: true,
-  tasaIva: true,
 } as const satisfies Prisma.ProductoComercialSelect;
 
 const SELECT_ADMINISTRACION = {
@@ -77,8 +71,6 @@ function aVenta(p: Prisma.ProductoComercialGetPayload<{ select: typeof SELECT_VE
     descripcion: p.descripcion,
     unidad: p.unidad,
     precioVenta: dec(p.precioVenta),
-    tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto),
-    tasaIva: decONulo(p.tasaIva),
   };
 }
 
@@ -136,10 +128,6 @@ const esquemaCaptura = z.object({
   unidad: textoObligatorio("La unidad", 20),
   precioVenta: z.unknown(),
   costoReferencia: z.unknown().optional(),
-  tratamientoImpuesto: z.enum(TRATAMIENTOS_IMPUESTO as [TratamientoImpuesto, ...TratamientoImpuesto[]], {
-    error: "Selecciona el tratamiento de impuesto.",
-  }),
-  tasaIva: z.unknown().optional(),
 });
 
 type DatosProducto = {
@@ -148,8 +136,6 @@ type DatosProducto = {
   unidad: string;
   precioVenta: string;
   costoReferencia: string | null;
-  tratamientoImpuesto: TratamientoImpuesto;
-  tasaIva: string | null;
 };
 
 const vacio = (v: unknown) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
@@ -167,25 +153,12 @@ export function validarDatosProducto(datosCrudos: unknown): DatosProducto {
       throw new ValidacionError("El costo de referencia debe ser un importe de 0 o más con máximo 2 decimales.");
     }
   }
-  let tasaIva: string | null = null;
-  if (d.tratamientoImpuesto === "GRAVADO") {
-    tasaIva = normalizarTasa(d.tasaIva);
-    if (!tasaIva) {
-      throw new ValidacionError("La tasa de IVA debe ser mayor que 0 y hasta 100 %, con máximo 2 decimales. Para 0 % usa «Tasa 0 %».");
-    }
-  } else if (!vacio(d.tasaIva) && normalizarTasa(d.tasaIva) !== null) {
-    // Una tasa positiva con un tratamiento que no la usa es una
-    // contradicción: se rechaza en lugar de descartarla en silencio.
-    throw new ValidacionError("La tasa de IVA solo aplica a productos gravados.");
-  }
   return {
     codigo: d.codigo,
     descripcion: d.descripcion,
     unidad: d.unidad,
     precioVenta,
     costoReferencia,
-    tratamientoImpuesto: d.tratamientoImpuesto,
-    tasaIva,
   };
 }
 
@@ -196,8 +169,6 @@ function instantanea(p: {
   unidad: string;
   precioVenta: Prisma.Decimal | string;
   costoReferencia: Prisma.Decimal | string | null;
-  tratamientoImpuesto: TratamientoImpuesto;
-  tasaIva: Prisma.Decimal | string | null;
 }): Record<string, string | null> {
   const t = (v: Prisma.Decimal | string | null) => (v === null ? null : typeof v === "string" ? v : v.toFixed(2));
   return {
@@ -206,8 +177,6 @@ function instantanea(p: {
     unidad: p.unidad,
     precioVenta: t(p.precioVenta),
     costoReferencia: t(p.costoReferencia),
-    tratamientoImpuesto: p.tratamientoImpuesto,
-    tasaIva: t(p.tasaIva),
   };
 }
 
@@ -294,7 +263,7 @@ export async function editarProductoComercial(
   return conCodigoUnico(datos.codigo, () =>
     db.$transaction(async (tx) => {
       const actual = await productoDeMiEmpresaTx(tx, empresaId, productoId);
-      const antes = instantanea({ ...actual, tratamientoImpuesto: comoTratamientoVenta(actual.tratamientoImpuesto) });
+      const antes = instantanea(actual);
       const despues = instantanea(datos);
       const cambios = Object.keys(despues).filter((k) => antes[k] !== despues[k]);
       if (cambios.length === 0) return { cambios };

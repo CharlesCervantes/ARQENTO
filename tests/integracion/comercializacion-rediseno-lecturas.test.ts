@@ -57,7 +57,7 @@ const clave = () => `clave-rediseno-${++n}-${Date.now()}`;
 async function orden() {
   const { id } = await crearCotizacionVenta(
     admin,
-    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Suministro ficticio para Torre A", vendedorId: vendedor.id, fecha: dias(-5), vigenciaHasta: dias(10), partidas: [{ productoId: PRODUCTO, cantidad: "10" }] },
+    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Suministro ficticio para Torre A", vendedorId: vendedor.id, impuestoVenta: "SIN_IVA", fecha: dias(-5), vigenciaHasta: dias(10), partidas: [{ productoId: PRODUCTO, cantidad: "10" }] },
     clave()
   );
   await emitirCotizacionVenta(admin, id, 1);

@@ -47,6 +47,7 @@ async function orden(): Promise<Orden> {
       obraId: OBRA,
       descripcion: "Venta ficticia compras-crédito",
       vendedorId: vendedor.id,
+      impuestoVenta: "SIN_IVA",
       fecha: HOY,
       vigenciaHasta: HOY,
       partidas: [
@@ -118,7 +119,7 @@ describe("Impuesto de compras: «Sin IVA» / «IVA 16 %»", () => {
     assert.equal((await cuentaDeCompra(id)).total.toFixed(2), "302.09");
   });
 
-  test("las partidas nuevas solo admiten «Sin IVA» o «IVA 16 %»; catálogo, cotizaciones y gastos no admiten «Sin IVA»", async () => {
+  test("las partidas nuevas solo admiten «Sin IVA» o «IVA 16 %»; catálogo y gastos no admiten «Sin IVA»", async () => {
     const o = await orden();
     const { id } = await crearCompraComercial(admin, o.ordenId, clave());
     const guardar = (l: Linea) => guardarBorradorCompra(admin, id, 1, { proveedorId: PROV, fecha: HOY, partidas: partidas(o, [l]) });
@@ -127,12 +128,12 @@ describe("Impuesto de compras: «Sin IVA» / «IVA 16 %»", () => {
     await assert.rejects(guardar({ codigo: "POSTE", cantidad: "1", costo: "10", t: "GRAVADO", tasa: "8" }), /IVA 8 % solo se conserva/);
     await assert.rejects(guardar({ codigo: "POSTE", cantidad: "1", costo: "10", t: "SIN_IVA", tasa: "16" }), /solo aplica a partidas con IVA/);
     assert.equal(await db.partidaCompraComercial.count({ where: { compraId: id } }), 0);
-    // «Sin IVA» es exclusivo de compras (servicio y base de datos).
-    await assert.rejects(
-      crearProductoComercial(admin, { codigo: "X", descripcion: "x", unidad: "pz", precioVenta: "1", costoReferencia: "", tratamientoImpuesto: "SIN_IVA", tasaIva: "" })
-    );
+    // El catálogo no guarda impuesto (IVA por cotización, nov-2026): el campo
+    // enviado se ignora y la base rechaza «Sin IVA» en productos. En ventas,
+    // «Sin IVA» es la opción de la cotización (ver comercializacion-iva-cotizacion).
+    const x = await crearProductoComercial(admin, { codigo: "X", descripcion: "x", unidad: "pz", precioVenta: "1", costoReferencia: "", tratamientoImpuesto: "SIN_IVA", tasaIva: "" });
+    assert.equal((await db.productoComercial.findUniqueOrThrow({ where: { id: x.id } })).tratamientoImpuesto, null);
     await assert.rejects(db.$executeRawUnsafe(`UPDATE productos_comerciales SET "tratamientoImpuesto" = 'SIN_IVA', "tasaIva" = NULL WHERE id = $1`, TUBO), /sin_iva_solo_compras/);
-    await assert.rejects(db.$executeRawUnsafe(`UPDATE partidas_cotizacion_venta SET "tratamientoImpuesto" = 'SIN_IVA', "tasaIva" = NULL WHERE id = $1`, o.pv.TUBO));
     await assert.rejects(
       registrarGastoComercial(admin, o.ordenId, { concepto: "Flete", beneficiarioId: PROV, fecha: HOY, subtotal: "100", tratamientoImpuesto: "SIN_IVA" }, null, clave()),
       /impuesto/i

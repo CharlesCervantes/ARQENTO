@@ -49,6 +49,41 @@ describe("Salud y orden de obras en vista General", () => {
   });
 });
 
+describe("Semanas sin cerrar", () => {
+  const fin = (mes: number, dia: number) => new Date(Date.UTC(2026, mes - 1, dia));
+  // Torre empieza en la semana 38; la 37 existe en la empresa desde antes.
+  function datosConSemanas(): DatosDashboard {
+    const datos = datosDePrueba();
+    datos.semanasCerradasVencidas = [
+      { id: "semana-37", fechaFin: fin(9, 12) },
+      { id: "semana-38", fechaFin: fin(9, 19) },
+      { id: "semana-39", fechaFin: fin(9, 26) },
+    ];
+    datos.ultimaSemanaConAvance = [
+      { conceptoId: "concepto-torre", semana: { fechaFin: fin(9, 19) } },
+      { conceptoId: "concepto-torre", semana: { fechaFin: fin(9, 26) } },
+    ];
+    const cierre = (semanaId: string, fechaFin: Date) => ({ proyectoId: IDS.TORRE, semanaId, estatus: "CERRADA" as const, semana: { fechaFin } });
+    datos.cierresSemana = [cierre("semana-38", fin(9, 19)), cierre("semana-39", fin(9, 26))];
+    return datos;
+  }
+  const torre = (d: DatosDashboard) => proyectar(d).proyectos.find((p) => p.id === IDS.TORRE)!;
+
+  test("no cuenta semanas anteriores al primer avance de la obra", () => {
+    const datos = datosConSemanas();
+    assert.equal(torre(datos).semanasSinCerrarDias, 0);
+    assert.ok(!proyectar(datos).alertas.some((a) => a.tipo === "semanas_sin_cerrar"));
+  });
+
+  test("sí cuenta una semana de la obra que quedó sin cerrar, sea con avance o intermedia", () => {
+    const datos = datosConSemanas();
+    datos.cierresSemana = datos.cierresSemana.filter((c) => c.semanaId !== "semana-38");
+    const esperado = (HOY.getTime() - fin(9, 19).getTime()) / 86400000;
+    assert.equal(torre(datos).semanasSinCerrarDias, esperado);
+    assert.ok(proyectar(datos).alertas.some((a) => a.tipo === "semanas_sin_cerrar"));
+  });
+});
+
 describe("Alertas según la vista", () => {
   test("General nunca incluye la alerta de desviación", () => {
     assert.ok(!proyectar(datosDePrueba()).alertas.some((a) => a.tipo === "desviacion"));

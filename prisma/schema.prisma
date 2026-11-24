@@ -2896,9 +2896,10 @@ model DocumentoEgreso {
 // Tratamiento de impuesto por producto. TASA_CERO (IVA 0 %) y EXENTO (no
 // causa IVA) son fiscalmente distintos aunque ambos sumen $0 de IVA — nunca
 // se colapsan en uno solo. Solo GRAVADO usa ProductoComercial.tasaIva.
-// SIN_IVA: SOLO partidas de compra a proveedor (selector «Sin IVA»): el cálculo
-// no agrega impuesto; no declara exención ni tasa 0 %. La base lo rechaza en
-// catálogo, cotizaciones y gastos.
+// SIN_IVA: opción comercial «Sin IVA» (compras a proveedor y, desde la
+// opción de IVA por cotización de nov-2026, partidas de venta): el cálculo no
+// agrega impuesto; no declara exención ni tasa 0 %. La base lo rechaza en
+// catálogo y gastos.
 enum TratamientoImpuestoComercial {
   GRAVADO
   TASA_CERO
@@ -2928,11 +2929,13 @@ model ProductoComercial {
   // compra). Nunca se selecciona en consultas hechas para un vendedor.
   costoReferencia Decimal? @db.Decimal(14, 2)
 
-  tratamientoImpuesto TratamientoImpuestoComercial @default(GRAVADO)
-  // Porcentaje (16.00 = 16 %). Obligatorio con GRAVADO y null en los demás
-  // tratamientos (CHECK en la migración). 16 es solo el valor inicial del
-  // formulario, editable por producto — nunca una regla fija del sistema.
-  tasaIva             Decimal?                     @db.Decimal(5, 2)
+  // HISTÓRICO (nov-2026): el impuesto ya no se captura por producto; se
+  // decide una vez por cotización (CotizacionVenta.impuestoVenta). Los
+  // productos nuevos quedan con ambos en null; los anteriores conservan su
+  // dato original. Porcentaje (16.00 = 16 %): obligatorio con GRAVADO y null
+  // en los demás tratamientos (CHECK en la migración).
+  tratamientoImpuesto TratamientoImpuestoComercial?
+  tasaIva             Decimal?                      @db.Decimal(5, 2)
 
   activo Boolean @default(true)
 
@@ -3029,6 +3032,18 @@ enum EstatusOrdenVenta {
   CANCELADA
 }
 
+// Impuesto de una cotización de venta, elegido una vez para toda la venta
+// (nov-2026). CON_IVA = IVA 16 % sobre el subtotal; SIN_IVA = no se agrega
+// impuesto (opción comercial, no es tasa 0 % ni exención). PENDIENTE = copia
+// de un documento anterior cuyo impuesto no se representa con esas dos
+// opciones: hay que elegir antes de emitir. La columna en NULL = esquema
+// anterior (tratamiento y tasa por partida), solo en cotizaciones previas.
+enum ImpuestoCotizacionVenta {
+  CON_IVA
+  SIN_IVA
+  PENDIENTE
+}
+
 // Cotización de venta. NO es la Cotizacion de Compras (oferta de un
 // proveedor sobre una Requisición). Un borrador nunca crea OC, compra,
 // cobro ni deuda. Importes SIEMPRE calculados por el servidor (ver
@@ -3054,9 +3069,11 @@ model CotizacionVenta {
   descripcion String?
 
   // Responsable comercial (define el alcance del vendedor) — distinto de
-  // quien capturó el documento.
-  vendedor         Usuario  @relation("CotizacionVentaVendedor", fields: [vendedorId], references: [id])
-  vendedorId       String
+  // quien capturó el documento. Opcional: NULL = «Sin vendedor» (venta que
+  // opera Administración/Dirección); válido hasta la orden de venta. Las
+  // ventas sin vendedor solo las ve administración de la Empresa.
+  vendedor         Usuario? @relation("CotizacionVentaVendedor", fields: [vendedorId], references: [id])
+  vendedorId       String?
   creadoPor        Usuario  @relation("CotizacionVentaCreada", fields: [creadoPorId], references: [id])
   creadoPorId      String
   actualizadoPor   Usuario? @relation("CotizacionVentaActualizada", fields: [actualizadoPorId], references: [id])
@@ -3068,6 +3085,10 @@ model CotizacionVenta {
 
   condiciones   String?
   observaciones String?
+
+  // Opción de IVA de toda la venta (ver ImpuestoCotizacionVenta). Con
+  // CON_IVA/SIN_IVA el servidor fija el impuesto de TODAS las partidas.
+  impuestoVenta ImpuestoCotizacionVenta?
 
   // Totales derivados, recalculados por el servidor en cada guardado (para
   // listar sin recalcular). La fuente son las partidas.
@@ -3196,7 +3217,9 @@ model PartidaCotizacionVenta {
   producto   ProductoComercial @relation(fields: [productoId, empresaId], references: [id, empresaId], onDelete: Restrict)
   productoId String
 
-  // Copia histórica del catálogo al agregar la partida.
+  // Copia histórica del catálogo al agregar la partida. El impuesto lo fija
+  // la opción de IVA de la cotización (CON_IVA → GRAVADO 16 %, SIN_IVA →
+  // SIN_IVA); en cotizaciones anteriores es la copia del producto.
   codigo              String
   descripcion         String
   unidad              String

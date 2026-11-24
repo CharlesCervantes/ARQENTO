@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import type { CotizacionDetalle } from "@/lib/server/comercializacion/cotizaciones";
 import { formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
+import { nombreVendedor } from "@/lib/comercializacion/vendedor";
 import { AccionesOperacion } from "./acciones-operacion";
 import { AvisoCierre, EncabezadoOperacion, EstatusCotizacionBadge } from "./cotizacion-emitida";
 
@@ -47,7 +48,7 @@ export function CotizacionCanceladaBorradorView({
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
           <div>
             <dt className="text-xs text-[var(--muted)]">Vendedor</dt>
-            <dd>{cotizacion.vendedor.nombre}</dd>
+            <dd>{nombreVendedor(cotizacion.vendedor)}</dd>
           </div>
           <div>
             <dt className="text-xs text-[var(--muted)]">Descripción</dt>

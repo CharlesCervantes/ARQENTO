@@ -30,11 +30,25 @@ export function esMaster(usuario: UsuarioSesion): boolean {
   return usuario.rol === "MASTER";
 }
 
-// Orden fijo del sidebar — Reporte General y Proyectos siempre primero, en
-// ese orden (decisión de sesión, septiembre 2026). El resto conserva el
-// orden que ya traía el catálogo (sort estable: una clave sin prioridad
-// explícita nunca se reordena entre sí misma y las demás sin prioridad).
+/**
+ * «Inicio» (panel ejecutivo /dashboard) es un módulo más del catálogo desde
+ * noviembre 2026: Master lo habilita o deshabilita por Empresa. Sin Inicio,
+ * /dashboard (login, logo) envía al primer módulo que el usuario puede usar
+ * — nunca consulta datos de obras.
+ */
+export const MODULO_INICIO = "inicio";
+
+export function puedeVerInicio(usuario: UsuarioSesion): boolean {
+  return Boolean(usuario.empresa) && empresaTieneModulo(usuario, MODULO_INICIO);
+}
+
+// Orden fijo del sidebar — Inicio primero (si la Empresa lo tiene), luego
+// Reporte General y Proyectos, en ese orden (decisión de sesión, septiembre
+// 2026). El resto conserva el orden que ya traía el catálogo (sort estable:
+// una clave sin prioridad explícita nunca se reordena entre sí misma y las
+// demás sin prioridad).
 const PRIORIDAD_NAV: Record<string, number> = {
+  inicio: -1,
   reporte_general: 0,
   control_de_obra: 1,
 };

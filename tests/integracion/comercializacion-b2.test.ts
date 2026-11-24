@@ -15,6 +15,7 @@ import { SinPermisoComercialError } from "@/lib/server/comercializacion/acceso";
 import { ValidacionError } from "@/lib/server/control-de-obra/proyectos";
 import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructura-contractual";
 import type { UsuarioSesion } from "@/lib/server/session";
+import { convertirEnAnterior, EXENTO, G16, TASA_CERO } from "./apoyo/cotizacion-anterior";
 import { usuarioDePrueba } from "../helpers/usuarios";
 import { EMPRESA, EMPRESA_AJENA, admin as adminBase, adminAjeno as adminAjenoBase, baseLimpiaConDatos, sinInterbloqueos, supervisor } from "./apoyo/base";
 
@@ -136,7 +137,8 @@ describe("Creación de borradores y folios", () => {
     assert.equal(r.folio, "COT-000001");
     const c = await obtenerCotizacionVenta(admin, r.id);
     assert.equal(c.clienteId, null);
-    assert.equal(c.vendedor.id, admin.id);
+    // Vendedor opcional (nov-2026): administración sin elegir queda «Sin vendedor».
+    assert.equal(c.vendedor, null);
     assert.equal(c.creadoPorNombre, "Admin Prueba");
     assert.equal(c.totales.total, "0.00");
     assert.equal(c.fecha, "2026-11-16");
@@ -356,7 +358,7 @@ describe("Precios, impuestos y copia histórica", () => {
     );
   });
 
-  test("Cantidades fraccionarias e impuestos mixtos: importes y totales exactos en la base", async () => {
+  test("Cantidades fraccionarias e impuestos mixtos (cotización anterior): importes y totales exactos en la base", async () => {
     const r = await crearCotizacionVenta(
       admin,
       borrador({
@@ -369,6 +371,8 @@ describe("Precios, impuestos y copia histórica", () => {
       }),
       clave()
     );
+    // Impuesto por partida = cotización creada antes del IVA por cotización.
+    await convertirEnAnterior(r.id, [G16, G16, TASA_CERO, EXENTO]);
     const filas = await db.$queryRawUnsafe<{ cantidad: string; importe: string }[]>(
       `SELECT cantidad::text AS cantidad, importe::text AS importe FROM partidas_cotizacion_venta WHERE "cotizacionId" = $1 ORDER BY orden`,
       r.id

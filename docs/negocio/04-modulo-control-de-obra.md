@@ -1702,7 +1702,7 @@ acumulado/Saldo/comparación avance-vs-pagado/Estado de cuenta por contrato.
   por Reporte General y Control de Obra, no propia de ningún módulo.
 ## 49.10 Semanas históricas importadas (migración de obras desde Excel, noviembre 2026)
 
-Estado: **propuesta en revisión** (rama `feature/cierre-historico-importado`). Primera obra: MISSISSIPPI.
+Estado: **implementado** (noviembre 2026). Primera obra: MISSISSIPPI.
 
 - `CierreSemanaProyecto.historicoImportado` marca una semana cuyo avance aprobado se migró desde Excel y cuya estimación se emitió fuera de ARQENTO. Solo la escribe el importador.
 - Una semana así **no se reabre**, **no se materializa** su estimación y aprobar un gasto en ella no crea estimación. Así no se generan otra vez cortes, estimación ni folios por todo el histórico.
@@ -1733,7 +1733,7 @@ Los precios que se usaron en las pruebas de la migración **no constituyen un ac
 
 ## 49.11 Cantidad estimada por capa (noviembre 2026)
 
-Estado: **propuesta en revisión** (rama `feature/estimado-capa-independiente`, encima de `feature/cierre-historico-importado`). Decisión de Charles, 24-nov-2026: el Privado necesita cantidades estimadas propias, también en semanas nuevas.
+Estado: **implementado** (noviembre 2026). Decisión de Charles, 24-nov-2026: el Privado necesita cantidades estimadas propias, también en semanas nuevas.
 
 Cuatro datos distintos que no se mezclan:
 

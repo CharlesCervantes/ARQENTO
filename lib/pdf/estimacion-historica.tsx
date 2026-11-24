@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { DatosDocumentoEstimacion } from "@/lib/server/control-de-obra/documentos-estimacion";
+import { resumenPdfPrivado } from "@/lib/control-de-obra/presentacion-estimacion-privada";
 import { aplanarGastosCobrables } from "@/lib/control-de-obra/lineas-gasto-estimacion";
 
 // Documento @react-pdf/renderer del historial documental — se renderiza en
@@ -29,6 +30,7 @@ const styles = StyleSheet.create({
   fecha: { fontSize: 9, color: "#6b7280", textAlign: "right", marginTop: 2 },
   filaDatos: { flexDirection: "row", marginBottom: 3 },
   etiquetaDato: { width: 140, color: "#6b7280" },
+  etiquetaResumen: { width: 200, color: "#6b7280" },
   valorDato: { fontWeight: 700 },
   seccion: { marginTop: 16 },
   seccionTitulo: {
@@ -233,6 +235,10 @@ function PaginaControlContractual({ datos }: { datos: DatosDocumentoEstimacion }
 
 function PaginaEstimacionSemanal({ datos }: { datos: DatosDocumentoEstimacion }) {
   const { estimacionSemanal: es } = datos;
+  const esPrivado = datos.capa === "privado";
+  // Solo Cliente Priv.: P.U. va en base y el importe incluye el cargo.
+  const abreviatura = es.esquemaContractual === "ADMINISTRACION" ? "Adm." : "Util.";
+  const incluyeCargo = esPrivado && es.administracionTrabajos !== 0;
   return (
     <Page size="LETTER" style={styles.page}>
       <View style={styles.encabezado}>
@@ -255,8 +261,8 @@ function PaginaEstimacionSemanal({ datos }: { datos: DatosDocumentoEstimacion })
           <Text style={styles.colDescripcion}>Concepto</Text>
           <Text style={styles.colUnidad}>Unidad</Text>
           <Text style={styles.colCantidad}>Cant. semana</Text>
-          <Text style={styles.colPU}>P.U.</Text>
-          <Text style={styles.colImporte}>Importe</Text>
+          <Text style={styles.colPU}>{incluyeCargo ? `P.U. sin ${abreviatura}` : "P.U."}</Text>
+          <Text style={styles.colImporte}>{incluyeCargo ? `Importe + ${abreviatura}` : "Importe"}</Text>
         </View>
         {es.filas.map((f, i) => (
           <View style={styles.tablaFila} key={i}>
@@ -291,6 +297,31 @@ function PaginaEstimacionSemanal({ datos }: { datos: DatosDocumentoEstimacion })
         </View>
       )}
 
+      {esPrivado ? <ResumenPrivado es={es} /> : <ResumenGeneral es={es} />}
+
+      <View style={styles.filaTotal}>
+        <Text style={styles.totalEtiqueta}>Total de la estimación</Text>
+        <Text style={styles.totalValor}>{formatMoney(es.total)}</Text>
+      </View>
+    </Page>
+  );
+}
+
+function ResumenPrivado({ es }: { es: DatosDocumentoEstimacion["estimacionSemanal"] }) {
+  return (
+    <View style={styles.seccion} wrap={false}>
+      {resumenPdfPrivado(es).map((l) => (
+        <View style={styles.filaDatos} key={l.etiqueta}>
+          <Text style={styles.etiquetaResumen}>{l.etiqueta}</Text>
+          <Text style={styles.valorDato}>{formatMoney(l.monto)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ResumenGeneral({ es }: { es: DatosDocumentoEstimacion["estimacionSemanal"] }) {
+  return (
       <View style={styles.seccion}>
         <View style={styles.filaDatos}>
           <Text style={styles.etiquetaDato}>Subtotal trabajos</Text>
@@ -317,12 +348,6 @@ function PaginaEstimacionSemanal({ datos }: { datos: DatosDocumentoEstimacion })
           </View>
         )}
       </View>
-
-      <View style={styles.filaTotal}>
-        <Text style={styles.totalEtiqueta}>Total de la estimación</Text>
-        <Text style={styles.totalValor}>{formatMoney(es.total)}</Text>
-      </View>
-    </Page>
   );
 }
 

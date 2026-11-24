@@ -13,8 +13,16 @@ import {
   ENTIDAD_COTIZACION,
   alcance,
   crearCotizacionVenta,
+  vendedorEsElegible,
 } from "@/lib/server/comercializacion/cotizaciones";
-import { calcularImportePartida, calcularTotalesCotizacion, comoTratamientoVenta } from "@/lib/comercializacion/importes";
+import {
+  calcularImportePartida,
+  calcularTotalesCotizacion,
+  esImpuestoVenta,
+  impuestoDePartidaVenta,
+  impuestoVentaEquivalente,
+  type ImpuestoVenta,
+} from "@/lib/comercializacion/importes";
 import { dateAFecha, hoyNegocio } from "@/lib/comercializacion/fechas";
 import { leerDocumentoEmitido, type DocumentoCotizacion } from "@/lib/comercializacion/documento";
 
@@ -34,6 +42,7 @@ const SELECT_PARA_DOCUMENTO = {
   descripcion: true,
   condiciones: true,
   observaciones: true,
+  impuestoVenta: true,
   subtotal: true,
   iva: true,
   total: true,
@@ -76,7 +85,7 @@ function armarDocumento(c: CotizacionParaDocumento): DocumentoCotizacion {
       cantidad,
       precioUnitario,
       importe: calcularImportePartida(cantidad, precioUnitario),
-      tratamientoImpuesto: comoTratamientoVenta(p.tratamientoImpuesto),
+      tratamientoImpuesto: p.tratamientoImpuesto,
       tasaIva: p.tasaIva === null ? null : p.tasaIva.toFixed(2),
     };
   });
@@ -91,7 +100,11 @@ function armarDocumento(c: CotizacionParaDocumento): DocumentoCotizacion {
     empresa: { nombre: c.empresa.nombre, razonSocial: c.empresa.razonSocial, logoRef: c.empresa.logoRef },
     cliente: c.cliente ? { nombre: c.cliente.nombre, contacto: c.cliente.contacto, telefono: c.cliente.telefono } : null,
     obra: c.obra ? { nombre: c.obra.nombre, ubicacion: c.obra.ubicacion } : null,
-    vendedor: { nombre: c.vendedor.nombre },
+    // null = «Sin vendedor»; queda así en la copia emitida.
+    vendedor: c.vendedor ? { nombre: c.vendedor.nombre } : null,
+    // Opción de IVA de la venta; null = impuesto por partida (cotización
+    // anterior que conservó su tratamiento).
+    impuestoVenta: esImpuestoVenta(c.impuestoVenta) ? c.impuestoVenta : null,
     partidas,
     totales: calcularTotalesCotizacion(partidas),
   };
@@ -113,16 +126,12 @@ async function faltantesParaEmitir(tx: Prisma.TransactionClient, c: CotizacionPa
   if (!c.descripcion?.trim()) faltan.push("descripción");
   if (!c.vigenciaHasta) faltan.push("vigencia");
   if (c.partidas.length === 0) faltan.push("al menos un material");
-  const vendedorElegible = await tx.usuario.findFirst({
-    where: {
-      id: c.vendedorId,
-      empresaId: c.empresaId,
-      activo: true,
-      OR: [{ rol: { in: ["ADMINISTRADOR", "DIRECTOR"] } }, { rol: "SUPERVISOR", vendedorComercial: true }],
-    },
-    select: { id: true },
-  });
-  if (!vendedorElegible) faltan.push("un vendedor elegible (el asignado ya no lo es)");
+  if (c.impuestoVenta === "PENDIENTE") faltan.push("elegir «Con IVA» o «Sin IVA»");
+  // El vendedor es opcional («Sin vendedor» se emite). Si hay uno asignado,
+  // debe seguir siendo elegible.
+  if (c.vendedorId && !(await vendedorEsElegible(tx, c.empresaId, c.vendedorId))) {
+    faltan.push("un vendedor elegible (el asignado ya no lo es; elige otro o «Sin vendedor»)");
+  }
   return faltan;
 }
 
@@ -164,6 +173,16 @@ export async function emitirCotizacionVenta(
     const inactivos = c.partidas.filter((p) => !p.producto.activo).map((p) => p.codigo);
     if (inactivos.length > 0) {
       throw new ValidacionError(`Hay materiales desactivados en el catálogo (${inactivos.join(", ")}). Quítalos para emitir.`);
+    }
+
+    // Con una opción de IVA, todas las partidas deben tener su impuesto; si
+    // no, algo las alteró fuera del servicio.
+    if (esImpuestoVenta(c.impuestoVenta)) {
+      const esperado = impuestoDePartidaVenta(c.impuestoVenta);
+      const distinta = c.partidas.some(
+        (p) => p.tratamientoImpuesto !== esperado.tratamientoImpuesto || (p.tasaIva === null ? null : p.tasaIva.toFixed(2)) !== esperado.tasaIva
+      );
+      if (distinta) throw new ValidacionError("El impuesto de las partidas no coincide con la opción de IVA. Guarda el borrador de nuevo antes de emitir.");
     }
 
     const documento = armarDocumento(c);
@@ -209,8 +228,14 @@ export async function emitirCotizacionVenta(
  *   ajuste suyo si difiere del catálogo actual). El vendedor recibe el precio
  *   actual de catálogo: no puede usar el duplicado para fijar precios.
  * - Vendedor: el vendedor queda él mismo; administración conserva al vendedor
- *   original si sigue siendo elegible (si no, queda ella misma).
+ *   original si sigue siendo elegible (si no, o si no tenía, queda «Sin
+ *   vendedor»).
  * - Fecha = hoy; vigencia se conserva solo si sigue vigente.
+ * - IVA (nov-2026): se copia la opción del original («Con IVA»/«Sin IVA»).
+ *   De un documento anterior (impuesto por partida) se usa la opción
+ *   equivalente si la hay (todo IVA 16 %); si no (tasa 0 %, exento, otras
+ *   tasas o mezclas), el borrador queda PENDIENTE de elegir, con el impuesto
+ *   original por partida hasta entonces.
  */
 export async function duplicarCotizacionVenta(
   usuario: UsuarioSesion,
@@ -231,9 +256,18 @@ export async function duplicarCotizacionVenta(
       observaciones: true,
       vigenciaHasta: true,
       vendedorId: true,
+      impuestoVenta: true,
       partidas: {
         orderBy: { orden: "asc" },
-        select: { productoId: true, codigo: true, cantidad: true, precioUnitario: true, producto: { select: { activo: true } } },
+        select: {
+          productoId: true,
+          codigo: true,
+          cantidad: true,
+          precioUnitario: true,
+          tratamientoImpuesto: true,
+          tasaIva: true,
+          producto: { select: { activo: true } },
+        },
       },
     },
   });
@@ -243,26 +277,23 @@ export async function duplicarCotizacionVenta(
 
   const esAdmin = esAdministradorComercial(usuario);
   const omitidos = o.partidas.filter((p) => !p.producto.activo).map((p) => p.codigo);
-  const partidas = o.partidas
-    .filter((p) => p.producto.activo)
+  const activas = o.partidas.filter((p) => p.producto.activo);
+  const impuestosOrigen = activas.map((p) => ({ tratamientoImpuesto: p.tratamientoImpuesto, tasaIva: p.tasaIva === null ? null : p.tasaIva.toFixed(2) }));
+  const impuestoVenta: ImpuestoVenta | null = esImpuestoVenta(o.impuestoVenta) ? o.impuestoVenta : impuestoVentaEquivalente(impuestosOrigen);
+  const partidas = activas
     .map((p) => ({
       productoId: p.productoId,
       cantidad: p.cantidad.toFixed(3),
       ...(esAdmin ? { precioUnitario: p.precioUnitario.toFixed(2) } : {}),
     }));
 
-  let vendedorId: string | undefined;
+  // Administración conserva al vendedor original si sigue siendo elegible;
+  // si no tenía o ya no es elegible, el duplicado queda «Sin vendedor». El
+  // vendedor no envía el campo (el servicio lo fija a él).
+  let vendedor: { vendedorId: string | null } | Record<string, never> = {};
   if (esAdmin) {
-    const elegible = await db.usuario.findFirst({
-      where: {
-        id: o.vendedorId,
-        empresaId,
-        activo: true,
-        OR: [{ rol: { in: ["ADMINISTRADOR", "DIRECTOR"] } }, { rol: "SUPERVISOR", vendedorComercial: true }],
-      },
-      select: { id: true },
-    });
-    vendedorId = elegible ? o.vendedorId : usuario.id;
+    const conserva = o.vendedorId !== null && (await vendedorEsElegible(db, empresaId, o.vendedorId));
+    vendedor = { vendedorId: conserva ? o.vendedorId : null };
   }
   const hoy = hoyNegocio();
   const vigencia = o.vigenciaHasta ? dateAFecha(o.vigenciaHasta) : null;
@@ -273,15 +304,16 @@ export async function duplicarCotizacionVenta(
       clienteId: o.clienteId,
       obraId: o.obraId,
       descripcion: o.descripcion,
-      ...(vendedorId ? { vendedorId } : {}),
+      ...vendedor,
       fecha: hoy,
       vigenciaHasta: vigencia && vigencia >= hoy ? vigencia : null,
       condiciones: o.condiciones,
       observaciones: o.observaciones,
       partidas,
+      ...(impuestoVenta ? { impuestoVenta } : {}),
     },
     claveCreacion,
-    { origenId: o.id }
+    { origenId: o.id, ...(impuestoVenta ? {} : { impuestosOrigen }) }
   );
   return { ...r, omitidos };
 }

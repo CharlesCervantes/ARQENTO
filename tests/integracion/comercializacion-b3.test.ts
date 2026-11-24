@@ -24,6 +24,7 @@ import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructu
 import { hoyNegocio } from "@/lib/comercializacion/fechas";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import type { UsuarioSesion } from "@/lib/server/session";
+import { convertirEnAnterior, EXENTO, G16, TASA_CERO } from "./apoyo/cotizacion-anterior";
 import { usuarioDePrueba } from "../helpers/usuarios";
 import { pdfFicticio, pngFicticio } from "../helpers/archivos-ficticios";
 import {
@@ -103,6 +104,13 @@ const version = async (id: string) => (await db.cotizacionVenta.findUniqueOrThro
 
 async function borrador(u: UsuarioSesion, extra: Record<string, unknown> = {}) {
   return (await crearCotizacionVenta(u, completa(extra), clave())).id;
+}
+// Borrador con impuesto por partida (16 %, tasa 0 %, exento), como los
+// creados antes del IVA por cotización.
+async function borradorAnterior(u: UsuarioSesion) {
+  const id = await borrador(u);
+  await convertirEnAnterior(id, [G16, TASA_CERO, EXENTO]);
+  return id;
 }
 async function emitida(u: UsuarioSesion, extra: Record<string, unknown> = {}) {
   const id = await borrador(u, extra);
@@ -197,8 +205,8 @@ describe("Emisión", () => {
     await assert.rejects(db.cotizacionVenta.update({ where: { id }, data: { documentoEmitido: { alterado: true } } }), /emitida/);
   });
 
-  test("Emisión exitosa: copia histórica con totales exactos, sin costos, y bitácora", async () => {
-    const id = await borrador(vendedorA);
+  test("Emisión exitosa: copia histórica con totales exactos, sin costos, y bitácora (cotización anterior)", async () => {
+    const id = await borradorAnterior(vendedorA);
     const r = await emitirCotizacionVenta(vendedorA, id, 1);
     assert.equal(r.version, 2);
     const fila = await db.cotizacionVenta.findUniqueOrThrow({ where: { id } });
@@ -246,8 +254,9 @@ describe("Copia histórica inmutable y PDF", () => {
     for (const nuevo of ["Renombrad", "CEM-50-NUEVO", "Otra Razón", "$999.00"]) assert.ok(!texto.includes(nuevo), `PDF con dato nuevo: ${nuevo}`);
   });
 
-  test("El PDF trae los totales guardados, distingue Tasa 0 % y Exento, y no incluye costos", async () => {
-    const id = await emitida(admin);
+  test("El PDF trae los totales guardados, distingue Tasa 0 % y Exento, y no incluye costos (cotización anterior)", async () => {
+    const id = await borradorAnterior(admin);
+    await emitirCotizacionVenta(admin, id, await version(id));
     const fila = await db.cotizacionVenta.findUniqueOrThrow({ where: { id } });
     assert.equal((await obtenerDocumentoParaPdf(admin, id)).borrador, false);
     const { texto } = await textoPdf(await pdfDe(admin, id));

@@ -14,6 +14,7 @@ import {
   type PorcentajesDefaultProyecto,
 } from "@/lib/control-de-obra/contrato-general";
 import { sumaEjecutadaPorConcepto } from "./avance-calculo";
+import { baseDeImporteCongelado, importesBase } from "@/lib/control-de-obra/presentacion-estimacion-privada";
 import { ajustesEstimadoCapa, estimaAlgoEstaSemana, valorarConceptoEnCapa } from "./estimado-capa";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
@@ -411,6 +412,8 @@ export type EstimacionClienteCapaResumen = TotalesCapaCalculados & {
   numero: number | null;
   aplicaIVA: boolean;
   porcentajeIVA: number | null;
+  // Esquema con el que se generó (snapshot), para rotular Administración/Utilidad.
+  esquemaContractualUsado: EsquemaContractual | null;
   generadoPorNombre: string;
   generadoEn: string;
   emitidoPorNombre: string | null;
@@ -765,7 +768,16 @@ export async function obtenerEstimacionCliente(
           Number(propias ? propia : fisica);
         const precioUnitario = Number(cc.precioUnitario);
         const precioUnitarioBase = Number(cc.precioUnitarioBase);
-        const aBase = (importe: number) => (precioUnitario > 0 ? (importe * precioUnitarioBase) / precioUnitario : 0);
+        const porcentajeAplicado = numOrNull(cc.porcentajeAplicado);
+        const calculados = importesBase({
+          precioUnitarioBase,
+          cantidadContratada: cant(cc.cantidadContratada, fis?.cantidadContratada),
+          cantidadEstaSemana: cant(cc.cantidadEstaSemana, fis?.cantidadEstaSemana),
+          cantidadAcumulada: cant(cc.cantidadAcumulada, fis?.cantidadAcumulada),
+          cantidadPorEjercer: cant(cc.cantidadPorEjercer, fis?.cantidadPorEjercer),
+        });
+        const aBase = (importe: Prisma.Decimal, calculado: number) =>
+          baseDeImporteCongelado({ calculado, importe: Number(importe), precioUnitarioBase, precioUnitario, porcentajeAplicado });
         return {
           conceptoId: cc.conceptoId,
           partidaNombre: cc.partidaNombre ?? fis?.partidaNombre ?? "",
@@ -778,16 +790,16 @@ export async function obtenerEstimacionCliente(
           cantidadPorEjercer: cant(cc.cantidadPorEjercer, fis?.cantidadPorEjercer),
           avancePorcentaje: cant(cc.avancePorcentaje, fis?.avancePorcentaje),
           precioUnitarioBase,
-          porcentajeAplicado: numOrNull(cc.porcentajeAplicado),
+          porcentajeAplicado,
           precioUnitario,
           importeContratado: Number(cc.importeContratado),
           importeEstaSemana: Number(cc.importeEstaSemana),
           importeAcumulado: Number(cc.importeAcumulado),
           importePorEjercer: Number(cc.importePorEjercer),
-          importeContratadoBase: aBase(Number(cc.importeContratado)),
-          importeEstaSemanaBase: aBase(Number(cc.importeEstaSemana)),
-          importeAcumuladoBase: aBase(Number(cc.importeAcumulado)),
-          importePorEjercerBase: aBase(Number(cc.importePorEjercer)),
+          importeContratadoBase: aBase(cc.importeContratado, calculados.importeContratado),
+          importeEstaSemanaBase: aBase(cc.importeEstaSemana, calculados.importeEstaSemana),
+          importeAcumuladoBase: aBase(cc.importeAcumulado, calculados.importeAcumulado),
+          importePorEjercerBase: aBase(cc.importePorEjercer, calculados.importePorEjercer),
         };
       })
       .filter((f): f is FilaEstimacionCapa => f !== null)
@@ -817,6 +829,7 @@ export async function obtenerEstimacionCliente(
         numero: capaRow.numero,
         aplicaIVA: capaRow.aplicaIVA,
         porcentajeIVA: numOrNull(capaRow.porcentajeIVA),
+        esquemaContractualUsado: estimacion.esquemaContractualUsado,
         subtotal: Number(capaRow.subtotal),
         montoAdministracionTrabajos: Number(capaRow.montoAdministracionTrabajos),
         subtotalGastosCobrables: Number(capaRow.subtotalGastosCobrables),
@@ -863,6 +876,8 @@ export async function obtenerEstimacionCliente(
       numero: null,
       aplicaIVA: capaRow.aplicaIVA,
       porcentajeIVA: numOrNull(capaRow.porcentajeIVA),
+      // Borrador: se valoriza con el esquema vigente, se rotula con el mismo.
+      esquemaContractualUsado: esquemaContractual,
       ...totales,
       generadoPorNombre: capaRow.generadoPor.nombre,
       generadoEn: capaRow.generadoEn.toISOString(),
@@ -1000,7 +1015,12 @@ async function reclamarGastosCobrablesPendientes(
 // crea estimaciones ni capas, no liga gastos, no escribe nada.
 // ---------------------------------------------------------------------------
 
-export type PreliminarCapa = { gastos: FilaGastoEstimacion[]; totales: TotalesCapaCalculados; aplicaIVA: boolean };
+export type PreliminarCapa = {
+  gastos: FilaGastoEstimacion[];
+  totales: TotalesCapaCalculados;
+  aplicaIVA: boolean;
+  porcentajeIVA: number | null;
+};
 export type PreliminarSemanaAbierta = Record<CapaEstimacion, PreliminarCapa>;
 
 async function simularGastosDelCierre(
@@ -1076,6 +1096,7 @@ async function construirPreliminar(
     porCapa[s.capa] = {
       gastos: s.gastos,
       aplicaIVA: s.aplicaIVA,
+      porcentajeIVA: s.porcentajeIVA,
       totales: totalesCapa({
         capa: s.capa,
         ...trabajos[s.capa],

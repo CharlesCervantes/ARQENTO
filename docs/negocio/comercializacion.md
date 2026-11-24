@@ -83,7 +83,7 @@ Entrega, cobro y pago son estados independientes. No utilizar un único estado p
 
 ### 5.2 Nueva cotización
 
-Datos: cliente, obra, descripción, vendedor, fecha, vigencia y condiciones. Crear cliente/obra desde el formulario si tiene permiso. Vendedor se precarga con usuario actual cuando corresponde; administración puede asignarlo. Registrar creador y vendedor por separado.
+Datos: cliente, obra, descripción, vendedor, fecha, vigencia y condiciones. Crear cliente/obra desde el formulario si tiene permiso. Para un vendedor, el vendedor es él mismo. Para administración el vendedor es opcional: el selector abre en «Sin vendedor» y puede asignarse uno elegible mientras sea borrador (decisión del 24 nov 2026). Registrar creador y vendedor por separado.
 
 Partidas: buscador por código/nombre, unidad precargada, cantidad, precio de venta editable solo para Administrador (de solo lectura para vendedor) e importe calculado. Costos internos solo para administración. Subtotal, impuestos y total automáticos. Opciones: Guardar borrador y Guardar/ver cotización.
 
@@ -99,7 +99,7 @@ Acciones frecuentes con formularios breves: Registrar cobro, Registrar pago, Reg
 
 ## 6. Catálogo y precios
 
-**Propuesta de campos mínimos:** código único por empresa, descripción, unidad, precio de venta base, costo de referencia opcional privado, tratamiento de impuesto y activo/inactivo. Proveedor sugerido opcional; no sustituye a la compra real.
+**Campos mínimos:** código único por empresa, descripción, unidad, precio de venta base sin IVA (MXN), costo de referencia opcional privado y activo/inactivo. **Desde el 24 nov 2026 el producto no captura impuesto:** el IVA se decide una vez por cotización (ver §20, «IVA por cotización»). Proveedor sugerido opcional; no sustituye a la compra real.
 
 Catálogo administrable; productos utilizados se desactivan, no se eliminan con su historial. Definir responsable y archivo de carga inicial; no asumir que la explosión de insumos DUALIA es automáticamente el catálogo de la nueva empresa. Si se importa, validar códigos, unidades, precios y duplicados, con resumen previo de errores.
 
@@ -260,8 +260,8 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P12 — confirmado para la primera versión (17 nov 2026) | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
 | P13 — confirmado para la primera versión (17 nov 2026) | Reglas de duplicado y de emisión | Ver «Decisiones de B3» en §20 |
 | P14 — confirmado para la primera versión (17 nov 2026) | Límites de compras | Sin excedentes sobre lo vendido, sin conversión de unidades, costo > 0, sin PDF de compra; corrección por anulación. Ver §20 B4 |
-| P11 — confirmado para la primera versión (17 nov 2026) | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
-| P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
+| P11 — confirmado para la primera versión (17 nov 2026); ajustado el 24 nov 2026 | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. **Vendedor opcional** para Administración y Dirección («Sin vendedor», válido hasta la orden de venta). Borrador: folio y fecha automáticos + cliente, descripción o un material. Ver §20 |
+| P10 — resuelto (B1); sustituido el 24 nov 2026 | Impuestos del catálogo | Precios sin IVA. **Vigente:** el producto no captura impuesto; cada cotización elige «Con IVA» (16 %) o «Sin IVA» para toda la venta. Lo histórico (tratamiento por producto Gravado/Tasa 0 %/Exento) se conserva en productos, cotizaciones y documentos anteriores. Ver §20 |
 | P8 — resuelto solo para la simulación (17 nov 2026) | Reparto y deuda en primera entrega | Implementados el resultado estimado por OV y la simulación 50/50 (B7). Pendientes: retiros reales, reparto autorizado o pagado, deudas y reservas |
 
 Estas decisiones no detienen la revisión del repositorio ni la preparación de partes independientes. No publicar reglas financieras o permisos ambiguos como definitivos.
@@ -340,8 +340,8 @@ Entidades (propias del módulo, aisladas por Empresa; no crean Proyecto, contrat
 Reglas implementadas:
 - **Alcance:** Administrador/Director ven y editan las cotizaciones de su Empresa; el vendedor solo las asignadas a él (por listado, búsqueda, filtro o ID directo; fuera de alcance = «no existe»).
 - **Clientes y obras:** administración y vendedores consultan la lista y dan de alta los mínimos desde el formulario. Un nombre repetido devuelve el registro existente (también evita duplicados por doble clic). Los selectores solo exponen id y nombre, nunca cotizaciones ni importes.
-- **Vendedor:** el vendedor siempre queda asignado a sí mismo; enviar otro vendedor se rechaza. Administración asigna un vendedor elegible de su Empresa: Supervisor activo con la función Vendedor, o Administrador/Director activo (administración puede vender directamente). La elegibilidad se valida al asignar; conservar a un vendedor que después perdió la función no falla.
-- **Mínimos de un borrador:** el sistema asigna folio, vendedor y fecha (hoy en America/Monterrey, editable); además se exige al menos uno de cliente, descripción o un material. Cliente, obra, vigencia, condiciones y materiales pueden completarse después. Si hay obra, debe haber cliente y ser suyo. La vigencia no puede ser anterior a la fecha.
+- **Vendedor:** el vendedor siempre queda asignado a sí mismo; enviar otro vendedor se rechaza. Administración asigna un vendedor elegible de su Empresa: Supervisor activo con la función Vendedor, o Administrador/Director activo (administración puede vender directamente). La elegibilidad se valida al asignar; conservar a un vendedor que después perdió la función no falla. Desde el 24 nov 2026 el vendedor es **opcional** para administración (ver «Vendedor opcional» más abajo).
+- **Mínimos de un borrador:** el sistema asigna folio y fecha (hoy en America/Monterrey, editable); además se exige al menos uno de cliente, descripción o un material. Cliente, obra, vigencia, condiciones y materiales pueden completarse después. Si hay obra, debe haber cliente y ser suyo. La vigencia no puede ser anterior a la fecha.
 - **Productos:** buscador de productos activos por código o descripción; al agregar se precargan unidad, precio y tratamiento de impuesto. Un producto inactivo no puede agregarse como partida nueva; sus partidas existentes se conservan.
 - **Copia histórica:** cada partida guarda código, descripción, unidad, tratamiento, tasa, precio base (catálogo al agregarla) y precio aplicado. Cambiar o desactivar el producto no altera partidas guardadas; cambiar el precio de una partida no altera el catálogo.
 - **Precios:** solo Administrador/Director fijan un precio distinto al de catálogo; queda registrado quién y cuándo. El vendedor cambia cantidades y quita o agrega partidas, pero no precios, impuestos, descuentos ni importes: el servidor rechaza esos campos. Un precio ajustado por administración se conserva cuando el vendedor edita cantidades.
@@ -1181,6 +1181,98 @@ Rama `release/comercializacion`, creada desde `origin/main` con los commits de C
 - **Habilitación:** el módulo queda registrado en el catálogo y **deshabilitado para todas las Empresas**. Master lo habilitará en la Empresa que indique el usuario.
 - **Uso:** escritorio. No validado en teléfono (sidebar global no responsivo).
 - **Pendiente de verificar en PRD:** detalle y PDF con la primera cotización real (no se crean cotizaciones ficticias en producción).
+
+### Ajustes para operar con los dueños: vendedor opcional e Inicio por módulo (24 de noviembre de 2026; fusionado en `main`, PR #21)
+
+Rama `feature/comercializacion-demo-matmetria`, creada desde `main` (`2513a58`).
+
+**Decisión del usuario:** hoy operan la plataforma los dos dueños; los vendedores se incorporarán más adelante. Administración y Dirección deben completar cotización → emisión → PDF → aceptación → orden de venta sin vendedor desde el primer día.
+
+**Vendedor opcional**
+- `CotizacionVenta.vendedorId` admite NULL = «Sin vendedor». El selector de «Nueva cotización» abre en «Sin vendedor» para Administración y Dirección; guardar así deja `vendedorId` en NULL. Se conserva al volver a abrirla, al emitir (la copia emitida guarda `vendedor: null`) y hasta la orden de venta.
+- **Edición:** mientras sea borrador, administración puede elegir un vendedor elegible de su Empresa o volver a «Sin vendedor». Si una edición no envía el campo, se conserva el vendedor guardado.
+- **Emisión:** sin vendedor se emite. Si hay vendedor asignado, debe seguir siendo elegible (si perdió la función, se elige otro o «Sin vendedor»).
+- **Duplicar:** administración conserva al vendedor original si sigue siendo elegible; si no tenía o ya no es elegible, el duplicado queda «Sin vendedor».
+- **Vendedor (función):** sin cambios. Crea a su nombre y solo ve las asignadas a él. Las ventas sin vendedor solo las ven Administración y Dirección de la Empresa.
+- **Lecturas:** detalle, operación y OV muestran «Sin vendedor». El listado tiene la opción «Sin vendedor» en el filtro de administración. El PDF para el cliente omite la fila «Vendedor» cuando no hay uno.
+- **Trazabilidad:** quién hizo cada acción sigue registrado aparte (`creadoPorId`, `actualizadoPorId`, `emitidaPorId`, `cerradaPorId`, `ordenes_venta.registradaPorId`) y en la bitácora.
+- **Históricas:** conservan su vendedor y su documento emitido; la migración solo relaja la columna.
+- **Base:** la regla de inmutabilidad de una cotización emitida ahora compara el vendedor con `IS DISTINCT FROM`, porque `<>` no detectaba cambios desde o hacia NULL.
+
+**Inicio como módulo** (fuera de Comercialización, mínimo y sin cambiar permisos de construcción)
+- «Inicio» (`/dashboard`) es un módulo del catálogo, habilitable o deshabilitable por Empresa en Portal Master → Empresas → Módulos. La migración lo agrega a todos los Planes y da un override habilitado a las Empresas sin Plan: ninguna Empresa existente pierde Inicio.
+- Sin Inicio, `/dashboard` (destino del login, del logo, de `/` y del cambio de contraseña) envía en el servidor al primer módulo que el usuario puede usar, antes de consultar datos de obras. Con solo Comercialización, abre Operaciones. Sin ningún módulo usable, muestra un aviso (sin ciclos de redirección).
+- Con Inicio habilitado sigue siendo la primera opción del menú.
+- El indicador de pendientes de Proyectos del menú solo se calcula si la Empresa tiene ese módulo.
+
+**Logo:** centrado horizontal y verticalmente en el encabezado de la barra lateral (componente compartido por Inicio, Comercialización y las vistas de proyecto), completo y sin deformar (`object-contain`).
+
+**Migraciones:** `20261130090000_modulo_inicio` (solo datos) y `20261130090100_comercializacion_vendedor_opcional` (columna anulable y función de la regla de inmutabilidad). Aditivas; validadas en una base local con escenarios de Empresas con Plan, sin Plan y con overrides: ningún módulo existente cambió y todas conservaron Inicio.
+
+### IVA por cotización (24 de noviembre de 2026; implementado y verificado en local, sin desplegar)
+
+Rama `feature/comercializacion-iva-cotizacion`, creada desde `main` (`0ead23f`). La carga del catálogo real es otra etapa.
+
+**Decisión del usuario (confirmada):** Matmetria captura un precio base de venta al cliente, en MXN y sin IVA. Al cotizar se decide **una sola vez** si se agrega IVA a toda la venta.
+
+**Productos**
+- Alta, edición y consulta (Administración y Vendedor) usan la etiqueta «Precio de venta sin IVA». Se retiraron los campos «Impuesto» y «Tasa de IVA», la columna de tratamiento fiscal y la vista previa del precio con impuesto.
+- El alta y la edición solo reciben código, descripción, unidad, precio y costo de referencia privado. Se conservan las validaciones de precio y la privacidad del costo.
+- En la base, `tratamientoImpuesto` y `tasaIva` del producto quedan opcionales: un producto nuevo se guarda sin ellos. Un producto anterior conserva su dato original; editarlo no lo cambia ni lo registra en la bitácora. Si un navegador anterior aún envía esos campos, se ignoran.
+
+**Cotizaciones**
+- Selector único «IVA de la cotización» junto al resumen de importes: **Con IVA (16 %)** y **Sin IVA**. En una cotización nueva viene preseleccionado «Con IVA».
+- La opción se guarda en `CotizacionVenta.impuestoVenta`. El servidor la aplica a todas las partidas, incluidas las que se agregan después: con «Con IVA» cada partida queda gravada al 16 %; con «Sin IVA», con el tratamiento `SIN_IVA`.
+- **Cálculo:** subtotal = suma de importes de partida (cantidad × precio unitario definitivo, con los ajustes autorizados). Con IVA, IVA = 16 % del subtotal, redondeado una vez al centavo (half-up, reglas existentes). Sin IVA, el impuesto es $0.00 y el total es igual al subtotal.
+- «Sin IVA» es una opción comercial propia: no se reporta como tasa 0 % ni como exento. Esos dos conservan su significado histórico.
+- **Al cambiar la opción:** subtotal, IVA y total se actualizan en pantalla, y el servidor recalcula al guardar y al emitir. Cantidades y precios negociados no cambian.
+- **Precios:** Administración y Dirección pueden ajustar el precio unitario en el borrador; el Vendedor usa el precio autorizado. Un ajuste solo afecta esa venta, nunca el catálogo.
+- **Reabrir y emitir:** se usa la opción guardada. La copia emitida guarda `impuestoVenta`. La vista emitida, el PDF y la orden de venta muestran una sola fila «IVA 16 %» o «IVA (Sin IVA)», sin columna de impuesto por partida. El total de la OV y el importe por cobrar coinciden con el total emitido.
+- **Duplicar:** una cotización del nuevo esquema copia su opción, con las reglas existentes de precios y permisos.
+
+**Datos anteriores**
+- **Sin cambios:** las cotizaciones emitidas y las órdenes anteriores conservan importes, desglose y documento, aunque tuvieran tasas distintas por partida. Su vista y su PDF siguen mostrando el desglose original (IVA por tasa, base tasa 0 % y base exenta).
+- **Borrador anterior** (`impuestoVenta` NULL): se abre con su impuesto por partida, sin ninguna opción marcada. Editar sus datos generales, cantidades o precios lo conserva, y puede emitirse así.
+- **Pasar al nuevo esquema:** hay que elegir explícitamente una de las dos opciones. La pantalla muestra «Total guardado: … Al guardar queda en …» antes de guardar, y «Conservar el impuesto anterior» deshace la elección.
+- **Copia de un documento anterior:**
+  - Si todas sus partidas estaban gravadas al 16 %, la copia queda «Con IVA».
+  - Si no se puede representar fielmente (tasa 0 %, exento, otra tasa o mezcla), queda `PENDIENTE`: conserva el impuesto de origen por partida y no se puede emitir hasta elegir. La base también lo impide (CHECK).
+
+**Decisiones confirmadas por el usuario (24 nov 2026):**
+1. **Vendedor:** puede elegir «Con IVA» o «Sin IVA» en sus propios borradores. Solo Administración y Dirección ajustan el precio unitario.
+2. **Borrador anterior:** conserva su cálculo al editar sus datos generales. Para agregar un material, primero se elige el IVA de toda la cotización y la pantalla muestra el nuevo total antes de guardar. El servidor rechaza agregar un material sin esa elección. La elección y el material nuevo pueden guardarse juntos.
+3. **Al emitir, la opción de IVA queda fija.** La regla de inmutabilidad de la base incluye `impuestoVenta`. Si el cliente pide cambiarla después, se duplica la cotización y se emite una nueva. Una copia de una cotización del nuevo esquema conserva su opción, por ejemplo «Sin IVA», aunque las cotizaciones nuevas arranquen «Con IVA».
+
+**Alcance:** solo el flujo de venta de Comercialización. Las compras a proveedor y los gastos adicionales conservan sus selectores de impuesto actuales. Nada de construcción cambia.
+
+**Migración:** `20261201090000_comercializacion_iva_por_cotizacion`. Es aditiva y no modifica filas existentes:
+- Hace opcionales `tratamientoImpuesto` y `tasaIva` del producto, con la misma regla tratamiento ⇔ tasa (sin tasa cuando no hay tratamiento).
+- Agrega el tipo `ImpuestoCotizacionVenta` (CON_IVA, SIN_IVA, PENDIENTE) y la columna anulable `cotizaciones_venta.impuestoVenta`. Una cotización PENDIENTE solo puede estar en borrador o cancelada.
+- Permite `SIN_IVA` en las partidas de venta; catálogo y gastos lo siguen rechazando.
+- Agrega `impuestoVenta` a la regla de inmutabilidad de una cotización emitida.
+
+**Verificación local:**
+
+| Revisión | Resultado |
+|---|---|
+| Unitarias | 502 de 502 |
+| Integración | 292 de 292 (16 nuevas en `comercializacion-iva-cotizacion`) |
+| Lint | 0 errores |
+| Tipos | OK |
+| Build | OK |
+| Navegador (copia local) | 36 de 36, sin errores de consola |
+
+Casos verificados:
+- 2 × $120.00: $240.00 + $38.40 = $278.40 con IVA, y $240.00 sin IVA.
+- Precio ajustado a $110.00: $220.00 y $255.20 con IVA; el catálogo sigue en $120.00.
+- Varias partidas y alternar la opción, con una partida agregada después.
+- Redondeo al centavo sobre el subtotal.
+- Guardar y reabrir.
+- Restricción del Vendedor.
+- Borrador y cotización emitida anteriores.
+- Copia pendiente.
+- Duplicar una emitida «Sin IVA» (Vendedor y Administración) conserva «Sin IVA».
+- La demo «Sin vendedor» hasta el PDF, la OV y la cuenta por cobrar de $278.40.
 
 ## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7, B8A y B8B)
 

@@ -69,6 +69,7 @@ type SidebarProps =
 
 // Iconos por módulo (solo presentación; rutas y permisos no cambian).
 const ICONO_MODULO: Record<string, LucideIcon> = {
+  inicio: House,
   reporte_general: BarChart3,
   control_de_obra: Building2,
   control_prestamos: HandCoins,
@@ -112,7 +113,7 @@ export function Sidebar(props: SidebarProps) {
         aria-label={props.variant === "master" ? "Portal Master" : `${props.empresaNombre}: ir a Inicio`}
         className={cn(
           "flex h-[112px] shrink-0 items-center gap-3 border-b border-[var(--border)] px-[22px] py-5 transition-opacity duration-150 ease-out hover:opacity-80 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]",
-          tieneLogo && "py-4"
+          tieneLogo && "justify-center py-4"
         )}
       >
         {props.variant === "master" ? (
@@ -126,11 +127,14 @@ export function Sidebar(props: SidebarProps) {
             <span className="truncate text-sm font-semibold text-[var(--foreground)]">Portal Master</span>
           </>
         ) : tieneLogo ? (
+          // Centrado horizontal y vertical en el encabezado: un logo cuadrado
+          // queda al centro a todo lo alto; uno horizontal, al centro a todo
+          // lo ancho. object-contain: completo y sin deformar.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={props.logoUrl!}
             alt={props.empresaNombre}
-            className="h-full w-full object-contain object-left"
+            className="block h-full w-full min-w-0 object-contain object-center"
           />
         ) : (
           <>
@@ -159,10 +163,8 @@ export function Sidebar(props: SidebarProps) {
           </>
         ) : props.variant === "global" ? (
           <>
-            <NavLink href="/dashboard" active={pathname === "/dashboard"} icono={House}>
-              Inicio
-            </NavLink>
-
+            {/* Inicio es un módulo más (habilitable por Empresa); cuando la
+                Empresa lo tiene, llega primero en `modulos`. */}
             {props.modulos.map((modulo) =>
               modulo.href ? (
                 <NavLink

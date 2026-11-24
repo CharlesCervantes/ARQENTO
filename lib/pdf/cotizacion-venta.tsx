@@ -1,6 +1,7 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { DocumentoCotizacion } from "@/lib/comercializacion/documento";
-import { formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
+import { etiquetaImpuestoPartidaVenta, formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
+import { filasImpuestoVenta } from "@/lib/comercializacion/totales-venta";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 
 // Cotización de venta (Comercialización B3) — @react-pdf/renderer en el
@@ -74,10 +75,6 @@ const styles = StyleSheet.create({
   },
 });
 
-function etiquetaImpuesto(p: DocumentoCotizacion["partidas"][number]): string {
-  if (p.tratamientoImpuesto === "GRAVADO" && p.tasaIva) return `IVA ${Number(p.tasaIva)} %`;
-  return p.tratamientoImpuesto === "TASA_CERO" ? "Tasa 0 %" : "Exento";
-}
 
 export function CotizacionVentaDocumento({
   documento: d,
@@ -88,6 +85,9 @@ export function CotizacionVentaDocumento({
   borrador: boolean;
   logoBuffer: Buffer | null;
 }) {
+  // Columna «Impuesto» solo en documentos con impuesto por partida (anteriores
+  // a la opción de IVA por cotización); con la opción, va en los totales.
+  const porPartida = d.impuestoVenta === null;
   return (
     <Document title={`${d.folio}${borrador ? " (BORRADOR)" : ""}`} author={d.empresa.nombre}>
       <Page size="LETTER" style={styles.page} wrap>
@@ -138,10 +138,13 @@ export function CotizacionVentaDocumento({
             )}
           </View>
           <View style={styles.columnaDatos}>
-            <View style={styles.filaDatos}>
-              <Text style={styles.etiquetaDato}>Vendedor</Text>
-              <Text style={styles.valorDato}>{d.vendedor.nombre}</Text>
-            </View>
+            {/* Sin vendedor asignado: el documento del cliente omite la fila. */}
+            {d.vendedor && (
+              <View style={styles.filaDatos}>
+                <Text style={styles.etiquetaDato}>Vendedor</Text>
+                <Text style={styles.valorDato}>{d.vendedor.nombre}</Text>
+              </View>
+            )}
             {d.descripcion && (
               <View style={styles.filaDatos}>
                 <Text style={styles.etiquetaDato}>Descripción</Text>
@@ -158,7 +161,7 @@ export function CotizacionVentaDocumento({
             <Text style={styles.colUnidad}>Unidad</Text>
             <Text style={styles.colCantidad}>Cantidad</Text>
             <Text style={styles.colPU}>P. unitario</Text>
-            <Text style={styles.colImpuesto}>Impuesto</Text>
+            {porPartida && <Text style={styles.colImpuesto}>Impuesto</Text>}
             <Text style={styles.colImporte}>Importe</Text>
           </View>
           {d.partidas.map((p, i) => (
@@ -170,7 +173,7 @@ export function CotizacionVentaDocumento({
               <Text style={styles.colUnidad}>{p.unidad}</Text>
               <Text style={styles.colCantidad}>{formatearCantidad(p.cantidad)}</Text>
               <Text style={styles.colPU}>{formatearImporte(p.precioUnitario)}</Text>
-              <Text style={styles.colImpuesto}>{etiquetaImpuesto(p)}</Text>
+              {porPartida && <Text style={styles.colImpuesto}>{etiquetaImpuestoPartidaVenta(p.tratamientoImpuesto, p.tasaIva)}</Text>}
               <Text style={styles.colImporte}>{formatearImporte(p.importe)}</Text>
             </View>
           ))}
@@ -181,26 +184,12 @@ export function CotizacionVentaDocumento({
             <Text>Subtotal</Text>
             <Text>{formatearImporte(d.totales.subtotal)}</Text>
           </View>
-          {d.totales.gravado.map((g) => (
-            <View style={styles.filaTotal} key={g.tasa}>
-              <Text>
-                IVA {Number(g.tasa)} % sobre {formatearImporte(g.base)}
-              </Text>
-              <Text>{formatearImporte(g.iva)}</Text>
+          {filasImpuestoVenta(d.totales, d.impuestoVenta).map((f) => (
+            <View style={f.tenue ? styles.filaTotalTenue : styles.filaTotal} key={f.etiqueta}>
+              <Text>{f.etiqueta}</Text>
+              <Text>{formatearImporte(f.valor)}</Text>
             </View>
           ))}
-          {d.totales.baseTasaCero !== "0.00" && (
-            <View style={styles.filaTotalTenue}>
-              <Text>Base tasa 0 % (IVA $0.00)</Text>
-              <Text>{formatearImporte(d.totales.baseTasaCero)}</Text>
-            </View>
-          )}
-          {d.totales.baseExenta !== "0.00" && (
-            <View style={styles.filaTotalTenue}>
-              <Text>Base exenta (sin IVA)</Text>
-              <Text>{formatearImporte(d.totales.baseExenta)}</Text>
-            </View>
-          )}
           <View style={styles.filaGranTotal}>
             <Text style={styles.granTotal}>Total</Text>
             <Text style={styles.granTotal}>{formatearImporte(d.totales.total)}</Text>

@@ -93,7 +93,9 @@ export default async function CotizacionPage(props: PageProps<"/comercializacion
   ]);
   // El vendedor guardado puede ya no ser elegible (p. ej. perdió la función):
   // se conserva como opción para no reasignarlo en silencio.
-  const opcionesVendedor = vendedores.some((v) => v.id === cotizacion.vendedor.id) ? vendedores : [cotizacion.vendedor, ...vendedores];
+  // «Sin vendedor» no es una persona: no se agrega a la lista.
+  const guardado = cotizacion.vendedor;
+  const opcionesVendedor = !guardado || vendedores.some((v) => v.id === guardado.id) ? vendedores : [guardado, ...vendedores];
   const omitidos = typeof sp.omitidos === "string" ? sp.omitidos.split(",").filter(Boolean).slice(0, 50) : [];
 
   return (

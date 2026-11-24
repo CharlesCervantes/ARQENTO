@@ -31,6 +31,7 @@ const db = new PrismaClient({ adapter });
 // migraciones que dan de alta un Modulo, ver 20260910120000_gastos_transversal,
 // 20260915090000_contabilidad, 20260920100000_modulo_compras).
 const MODULOS = [
+  { clave: "inicio", nombre: "Inicio" },
   { clave: "reporte_general", nombre: "Reporte General" },
   { clave: "control_de_obra", nombre: "Control de Obra" },
   { clave: "control_prestamos", nombre: "Control de Préstamos" },

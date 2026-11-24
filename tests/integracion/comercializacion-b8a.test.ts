@@ -48,7 +48,7 @@ type Orden = { cotizacionId: string; ordenId: string; pv: Record<string, string>
 async function orden(partidas: [string, string][] = [[POSTE, "100"]]): Promise<Orden> {
   const { id } = await crearCotizacionVenta(
     admin,
-    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B8A", vendedorId: vendedor.id, fecha: HOY, vigenciaHasta: HOY, partidas: partidas.map(([productoId, cantidad]) => ({ productoId, cantidad })) },
+    { clienteId: CLIENTE, obraId: OBRA, descripcion: "Venta ficticia B8A", vendedorId: vendedor.id, impuestoVenta: "SIN_IVA", fecha: HOY, vigenciaHasta: HOY, partidas: partidas.map(([productoId, cantidad]) => ({ productoId, cantidad })) },
     clave()
   );
   await emitirCotizacionVenta(admin, id, 1);

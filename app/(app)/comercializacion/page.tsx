@@ -19,6 +19,7 @@ import { ActualizarConsulta } from "@/components/comercializacion/actualizar-con
 import { ETIQUETA_ESTADO_ENTREGA } from "@/lib/comercializacion/entregas";
 import { formatearImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
+import { ETIQUETA_SIN_VENDEDOR, FILTRO_SIN_VENDEDOR } from "@/lib/comercializacion/vendedor";
 import { BOTON_PRIMARIO, BOTON_SECUNDARIO } from "@/components/comercializacion/estilos";
 
 // Listado «Operaciones» (plan de rediseño §4). Una fila por operación: la
@@ -181,7 +182,10 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
   if (filtros.estatus) activos.push({ etiqueta: `Estado: ${ESTADOS.find((e) => e[0] === filtros.estatus)?.[1] ?? filtros.estatus}`, quitar: "estado" });
   if (filtros.clienteId) activos.push({ etiqueta: `Cliente: ${clientes.find((c) => c.id === filtros.clienteId)?.nombre ?? "—"}`, quitar: "cliente" });
   if (filtros.obraId) activos.push({ etiqueta: `Obra: ${obras.find((o) => o.id === filtros.obraId)?.nombre ?? "—"}`, quitar: "obra" });
-  if (filtros.vendedorId) activos.push({ etiqueta: `Vendedor: ${vendedores.find((v) => v.id === filtros.vendedorId)?.nombre ?? "—"}`, quitar: "vendedor" });
+  if (filtros.vendedorId) {
+    const nombre = filtros.vendedorId === FILTRO_SIN_VENDEDOR ? ETIQUETA_SIN_VENDEDOR : (vendedores.find((v) => v.id === filtros.vendedorId)?.nombre ?? "—");
+    activos.push({ etiqueta: `Vendedor: ${nombre}`, quitar: "vendedor" });
+  }
 
   const abrir = (c: FilaCotizacion) => `/comercializacion/cotizaciones/${c.id}`;
 
@@ -294,6 +298,7 @@ export default async function ComercializacionPage(props: PageProps<"/comerciali
               {esAdmin ? (
                 <select name="vendedor" defaultValue={filtros.vendedorId ?? ""} className={claseSelect} aria-label="Vendedor">
                   <option value="">Todos los vendedores</option>
+                  <option value={FILTRO_SIN_VENDEDOR}>{ETIQUETA_SIN_VENDEDOR}</option>
                   {vendedores.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.nombre}
