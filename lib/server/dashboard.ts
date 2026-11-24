@@ -812,6 +812,7 @@ export function proyectarResumenEjecutivo(
   }
 
   const ultimaFechaAvancePorProyecto = new Map<string, Date>();
+  const primeraFechaAvancePorProyecto = new Map<string, Date>();
   for (const fila of ultimaSemanaConAvance) {
     const concepto = conceptosRaw.find((c) => c.id === fila.conceptoId);
     if (!concepto) continue;
@@ -819,6 +820,10 @@ export function proyectarResumenEjecutivo(
     const actual = ultimaFechaAvancePorProyecto.get(proyectoId);
     if (!actual || fila.semana.fechaFin > actual) {
       ultimaFechaAvancePorProyecto.set(proyectoId, fila.semana.fechaFin);
+    }
+    const primera = primeraFechaAvancePorProyecto.get(proyectoId);
+    if (!primera || fila.semana.fechaFin < primera) {
+      primeraFechaAvancePorProyecto.set(proyectoId, fila.semana.fechaFin);
     }
   }
 
@@ -996,10 +1001,13 @@ export function proyectarResumenEjecutivo(
     let semanasSinCerrarDiasMax = 0;
     for (const s of semanasCerradasVencidas) {
       if (semanaCerradaIdsProyecto.has(s.id)) continue;
-      // Solo cuenta si el proyecto tuvo algún avance en esa semana o antes —
-      // evita marcar "sin cerrar" semanas anteriores al inicio real de obra.
+      // Solo cuentan las semanas entre el primer y el último avance aprobado
+      // de la obra. Las semanas son de toda la empresa: sin el límite inicial,
+      // una obra nueva arrastraría las anteriores a su propio inicio.
+      const primeraFecha = primeraFechaAvancePorProyecto.get(proyecto.id);
       const ultimaFecha = ultimaFechaAvancePorProyecto.get(proyecto.id);
-      if (!ultimaFecha || s.fechaFin > ultimaFecha) continue;
+      if (!primeraFecha || !ultimaFecha) continue;
+      if (s.fechaFin < primeraFecha || s.fechaFin > ultimaFecha) continue;
       const dias = (hoy.getTime() - s.fechaFin.getTime()) / 86400000;
       if (dias > semanasSinCerrarDiasMax) semanasSinCerrarDiasMax = dias;
     }
