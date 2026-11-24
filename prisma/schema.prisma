@@ -2984,9 +2984,11 @@ model CotizacionVenta {
   descripcion String?
 
   // Responsable comercial (define el alcance del vendedor) — distinto de
-  // quien capturó el documento.
-  vendedor         Usuario  @relation("CotizacionVentaVendedor", fields: [vendedorId], references: [id])
-  vendedorId       String
+  // quien capturó el documento. Opcional: NULL = «Sin vendedor» (venta que
+  // opera Administración/Dirección); válido hasta la orden de venta. Las
+  // ventas sin vendedor solo las ve administración de la Empresa.
+  vendedor         Usuario? @relation("CotizacionVentaVendedor", fields: [vendedorId], references: [id])
+  vendedorId       String?
   creadoPor        Usuario  @relation("CotizacionVentaCreada", fields: [creadoPorId], references: [id])
   creadoPorId      String
   actualizadoPor   Usuario? @relation("CotizacionVentaActualizada", fields: [actualizadoPorId], references: [id])

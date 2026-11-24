@@ -20,6 +20,7 @@ import {
 import type { ProductoParaVenta } from "@/lib/server/comercializacion/productos";
 import type { OpcionCliente, OpcionObra } from "@/lib/server/comercializacion/clientes";
 import type { CotizacionDetalle, OpcionVendedor } from "@/lib/server/comercializacion/cotizaciones";
+import { ETIQUETA_SIN_VENDEDOR } from "@/lib/comercializacion/vendedor";
 import {
   crearClienteAction,
   crearObraAction,
@@ -90,7 +91,9 @@ export function FormularioCotizacion({
   const [clienteId, setClienteId] = useState(cotizacion?.clienteId ?? "");
   const [obraId, setObraId] = useState(cotizacion?.obraId ?? "");
   const [descripcion, setDescripcion] = useState(cotizacion?.descripcion ?? "");
-  const [vendedorId, setVendedorId] = useState(cotizacion?.vendedor.id ?? usuarioActual.id);
+  // "" = «Sin vendedor». Administración abre una cotización nueva sin
+  // vendedor; el vendedor (función Vendedor) siempre queda él mismo.
+  const [vendedorId, setVendedorId] = useState(cotizacion ? (cotizacion.vendedor?.id ?? "") : esAdmin ? "" : usuarioActual.id);
   const [fecha, setFecha] = useState(cotizacion?.fecha ?? hoy);
   const [vigenciaHasta, setVigenciaHasta] = useState(cotizacion?.vigenciaHasta ?? "");
   const [condiciones, setCondiciones] = useState(cotizacion?.condiciones ?? "");
@@ -124,7 +127,7 @@ export function FormularioCotizacion({
   const [confirmandoEmision, setConfirmandoEmision] = useState(false);
 
   const obrasDelCliente = obras.filter((o) => o.clienteId === clienteId);
-  const nombreVendedor = vendedores.find((v) => v.id === vendedorId)?.nombre ?? usuarioActual.nombre;
+  const nombreVendedor = vendedorId ? (vendedores.find((v) => v.id === vendedorId)?.nombre ?? usuarioActual.nombre) : ETIQUETA_SIN_VENDEDOR;
 
   // Vista previa de importes (mismas funciones exactas que el servidor).
   const vista = useMemo(() => {
@@ -182,7 +185,8 @@ export function FormularioCotizacion({
       obraId: obraId || null,
       descripcion,
       // El vendedor no envía vendedorId: el servidor siempre lo fija a él.
-      ...(esAdmin ? { vendedorId } : {}),
+      // Administración envía null para «Sin vendedor».
+      ...(esAdmin ? { vendedorId: vendedorId || null } : {}),
       fecha,
       vigenciaHasta: vigenciaHasta || null,
       condiciones,
@@ -310,6 +314,7 @@ export function FormularioCotizacion({
           <Campo etiqueta="Vendedor">
             {esAdmin ? (
               <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)} className={claseSelect}>
+                <option value="">{ETIQUETA_SIN_VENDEDOR}</option>
                 {vendedores.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.nombre}

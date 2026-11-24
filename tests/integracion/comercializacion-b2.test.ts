@@ -136,7 +136,8 @@ describe("Creación de borradores y folios", () => {
     assert.equal(r.folio, "COT-000001");
     const c = await obtenerCotizacionVenta(admin, r.id);
     assert.equal(c.clienteId, null);
-    assert.equal(c.vendedor.id, admin.id);
+    // Vendedor opcional (nov-2026): administración sin elegir queda «Sin vendedor».
+    assert.equal(c.vendedor, null);
     assert.equal(c.creadoPorNombre, "Admin Prueba");
     assert.equal(c.totales.total, "0.00");
     assert.equal(c.fecha, "2026-11-16");

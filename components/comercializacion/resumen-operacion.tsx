@@ -10,6 +10,7 @@ import { formatearCantidad, formatearImporte } from "@/lib/comercializacion/impo
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { ETIQUETA_ESTADO_ENTREGA } from "@/lib/comercializacion/entregas";
 import { ETIQUETA_METODO } from "@/lib/comercializacion/cuentas";
+import { nombreVendedor } from "@/lib/comercializacion/vendedor";
 import { ACCION_EN_LINEA, claseEstado, type TonoEstado } from "./estilos";
 
 // Vista «Resumen» del expediente (plan §5/§6). Responde qué se vende, a
@@ -391,7 +392,7 @@ export function ResumenOperacion(d: DatosResumen) {
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Dato etiqueta="Cliente">{doc.cliente?.nombre ?? "—"}</Dato>
             <Dato etiqueta="Obra">{doc.obra?.nombre ?? "—"}</Dato>
-            <Dato etiqueta="Vendedor">{doc.vendedor.nombre}</Dato>
+            <Dato etiqueta="Vendedor">{nombreVendedor(doc.vendedor)}</Dato>
             <Dato etiqueta="Fecha de la cotización">
               {formatearFechaCalendario(doc.fecha)}
               {doc.vigenciaHasta && <span className="text-[var(--muted)]"> · vigente hasta {formatearFechaCalendario(doc.vigenciaHasta)}</span>}

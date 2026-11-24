@@ -19,6 +19,7 @@ import { ResumenOperacion } from "./resumen-operacion";
 import { DocumentosFinancieros } from "./documentos-financieros";
 import { VistasOperacion, type VistaOperacion } from "./vistas-operacion";
 import { claseEstado } from "./estilos";
+import { ETIQUETA_SIN_VENDEDOR } from "@/lib/comercializacion/vendedor";
 
 // Expediente de una operación (plan de rediseño §3/§5) para una cotización
 // EMITIDA, RECHAZADA, CANCELADA (emitida) o ACEPTADA. La cotización se lee de
@@ -144,9 +145,10 @@ export function CotizacionEmitidaView({
   const orden = cotizacion.orden;
   const ordenCancelada = orden?.estatus === "CANCELADA";
   const contexto = [doc.cliente?.nombre, doc.obra?.nombre].filter(Boolean).join(" · ");
+  const vendedor = doc.vendedor ? `Vendedor ${doc.vendedor.nombre}` : ETIQUETA_SIN_VENDEDOR;
   const referencias = orden
-    ? [`Venta ${orden.folio}`, `Cotización ${doc.folio}`, ...(orden.referenciaOcCliente ? [`OC del cliente ${orden.referenciaOcCliente}`] : []), `Vendedor ${doc.vendedor.nombre}`]
-    : [`Cotización ${doc.folio}`, `Vendedor ${doc.vendedor.nombre}`];
+    ? [`Venta ${orden.folio}`, `Cotización ${doc.folio}`, ...(orden.referenciaOcCliente ? [`OC del cliente ${orden.referenciaOcCliente}`] : []), vendedor]
+    : [`Cotización ${doc.folio}`, vendedor];
 
   const resumen = (
     <ResumenOperacion

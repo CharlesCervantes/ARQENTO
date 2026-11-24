@@ -83,7 +83,7 @@ Entrega, cobro y pago son estados independientes. No utilizar un único estado p
 
 ### 5.2 Nueva cotización
 
-Datos: cliente, obra, descripción, vendedor, fecha, vigencia y condiciones. Crear cliente/obra desde el formulario si tiene permiso. Vendedor se precarga con usuario actual cuando corresponde; administración puede asignarlo. Registrar creador y vendedor por separado.
+Datos: cliente, obra, descripción, vendedor, fecha, vigencia y condiciones. Crear cliente/obra desde el formulario si tiene permiso. Para un vendedor, el vendedor es él mismo. Para administración el vendedor es opcional: el selector abre en «Sin vendedor» y puede asignarse uno elegible mientras sea borrador (decisión del 24 nov 2026). Registrar creador y vendedor por separado.
 
 Partidas: buscador por código/nombre, unidad precargada, cantidad, precio de venta editable solo para Administrador (de solo lectura para vendedor) e importe calculado. Costos internos solo para administración. Subtotal, impuestos y total automáticos. Opciones: Guardar borrador y Guardar/ver cotización.
 
@@ -260,7 +260,7 @@ Claude debe comparar este modelo con Prisma y la lógica existente antes de prop
 | P12 — confirmado para la primera versión (17 nov 2026) | Cotizaciones vencidas | No se registra la aceptación de una cotización emitida vencida; se duplica y se emite una nueva. Ver §20 B3 |
 | P13 — confirmado para la primera versión (17 nov 2026) | Reglas de duplicado y de emisión | Ver «Decisiones de B3» en §20 |
 | P14 — confirmado para la primera versión (17 nov 2026) | Límites de compras | Sin excedentes sobre lo vendido, sin conversión de unidades, costo > 0, sin PDF de compra; corrección por anulación. Ver §20 B4 |
-| P11 — confirmado para la primera versión (17 nov 2026) | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. Borrador: folio, vendedor y fecha automáticos + cliente, descripción o un material. Ver §20 |
+| P11 — confirmado para la primera versión (17 nov 2026); ajustado el 24 nov 2026 | Vendedores elegibles y mínimos del borrador | Elegibles: Supervisor activo con función Vendedor o Administrador/Director activo. **Vendedor opcional** para Administración y Dirección («Sin vendedor», válido hasta la orden de venta). Borrador: folio y fecha automáticos + cliente, descripción o un material. Ver §20 |
 | P10 — resuelto (B1) | Impuestos del catálogo | Precios sin IVA; tratamiento por producto: Gravado (tasa editable, 16 % como valor inicial), Tasa 0 % y Exento, que se distinguen |
 | P8 — resuelto solo para la simulación (17 nov 2026) | Reparto y deuda en primera entrega | Implementados el resultado estimado por OV y la simulación 50/50 (B7). Pendientes: retiros reales, reparto autorizado o pagado, deudas y reservas |
 
@@ -340,8 +340,8 @@ Entidades (propias del módulo, aisladas por Empresa; no crean Proyecto, contrat
 Reglas implementadas:
 - **Alcance:** Administrador/Director ven y editan las cotizaciones de su Empresa; el vendedor solo las asignadas a él (por listado, búsqueda, filtro o ID directo; fuera de alcance = «no existe»).
 - **Clientes y obras:** administración y vendedores consultan la lista y dan de alta los mínimos desde el formulario. Un nombre repetido devuelve el registro existente (también evita duplicados por doble clic). Los selectores solo exponen id y nombre, nunca cotizaciones ni importes.
-- **Vendedor:** el vendedor siempre queda asignado a sí mismo; enviar otro vendedor se rechaza. Administración asigna un vendedor elegible de su Empresa: Supervisor activo con la función Vendedor, o Administrador/Director activo (administración puede vender directamente). La elegibilidad se valida al asignar; conservar a un vendedor que después perdió la función no falla.
-- **Mínimos de un borrador:** el sistema asigna folio, vendedor y fecha (hoy en America/Monterrey, editable); además se exige al menos uno de cliente, descripción o un material. Cliente, obra, vigencia, condiciones y materiales pueden completarse después. Si hay obra, debe haber cliente y ser suyo. La vigencia no puede ser anterior a la fecha.
+- **Vendedor:** el vendedor siempre queda asignado a sí mismo; enviar otro vendedor se rechaza. Administración asigna un vendedor elegible de su Empresa: Supervisor activo con la función Vendedor, o Administrador/Director activo (administración puede vender directamente). La elegibilidad se valida al asignar; conservar a un vendedor que después perdió la función no falla. Desde el 24 nov 2026 el vendedor es **opcional** para administración (ver «Vendedor opcional» más abajo).
+- **Mínimos de un borrador:** el sistema asigna folio y fecha (hoy en America/Monterrey, editable); además se exige al menos uno de cliente, descripción o un material. Cliente, obra, vigencia, condiciones y materiales pueden completarse después. Si hay obra, debe haber cliente y ser suyo. La vigencia no puede ser anterior a la fecha.
 - **Productos:** buscador de productos activos por código o descripción; al agregar se precargan unidad, precio y tratamiento de impuesto. Un producto inactivo no puede agregarse como partida nueva; sus partidas existentes se conservan.
 - **Copia histórica:** cada partida guarda código, descripción, unidad, tratamiento, tasa, precio base (catálogo al agregarla) y precio aplicado. Cambiar o desactivar el producto no altera partidas guardadas; cambiar el precio de una partida no altera el catálogo.
 - **Precios:** solo Administrador/Director fijan un precio distinto al de catálogo; queda registrado quién y cuándo. El vendedor cambia cantidades y quita o agrega partidas, pero no precios, impuestos, descuentos ni importes: el servidor rechaza esos campos. Un precio ajustado por administración se conserva cuando el vendedor edita cantidades.
@@ -1181,6 +1181,33 @@ Rama `release/comercializacion`, creada desde `origin/main` con los commits de C
 - **Habilitación:** el módulo queda registrado en el catálogo y **deshabilitado para todas las Empresas**. Master lo habilitará en la Empresa que indique el usuario.
 - **Uso:** escritorio. No validado en teléfono (sidebar global no responsivo).
 - **Pendiente de verificar en PRD:** detalle y PDF con la primera cotización real (no se crean cotizaciones ficticias en producción).
+
+### Ajustes para operar con los dueños: vendedor opcional e Inicio por módulo (24 de noviembre de 2026; implementado, sin desplegar)
+
+Rama `feature/comercializacion-demo-matmetria`, creada desde `main` (`2513a58`).
+
+**Decisión del usuario:** hoy operan la plataforma los dos dueños; los vendedores se incorporarán más adelante. Administración y Dirección deben completar cotización → emisión → PDF → aceptación → orden de venta sin vendedor desde el primer día.
+
+**Vendedor opcional**
+- `CotizacionVenta.vendedorId` admite NULL = «Sin vendedor». El selector de «Nueva cotización» abre en «Sin vendedor» para Administración y Dirección; guardar así deja `vendedorId` en NULL. Se conserva al volver a abrirla, al emitir (la copia emitida guarda `vendedor: null`) y hasta la orden de venta.
+- **Edición:** mientras sea borrador, administración puede elegir un vendedor elegible de su Empresa o volver a «Sin vendedor». Si una edición no envía el campo, se conserva el vendedor guardado.
+- **Emisión:** sin vendedor se emite. Si hay vendedor asignado, debe seguir siendo elegible (si perdió la función, se elige otro o «Sin vendedor»).
+- **Duplicar:** administración conserva al vendedor original si sigue siendo elegible; si no tenía o ya no es elegible, el duplicado queda «Sin vendedor».
+- **Vendedor (función):** sin cambios. Crea a su nombre y solo ve las asignadas a él. Las ventas sin vendedor solo las ven Administración y Dirección de la Empresa.
+- **Lecturas:** detalle, operación y OV muestran «Sin vendedor». El listado tiene la opción «Sin vendedor» en el filtro de administración. El PDF para el cliente omite la fila «Vendedor» cuando no hay uno.
+- **Trazabilidad:** quién hizo cada acción sigue registrado aparte (`creadoPorId`, `actualizadoPorId`, `emitidaPorId`, `cerradaPorId`, `ordenes_venta.registradaPorId`) y en la bitácora.
+- **Históricas:** conservan su vendedor y su documento emitido; la migración solo relaja la columna.
+- **Base:** la regla de inmutabilidad de una cotización emitida ahora compara el vendedor con `IS DISTINCT FROM`, porque `<>` no detectaba cambios desde o hacia NULL.
+
+**Inicio como módulo** (fuera de Comercialización, mínimo y sin cambiar permisos de construcción)
+- «Inicio» (`/dashboard`) es un módulo del catálogo, habilitable o deshabilitable por Empresa en Portal Master → Empresas → Módulos. La migración lo agrega a todos los Planes y da un override habilitado a las Empresas sin Plan: ninguna Empresa existente pierde Inicio.
+- Sin Inicio, `/dashboard` (destino del login, del logo, de `/` y del cambio de contraseña) envía en el servidor al primer módulo que el usuario puede usar, antes de consultar datos de obras. Con solo Comercialización, abre Operaciones. Sin ningún módulo usable, muestra un aviso (sin ciclos de redirección).
+- Con Inicio habilitado sigue siendo la primera opción del menú.
+- El indicador de pendientes de Proyectos del menú solo se calcula si la Empresa tiene ese módulo.
+
+**Logo:** centrado horizontal y verticalmente en el encabezado de la barra lateral (componente compartido por Inicio, Comercialización y las vistas de proyecto), completo y sin deformar (`object-contain`).
+
+**Migraciones:** `20261130090000_modulo_inicio` (solo datos) y `20261130090100_comercializacion_vendedor_opcional` (columna anulable y función de la regla de inmutabilidad). Aditivas; validadas en una base local con escenarios de Empresas con Plan, sin Plan y con overrides: ningún módulo existente cambió y todas conservaron Inicio.
 
 ## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7, B8A y B8B)
 

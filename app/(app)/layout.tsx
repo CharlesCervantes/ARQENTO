@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/server/auth/dal";
-import { esMaster, obtenerModulosVisibles, puedeAdministrarProyectos } from "@/lib/server/permisos";
+import { empresaTieneModulo, esMaster, obtenerModulosVisibles, puedeAdministrarProyectos } from "@/lib/server/permisos";
 import { contarPendientesPorProyecto } from "@/lib/server/control-de-obra/avance";
 import { contarGastosPendientesRevisionPorProyecto } from "@/lib/server/control-de-obra/gastos";
 import { RUTA_MODULO } from "@/lib/modulos";
@@ -23,9 +23,11 @@ export default async function AppLayout({
 
   // Puntito de "algo pendiente" junto a "Proyectos" — solo para quien de
   // verdad puede aprobar (mismo criterio que ya usa la lista de Proyectos
-  // para este mismo dato), y solo se consultan las 2 tablas si aplica.
+  // para este mismo dato), y solo se consultan las 2 tablas si aplica: una
+  // Empresa sin el módulo de Proyectos (p. ej. solo Comercialización) nunca
+  // consulta datos de obras.
   let hayPendientesProyectos = false;
-  if (usuario.empresa && puedeAdministrarProyectos(usuario)) {
+  if (usuario.empresa && empresaTieneModulo(usuario, "control_de_obra") && puedeAdministrarProyectos(usuario)) {
     const [avancePendientes, gastosPendientes] = await Promise.all([
       contarPendientesPorProyecto(usuario.empresa.id),
       contarGastosPendientesRevisionPorProyecto(usuario.empresa.id),

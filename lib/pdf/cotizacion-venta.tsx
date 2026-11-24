@@ -138,10 +138,13 @@ export function CotizacionVentaDocumento({
             )}
           </View>
           <View style={styles.columnaDatos}>
-            <View style={styles.filaDatos}>
-              <Text style={styles.etiquetaDato}>Vendedor</Text>
-              <Text style={styles.valorDato}>{d.vendedor.nombre}</Text>
-            </View>
+            {/* Sin vendedor asignado: el documento del cliente omite la fila. */}
+            {d.vendedor && (
+              <View style={styles.filaDatos}>
+                <Text style={styles.etiquetaDato}>Vendedor</Text>
+                <Text style={styles.valorDato}>{d.vendedor.nombre}</Text>
+              </View>
+            )}
             {d.descripcion && (
               <View style={styles.filaDatos}>
                 <Text style={styles.etiquetaDato}>Descripción</Text>
