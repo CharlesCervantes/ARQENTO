@@ -13,6 +13,7 @@ import { aplanarGastosCobrables } from "@/lib/control-de-obra/lineas-gasto-estim
 // su cuenta (historial documental, agosto 2026).
 
 const styles = StyleSheet.create({
+  notaExternas: { fontSize: 8, color: "#6b7280", marginTop: 4 },
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", color: "#111827" },
   encabezado: {
     flexDirection: "row",
@@ -122,6 +123,9 @@ function ItemGrid({ etiqueta, valor }: { etiqueta: string; valor: string }) {
 }
 
 function PaginaControlContractual({ datos }: { datos: DatosDocumentoEstimacion }) {
+  const { externas } = datos;
+  const ultimaExterna = externas.at(-1)?.numero ?? 0;
+  const desde = ultimaExterna + 1;
   const { controlContractual: cc } = datos;
   return (
     <Page size="LETTER" style={styles.page}>
@@ -200,11 +204,16 @@ function PaginaControlContractual({ datos }: { datos: DatosDocumentoEstimacion }
               </>
             )}
           </View>
+          {externas.length > 0 && (
+            <Text style={styles.notaExternas}>
+              Considera de la estimación {desde} en adelante; no incluye las estimaciones {externas[0].numero} – {ultimaExterna}.
+            </Text>
+          )}
         </View>
       )}
 
       <View style={styles.seccion}>
-        <Text style={styles.seccionTitulo}>Historial de estimaciones (1 – {datos.numero})</Text>
+        <Text style={styles.seccionTitulo}>Historial de estimaciones ({desde === datos.numero && externas.length > 0 ? desde : `${desde} – ${datos.numero}`})</Text>
         <View style={styles.tablaEncabezado}>
           <Text style={styles.colEstimacion}>Estimación</Text>
           <Text style={styles.colSemana}>Semana</Text>
@@ -225,11 +234,50 @@ function PaginaControlContractual({ datos }: { datos: DatosDocumentoEstimacion }
         ))}
       </View>
 
+      {datos.externas.length > 0 && <TablaExternas filas={datos.externas} />}
+
       <Text style={styles.piePagina}>
         Documento histórico — refleja el corte financiero del{" "}
         {formatFecha(datos.fechaCorteDocumento)}, fijado en la primera generación de este documento.
       </Text>
     </Page>
+  );
+}
+
+// Estimaciones emitidas antes de ARQENTO: importes de la hoja de origen.
+function TablaExternas({ filas }: { filas: DatosDocumentoEstimacion["externas"] }) {
+  const suma = (k: "importe" | "iva" | "importeNeto") => filas.reduce((t, f) => t + f[k], 0);
+  return (
+    <View style={styles.seccion}>
+      <Text style={styles.seccionTitulo}>
+        Estimaciones {filas[0].numero} – {filas[filas.length - 1].numero} (emitidas anteriormente)
+      </Text>
+      <View style={styles.tablaEncabezado}>
+        <Text style={styles.colEstimacion}>Estimación</Text>
+        <Text style={styles.colSemana}>Semana</Text>
+        <Text style={styles.colMonto}>Importe</Text>
+        <Text style={styles.colMonto}>IVA</Text>
+        <Text style={styles.colMonto}>Importe neto</Text>
+      </View>
+      {filas.map((f) => (
+        <View style={styles.tablaFila} key={f.id} wrap={false}>
+          <Text style={styles.colEstimacion}>Estimación {f.numero}</Text>
+          <Text style={styles.colSemana}>
+            Semana {f.semanaNumero}/{f.semanaAnio}
+          </Text>
+          <Text style={styles.colMonto}>{formatMoney(f.importe)}</Text>
+          <Text style={styles.colMonto}>{formatMoney(f.iva)}</Text>
+          <Text style={styles.colMonto}>{formatMoney(f.importeNeto)}</Text>
+        </View>
+      ))}
+      <View style={styles.tablaEncabezado} wrap={false}>
+        <Text style={styles.colEstimacion}>Total</Text>
+        <Text style={styles.colSemana}> </Text>
+        <Text style={styles.colMonto}>{formatMoney(suma("importe"))}</Text>
+        <Text style={styles.colMonto}>{formatMoney(suma("iva"))}</Text>
+        <Text style={styles.colMonto}>{formatMoney(suma("importeNeto"))}</Text>
+      </View>
+    </View>
   );
 }
 

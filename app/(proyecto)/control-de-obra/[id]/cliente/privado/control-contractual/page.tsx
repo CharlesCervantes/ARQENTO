@@ -12,6 +12,8 @@ import { listarMediosFinancieros } from "@/lib/server/contabilidad/medios-financ
 import { ResumenControlContractual } from "@/components/control-de-obra/resumen-control-contractual";
 import { HistorialEstimacionesCliente } from "@/components/control-de-obra/historial-estimaciones-cliente";
 import { AportacionesFondo } from "@/components/control-de-obra/aportaciones-fondo";
+import { EstimacionesExternas } from "@/components/control-de-obra/estimaciones-externas";
+import { obtenerEstimacionesExternas } from "@/lib/server/control-de-obra/estimaciones-externas";
 import { Card } from "@/components/ui/card";
 
 export default async function ControlContractualPage({
@@ -34,9 +36,10 @@ export default async function ControlContractualPage({
 
   const puedeRegistrar = puedeRegistrarMovimientoFinancieroCliente(usuario);
 
-  const [datos, historial, aportaciones, mediosFinancieros] = await Promise.all([
+  const [datos, historial, externas, aportaciones, mediosFinancieros] = await Promise.all([
     obtenerControlContractual(usuario, id, "privado"),
     obtenerHistorialEstimacionesCliente(usuario, id, "privado"),
+    obtenerEstimacionesExternas(usuario, id, "privado"),
     obtenerAportacionesFondo(usuario, id),
     // Solo si puede registrar — es Administrador/Director, el mismo rol-set
     // de Contabilidad (puedeVerContabilidad), así que nunca falla por
@@ -61,6 +64,8 @@ export default async function ControlContractualPage({
         puedeRegistrar={puedeRegistrar}
         mediosFinancieros={mediosFinancieros}
       />
+
+      <EstimacionesExternas filas={externas} verPago={true} />
 
       <AportacionesFondo
         proyectoId={id}
