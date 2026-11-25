@@ -5,6 +5,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { registrarAuditoria, registrarAuditoriaTx } from "@/lib/server/auditoria";
 import {
   puedeAdministrarProyectos,
+  puedeAsignarConceptos,
   puedeEliminarEstructuraContractual,
   puedeVerContratoGeneralPrivado,
 } from "@/lib/server/permisos";
@@ -13,6 +14,7 @@ import type { ConceptoEstatus, EsquemaContractual } from "@/lib/generated/prisma
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { CLAVES_ICONOS_PARTIDA, CLAVES_COLORES_PARTIDA } from "@/lib/control-de-obra/iconos-partida";
 import { sumaHistoricaImportadaPorConcepto } from "./avance-calculo";
+import { filtroObrasVisibles } from "./obras-visibles";
 
 export class RegistroNoEncontradoError extends Error {
   constructor(entidad: string) {
@@ -982,6 +984,11 @@ const DatosAsignacionSchema = z.object({
   conceptoId: z.string().trim().min(1),
 });
 
+function requerirAsignador(usuario: UsuarioSesion): string {
+  if (!puedeAsignarConceptos(usuario) || !usuario.empresa) throw new SinPermisoError();
+  return usuario.empresa.id;
+}
+
 // Asigna un concepto ya existente del Contrato General a un contratista.
 // Cantidad y P.U. se HEREDAN del concepto (nunca se vuelven a capturar a
 // mano) y quedan congelados en el momento de asignar — si después cambia el
@@ -994,10 +1001,10 @@ export async function asignarConcepto(
   contratoContratistaId: string,
   datosCrudos: unknown
 ) {
-  const empresaId = requerirAdmin(usuario);
+  const empresaId = requerirAsignador(usuario);
 
   const contrato = await db.contratoContratista.findFirst({
-    where: { id: contratoContratistaId, beneficiarioProyecto: { proyecto: { empresaId } } },
+    where: { id: contratoContratistaId, beneficiarioProyecto: { proyecto: { AND: [{ empresaId }, filtroObrasVisibles(usuario)] } } },
     include: { beneficiarioProyecto: true },
   });
   if (!contrato) throw new RegistroNoEncontradoError("El contrato");
@@ -1010,6 +1017,7 @@ export async function asignarConcepto(
   const concepto = await db.concepto.findFirst({
     where: {
       id: datos.conceptoId,
+      estatus: "ACTIVO",
       partida: { proyectoId: contrato.beneficiarioProyecto.proyectoId },
     },
   });
@@ -1064,4 +1072,70 @@ export async function asignarConcepto(
   });
 
   return asignacion;
+}
+
+// Quita un concepto del contrato de un contratista; el concepto queda libre
+// para asignarse a otro y su avance se conserva. No se quita si ya está en un
+// corte (historial de lo generado o pagado). Con avance ya aprobado, quitarlo
+// cambia a quién se le pagaría: solo Administrador o Director.
+export async function quitarConceptoAsignado(usuario: UsuarioSesion, proyectoId: string, asignacionId: string) {
+  const empresaId = requerirAsignador(usuario);
+  await obtenerProyecto(usuario, proyectoId);
+
+  try {
+    await db.$transaction(async (tx) => {
+      const [fila] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM contrato_conceptos WHERE id = ${asignacionId} FOR UPDATE`;
+      const asignacion =
+        fila &&
+        (await tx.contratoConcepto.findFirst({
+          where: { id: asignacionId, contratoContratista: { beneficiarioProyecto: { proyectoId, proyecto: { empresaId } } } },
+          include: {
+            concepto: { select: { descripcion: true } },
+            contratoContratista: { select: { beneficiarioProyecto: { select: { beneficiario: { select: { nombre: true } } } } } },
+            _count: { select: { corteDetalles: true } },
+          },
+        }));
+      if (!asignacion) throw new RegistroNoEncontradoError("La asignación");
+
+      if (asignacion._count.corteDetalles > 0) {
+        throw new ValidacionError("No se puede quitar: este concepto ya está en un corte del contratista.");
+      }
+      if (!puedeEliminarEstructuraContractual(usuario)) {
+        // El histórico importado no se atribuye al contratista: no cuenta.
+        const aprobados = await tx.avanceConcepto.count({
+          where: {
+            conceptoId: asignacion.conceptoId,
+            estatusAprobacion: "APROBADO",
+            cantidadEjecutada: { gt: 0 },
+            semana: { cierresSemana: { none: { proyectoId, historicoImportado: true } } },
+          },
+        });
+        if (aprobados > 0) {
+          throw new ValidacionError("Este concepto ya tiene avance aprobado; solo Administración o Dirección puede quitarlo.");
+        }
+      }
+
+      await tx.contratoConcepto.delete({ where: { id: asignacionId } });
+      await registrarAuditoriaTx(tx, {
+        empresaId,
+        usuarioId: usuario.id,
+        entidad: "ContratoConcepto",
+        entidadId: asignacionId,
+        accion: "ELIMINAR",
+        valorAnterior: {
+          contratoContratistaId: asignacion.contratoContratistaId,
+          contratista: asignacion.contratoContratista.beneficiarioProyecto.beneficiario.nombre,
+          conceptoId: asignacion.conceptoId,
+          concepto: asignacion.concepto.descripcion,
+          cantidad: Number(asignacion.cantidad),
+          precioUnitarioContratista: Number(asignacion.precioUnitarioContratista),
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      throw new ValidacionError("No se puede quitar: este concepto ya está en un corte del contratista.");
+    }
+    throw error;
+  }
 }

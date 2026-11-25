@@ -8,6 +8,7 @@ import {
   crearConcepto,
   crearContratoContratista,
   asignarConcepto,
+  quitarConceptoAsignado,
   editarConceptoEstructural,
   editarConceptoPrivado,
   obtenerConceptoDetalle,
@@ -459,6 +460,22 @@ export async function asignarConceptoAction(
     await asignarConcepto(usuario, contratoId, {
       conceptoId: formData.get("conceptoId"),
     });
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/control-de-obra/${proyectoId}/ejecucion/contratistas`);
+  return undefined;
+}
+
+export async function quitarConceptoAsignadoAction(
+  proyectoId: string,
+  asignacionId: string,
+  _state: FormState,
+  _formData: FormData
+): Promise<FormState> {
+  const usuario = await requireSession();
+  try {
+    await quitarConceptoAsignado(usuario, proyectoId, asignacionId);
   } catch (error) {
     return { error: mensajeError(error) };
   }

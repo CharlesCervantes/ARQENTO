@@ -130,6 +130,14 @@ export function puedeEliminarEstructuraContractual(usuario: UsuarioSesion): bool
 }
 
 /**
+ * Asignar o quitar conceptos en el contrato de un contratista. Incluye al
+ * Supervisor (en sus obras); crear contratistas y contratos no.
+ */
+export function puedeAsignarConceptos(usuario: UsuarioSesion): boolean {
+  return usuario.rol === "SUPERVISOR" || puedeAdministrarProyectos(usuario);
+}
+
+/**
  * Cerrar/reabrir una semana de Avance de Obra genera y toca movimientos
  * financieros reales en Reporte General — mismo rol-set restringido que
  * eliminar proyectos, sin Master (decisión de sesión, agosto 2026).
