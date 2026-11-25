@@ -4,9 +4,11 @@ import { db } from "@/lib/server/db";
 import { cerrarSemana } from "@/lib/server/control-de-obra/cierre-semana";
 import { guardarAvanceSemanal, cambiarEstatusAprobacionAvance } from "@/lib/server/control-de-obra/avance";
 import { asignarConcepto, crearContratoContratista } from "@/lib/server/control-de-obra/estructura-contractual";
-import { aprobarGasto, crearGasto as crearGastoServicio, editarGasto, obtenerGastos } from "@/lib/server/control-de-obra/gastos";
-import { autorizarOrdenCompra, crearOrdenCompra, generarGastoDesdeOrdenCompra, obtenerOrdenesCompra } from "@/lib/server/control-de-obra/ordenes-compra";
+import { aprobarGasto, crearGasto as crearGastoServicio, editarGasto, obtenerGastos, obtenerGastosGlobal, obtenerRefArchivoGasto } from "@/lib/server/control-de-obra/gastos";
+import { autorizarOrdenCompra, crearOrdenCompra, generarGastoDesdeOrdenCompra, marcarRecepcionOrdenCompra, obtenerDatosPdfOrdenCompra, obtenerOrdenesCompra } from "@/lib/server/control-de-obra/ordenes-compra";
 import { emitirEstimacion, obtenerEstimacionCliente, obtenerEstimacionSemanalEnVivo } from "@/lib/server/control-de-obra/estimacion-cliente";
+import { obtenerRequisicion, obtenerRequisiciones } from "@/lib/server/control-de-obra/requisiciones";
+import { obtenerReposiciones } from "@/lib/server/control-de-obra/reposiciones";
 import { usuarioDePrueba } from "../helpers/usuarios";
 import { BENEFICIARIO, EMPRESA, PROYECTO, SEMANA, admin, baseLimpiaConDatos, crearGasto, supervisor } from "./apoyo/base";
 
@@ -99,6 +101,42 @@ describe("Gasto cobrable solo en Privado", () => {
     const r = await db.gastoObra.findUniqueOrThrow({ where: { id: creado.id } });
     assert.equal(r.incluidoEnCapaOperativoId, null);
     assert.ok(r.incluidoEnCapaPrivadoId);
+  });
+
+  test("Supervisor: gasto, OC, PDF, archivos, requisición y reposición solo Privado no existen para él", async () => {
+    const creado = await crearGastoServicio(admin, PROYECTO, SEMANA, datosGasto({ descripcion: "Oculto", tratamientoCliente: "COBRABLE_SOLO_PRIVADO" }));
+    const visible = await crearGastoServicio(admin, PROYECTO, SEMANA, datosGasto({ descripcion: "Visible", tratamientoCliente: "COBRABLE_EN_ESTIMACION" }));
+    const oc = await crearOrdenCompra(admin, PROYECTO, SEMANA, datosOC(100));
+    const oc2 = await crearOrdenCompra(admin, PROYECTO, SEMANA, { ...datosOC(50), tratamientoCliente: "NO_COBRABLE" });
+    const req = (solicitantePorId: string) => db.requisicion.create({ data: { empresaId: EMPRESA, proyectoId: PROYECTO, solicitantePorId, fecha: new Date(), concepto: "x", cantidad: 1, unidad: "pza", estatus: "CONVERTIDA" } });
+    const r1 = await req(admin.id);
+    await db.ordenCompra.update({ where: { id: oc.id }, data: { requisicionId: r1.id } });
+    const rep = await db.reposicionGastos.create({ data: { empresaId: EMPRESA, proyectoId: PROYECTO, semanaId: SEMANA, beneficiarioId: BENEFICIARIO, folio: "R-x", numeroFolio: 9001, creadoPorId: admin.id } });
+    await db.gastoObra.update({ where: { id: creado.id }, data: { reposicionGastosId: rep.id } });
+
+    const g = (await obtenerGastos(sup, PROYECTO, SEMANA)).map((x) => x.id);
+    assert.deepEqual(g, [visible.id]);
+    assert.deepEqual((await obtenerGastosGlobal(sup, SEMANA)).map((x) => x.id), [visible.id]);
+    assert.deepEqual((await obtenerOrdenesCompra(sup, PROYECTO, SEMANA)).map((x) => x.id), [oc2.id]);
+    assert.equal((await obtenerRequisiciones(sup, PROYECTO)).length, 0);
+    assert.equal((await obtenerReposiciones(sup, PROYECTO, SEMANA)).length, 0);
+    await assert.rejects(obtenerRefArchivoGasto(sup, creado.id, "ticket"));
+    await assert.rejects(obtenerDatosPdfOrdenCompra(sup, oc.id));
+    await assert.rejects(obtenerRequisicion(sup, r1.id));
+    await assert.rejects(editarGasto(sup, creado.id, datosGasto()));
+    await assert.rejects(marcarRecepcionOrdenCompra(sup, oc.id, { estatusRecepcion: "COMPLETA" }));
+
+    // Administración sigue viéndolo todo, con o sin Vista privada.
+    for (const u of [admin, sinVista]) {
+      assert.equal((await obtenerGastos(u, PROYECTO, SEMANA)).length, 2);
+      assert.equal((await obtenerOrdenesCompra(u, PROYECTO, SEMANA)).length, 2);
+      assert.equal((await obtenerRequisiciones(u, PROYECTO)).length, 1);
+      assert.equal((await obtenerReposiciones(u, PROYECTO, SEMANA)).length, 1);
+    }
+    // Lo que capturó él mismo no se le oculta, como no cobrable.
+    await db.gastoObra.update({ where: { id: creado.id }, data: { capturadoPorId: sup.id } });
+    const propio = (await obtenerGastos(sup, PROYECTO, SEMANA)).find((x) => x.id === creado.id);
+    assert.equal(propio?.tratamientoCliente, "NO_COBRABLE");
   });
 
   test("sin acceso a Privado: no se elige, no se ve y editar lo conserva", async () => {

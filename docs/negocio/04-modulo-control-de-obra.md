@@ -1767,7 +1767,7 @@ Capturar y aprobar avance físico, y asignar contratistas, sigue permitido.
 
 ## 49.13 Gasto cobrable solo en Privado (noviembre 2026)
 
-Un gasto u orden de compra puede ser «Cobrable solo en Privado»: entra a la estimación privada con su administración y nunca a la General. Solo la elige y la ve quien ve información privada; para los demás aparece como no cobrable, y si lo editan se conserva. Las órdenes de compra ahora también dejan elegir el tratamiento, que pasa al gasto que generan. «Cobrable en estimación» sigue entrando a las dos capas.
+Un gasto u orden de compra puede ser «Cobrable solo en Privado»: entra a la estimación privada con su administración y nunca a la General. Solo la elige quien ve información privada. Para el Supervisor el gasto no existe: tampoco su orden de compra, PDF, archivos, requisición o reposición, salvo lo que él capturó, solicitó o pagó (lo ve como no cobrable). Administrador o Director con Vista privada apagada lo ven como no cobrable, porque es un pago real de la empresa; si lo editan se conserva. Las órdenes de compra ahora también dejan elegir el tratamiento, que pasa al gasto que generan. «Cobrable en estimación» sigue entrando a las dos capas.
 
 Decisión (24-nov-2026): la estimación 42 de MISSISSIPPI es la semana 48 normal, en ambas capas: vigilancia en General y Privado, y material Jerez solo en Privado. Sustituye la representación aparte de la 42; sus cobros y pagos todavía no se realizan.
 
