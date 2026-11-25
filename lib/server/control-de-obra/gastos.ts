@@ -11,6 +11,8 @@ import {
 } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { CATEGORIAS_GASTO, CATEGORIA_GASTO_SENSIBLE } from "@/lib/control-de-obra/categorias-gasto";
+import { TRATAMIENTOS_CLIENTE, esCobrable, tratamientoAGuardar, tratamientoVisible } from "@/lib/control-de-obra/tratamiento-cliente";
+import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
 import { asignarGastoAReposicionTx } from "./reposiciones";
@@ -90,7 +92,7 @@ const DatosGastoSchema = z.object({
   comentario: z.string().trim().optional().nullable(),
   requiereFactura: z.coerce.boolean().default(false),
   tratamientoCliente: z
-    .enum(["INCLUIDO_EN_CONTRATO", "COBRABLE_EN_ESTIMACION", "NO_COBRABLE"])
+    .enum(TRATAMIENTOS_CLIENTE)
     .default("NO_COBRABLE"),
   ticketRef: z.string().trim().optional().nullable(),
   ticketNombre: z.string().trim().optional().nullable(),
@@ -144,6 +146,8 @@ export async function crearGasto(
   await obtenerProyecto(usuario, proyectoId);
   const datos = DatosGastoSchema.parse(datosCrudos);
   requerirPermisoCategoria(usuario, datos.categoria);
+  const tratamientoCliente = tratamientoAGuardar(datos.tratamientoCliente, null, puedeVerInformacionPrivada(usuario));
+  if (!tratamientoCliente) throw new SinPermisoError();
 
   const semana = await db.semana.findFirst({ where: { id: semanaId, empresaId } });
   if (!semana) throw new RegistroNoEncontradoError("La semana");
@@ -172,7 +176,7 @@ export async function crearGasto(
         proveedorBeneficiarioId: datos.proveedorBeneficiarioId || null,
         comentario: datos.comentario || null,
         requiereFactura: datos.requiereFactura,
-        tratamientoCliente: datos.tratamientoCliente,
+        tratamientoCliente,
         ticketRef: datos.ticketRef || null,
         ticketNombre: datos.ticketNombre || null,
         capturadoPorId: usuario.id,
@@ -230,6 +234,13 @@ export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datos
     throw new SinPermisoError();
   }
 
+  const tratamientoCliente = tratamientoAGuardar(
+    datos.tratamientoCliente,
+    anterior.tratamientoCliente,
+    puedeVerInformacionPrivada(usuario)
+  );
+  if (!tratamientoCliente) throw new SinPermisoError();
+
   const pagadorBeneficiarioId = await resolverPagadorBeneficiarioId(usuario, empresaId, datos);
   const tieneDetalle = (datos.detalle?.length ?? 0) > 0;
   const monto = tieneDetalle ? totalDetalleGasto(datos.detalle!) : datos.monto;
@@ -249,7 +260,7 @@ export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datos
         proveedorBeneficiarioId: datos.proveedorBeneficiarioId || null,
         comentario: datos.comentario || null,
         requiereFactura: datos.requiereFactura,
-        tratamientoCliente: datos.tratamientoCliente,
+        tratamientoCliente,
         ticketRef: datos.ticketRef || anterior.ticketRef,
         ticketNombre: datos.ticketNombre || anterior.ticketNombre,
       },
@@ -389,7 +400,7 @@ export async function aprobarGasto(usuario: UsuarioSesion, gastoId: string) {
     // sin reclamar — nunca se crea una capa por adelantado solo para tener
     // dónde ponerlo; se resuelve más tarde, en el próximo cierre de semana
     // que sí toque esa capa (arquitectura por capas, agosto 2026).
-    if (gasto.tratamientoCliente === "COBRABLE_EN_ESTIMACION") {
+    if (esCobrable(gasto.tratamientoCliente)) {
       // Semana ya cerrada que nunca generó estimación: se crea ahora (misma
       // lógica que el cierre) para que el gasto tenga dónde reclamarse. No
       // hace nada si la semana está abierta o ya tiene estimación.
@@ -404,6 +415,7 @@ export async function aprobarGasto(usuario: UsuarioSesion, gastoId: string) {
         semanaId: gasto.semanaId,
         incluidoEnCapaOperativoId: gasto.incluidoEnCapaOperativoId,
         incluidoEnCapaPrivadoId: gasto.incluidoEnCapaPrivadoId,
+        tratamientoCliente: gasto.tratamientoCliente,
       });
     }
 
@@ -523,7 +535,7 @@ const SELECT_FILA_GASTO = {
 
 type GastoObraConRelaciones = Prisma.GastoObraGetPayload<{ include: typeof SELECT_FILA_GASTO }>;
 
-function aFilaGasto(g: GastoObraConRelaciones): FilaGasto {
+function aFilaGasto(usuario: UsuarioSesion, g: GastoObraConRelaciones): FilaGasto {
   return {
     id: g.id,
     proyectoId: g.proyectoId,
@@ -539,7 +551,7 @@ function aFilaGasto(g: GastoObraConRelaciones): FilaGasto {
     comentario: g.comentario,
     requiereFactura: g.requiereFactura,
     estatusFiscal: calcularEstatusFiscal(g),
-    tratamientoCliente: g.tratamientoCliente,
+    tratamientoCliente: tratamientoVisible(g.tratamientoCliente, puedeVerInformacionPrivada(usuario)),
     ticketRef: g.ticketRef,
     ticketNombre: g.ticketNombre,
     facturaRef: g.facturaRef,
@@ -586,7 +598,7 @@ export async function obtenerGastos(
     orderBy: { fecha: "desc" },
   });
 
-  return gastos.map(aFilaGasto);
+  return gastos.map((g) => aFilaGasto(usuario, g));
 }
 
 export type FilaGastoGlobal = FilaGasto & { proyectoNombre: string; esEmpresa: boolean };
@@ -611,7 +623,7 @@ export async function obtenerGastosGlobal(
   });
 
   return gastos.map((g) => ({
-    ...aFilaGasto(g),
+    ...aFilaGasto(usuario, g),
     proyectoNombre: g.proyecto.tipo === "OFICINA" ? EMPRESA_PROYECTO_LABEL : g.proyecto.nombre,
     esEmpresa: g.proyecto.tipo === "OFICINA",
   }));

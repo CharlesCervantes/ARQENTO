@@ -8,6 +8,8 @@ import {
   puedeAutorizarOrdenesCompra,
 } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
+import { TRATAMIENTOS_CLIENTE, tratamientoAGuardar, tratamientoVisible } from "@/lib/control-de-obra/tratamiento-cliente";
+import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
 import { CATEGORIAS_GASTO } from "@/lib/control-de-obra/categorias-gasto";
@@ -21,6 +23,8 @@ function requerirEmpresa(usuario: UsuarioSesion): string {
 }
 
 const ESTATUS_EDITABLES = ["BORRADOR", "PENDIENTE_AUTORIZACION"] as const;
+
+const verPrivado = (usuario: UsuarioSesion) => puedeVerInformacionPrivada(usuario);
 
 const LineaSchema = z.object({
   concepto: z.string().trim().min(1, "El concepto es obligatorio."),
@@ -40,7 +44,7 @@ const DatosOrdenCompraSchema = z.object({
   requiereFactura: z.coerce.boolean().default(false),
   notas: z.string().trim().optional().nullable(),
   tratamientoCliente: z
-    .enum(["INCLUIDO_EN_CONTRATO", "COBRABLE_EN_ESTIMACION", "NO_COBRABLE"])
+    .enum(TRATAMIENTOS_CLIENTE)
     .default("NO_COBRABLE"),
   detalle: z.array(LineaSchema).min(1, "Agrega al menos una línea."),
 });
@@ -68,6 +72,8 @@ export async function crearOrdenCompra(
   const empresaId = requerirEmpresa(usuario);
   await obtenerProyecto(usuario, proyectoId);
   const datos = DatosOrdenCompraSchema.parse(datosCrudos);
+  const tratamientoCliente = tratamientoAGuardar(datos.tratamientoCliente, null, verPrivado(usuario));
+  if (!tratamientoCliente) throw new SinPermisoError();
 
   const semana = await db.semana.findFirst({ where: { id: semanaId, empresaId } });
   if (!semana) throw new RegistroNoEncontradoError("La semana");
@@ -122,7 +128,7 @@ export async function crearOrdenCompra(
         metodoPago: datos.metodoPago || null,
         requiereFactura: datos.requiereFactura,
         notas: datos.notas || null,
-        tratamientoCliente: datos.tratamientoCliente,
+        tratamientoCliente,
         creadoPorId: usuario.id,
         detalle: { create: datos.detalle },
       },
@@ -158,6 +164,8 @@ export async function editarOrdenCompra(usuario: UsuarioSesion, ocId: string, da
   if (anterior.creadoPorId !== usuario.id && !puedeAutorizarOrdenesCompra(usuario)) {
     throw new SinPermisoError();
   }
+  const tratamientoCliente = tratamientoAGuardar(datos.tratamientoCliente, anterior.tratamientoCliente, verPrivado(usuario));
+  if (!tratamientoCliente) throw new SinPermisoError();
 
   return db.$transaction(async (tx) => {
     await tx.ordenCompraConcepto.deleteMany({ where: { ordenCompraId: ocId } });
@@ -169,7 +177,7 @@ export async function editarOrdenCompra(usuario: UsuarioSesion, ocId: string, da
         metodoPago: datos.metodoPago || null,
         requiereFactura: datos.requiereFactura,
         notas: datos.notas || null,
-        tratamientoCliente: datos.tratamientoCliente,
+        tratamientoCliente,
         detalle: { create: datos.detalle },
       },
     });
@@ -531,7 +539,7 @@ const INCLUDE_OC = {
 
 type OCConIncludes = Prisma.OrdenCompraGetPayload<{ include: typeof INCLUDE_OC }>;
 
-function filaOrdenCompra(oc: OCConIncludes): FilaOrdenCompra {
+function filaOrdenCompra(usuario: UsuarioSesion, oc: OCConIncludes): FilaOrdenCompra {
   const detalle = oc.detalle.map((l) => ({
     id: l.id,
     concepto: l.concepto,
@@ -554,7 +562,7 @@ function filaOrdenCompra(oc: OCConIncludes): FilaOrdenCompra {
     total,
     estatusPago: oc.movimientoSemanal?.estatusPago ?? null,
     requiereFactura: oc.requiereFactura,
-    tratamientoCliente: oc.tratamientoCliente,
+    tratamientoCliente: tratamientoVisible(oc.tratamientoCliente, verPrivado(usuario)),
     creadoPorNombre: oc.creadoPor.nombre,
     autorizadoPorNombre: oc.autorizadoPor?.nombre ?? null,
     tieneGastoGenerado: oc._count.gastosGenerados > 0,
@@ -580,7 +588,7 @@ export async function obtenerOrdenesCompra(
     orderBy: { createdAt: "desc" },
   });
 
-  return ordenes.map(filaOrdenCompra);
+  return ordenes.map((oc) => filaOrdenCompra(usuario, oc));
 }
 
 // ---------------------------------------------------------------------------
@@ -618,7 +626,7 @@ export async function obtenerOrdenesCompraPendientesGlobal(usuario: UsuarioSesio
 
   for (const oc of ordenes) {
     const fila: FilaOrdenCompraGlobal = {
-      ...filaOrdenCompra(oc),
+      ...filaOrdenCompra(usuario, oc),
       proyectoId: oc.proyecto.id,
       proyectoNombre: oc.proyecto.tipo === "OFICINA" ? EMPRESA_PROYECTO_LABEL : oc.proyecto.nombre,
     };

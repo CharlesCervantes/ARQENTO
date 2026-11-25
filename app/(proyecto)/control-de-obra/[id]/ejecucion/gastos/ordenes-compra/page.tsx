@@ -1,3 +1,4 @@
+import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { requireSession } from "@/lib/server/auth/dal";
 import { puedeCapturarGastos, puedeAutorizarOrdenesCompra } from "@/lib/server/permisos";
 import {
@@ -70,6 +71,7 @@ export default async function OrdenesCompraPage({
       />
 
       <OrdenesCompraView
+        verPrivado={puedeVerInformacionPrivada(usuario)}
         proyectoId={id}
         semanaId={semana.id}
         ordenes={ordenes}

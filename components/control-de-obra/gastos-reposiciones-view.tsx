@@ -61,6 +61,7 @@ export function GastosReposicionesView({
   puedeAprobar,
   puedeRegistrarAbono,
   usuarioId,
+  verPrivado,
 }: {
   proyectoId: string;
   semanaId: string;
@@ -72,6 +73,7 @@ export function GastosReposicionesView({
   puedeAprobar: boolean;
   puedeRegistrarAbono: boolean;
   usuarioId: string;
+  verPrivado: boolean;
 }) {
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false);
   const [gastoEditando, setGastoEditando] = useState<FilaGasto | null>(null);
@@ -340,6 +342,7 @@ export function GastosReposicionesView({
           beneficiarios={beneficiarios}
           beneficiarioVinculado={beneficiarioVinculado}
           gasto={gastoEditando}
+          verPrivado={verPrivado}
           onClose={() => {
             setModalNuevoGasto(false);
             setGastoEditando(null);

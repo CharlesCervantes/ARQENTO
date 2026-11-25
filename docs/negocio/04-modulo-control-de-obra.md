@@ -1761,6 +1761,12 @@ Una obra sin semanas históricas importadas y sin capturas privadas se comporta 
 
 `Proyecto.motivoBloqueoEstimaciones` con texto hace que el servidor rechace, solo en esa obra: cerrar semanas, crear estimaciones (cierre o materialización) y emitirlas. Aprobar un gasto sigue permitido, pero no crea estimación. Vacío = opera normal.
 
-Se usa cuando operar duplicaría cargos resueltos fuera de ARQENTO. Primera obra: MISSISSIPPI, mientras no se represente la estimación privada 42 en su periodo. Se pone y se quita con `scripts/mantenimiento/bloqueo-estimaciones.ts` (bitácora). El motivo lo ve cualquier rol de la obra: no debe incluir información privada.
+Se usa cuando operar duplicaría cargos resueltos fuera de ARQENTO. Primera obra: MISSISSIPPI, mientras se resuelve el arranque de la estimación 42. Se pone y se quita con `scripts/mantenimiento/bloqueo-estimaciones.ts` (bitácora). El motivo lo ve cualquier rol de la obra: no debe incluir información privada.
 
 Capturar y aprobar avance físico, y asignar contratistas, sigue permitido.
+
+## 49.13 Gasto cobrable solo en Privado (noviembre 2026)
+
+Un gasto u orden de compra puede ser «Cobrable solo en Privado»: entra a la estimación privada con su administración y nunca a la General. Solo la elige y la ve quien ve información privada; para los demás aparece como no cobrable, y si lo editan se conserva. Las órdenes de compra ahora también dejan elegir el tratamiento, que pasa al gasto que generan. «Cobrable en estimación» sigue entrando a las dos capas.
+
+Decisión (24-nov-2026): la estimación 42 de MISSISSIPPI es la semana 48 normal, en ambas capas: vigilancia en General y Privado, y material Jerez solo en Privado. Sustituye la representación aparte de la 42; sus cobros y pagos todavía no se realizan.

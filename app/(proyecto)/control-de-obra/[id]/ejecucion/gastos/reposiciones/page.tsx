@@ -1,3 +1,4 @@
+import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { requireSession } from "@/lib/server/auth/dal";
 import {
   puedeCapturarGastos,
@@ -85,6 +86,7 @@ export default async function ReposicionesPage({
       />
 
       <GastosReposicionesView
+        verPrivado={puedeVerInformacionPrivada(usuario)}
         proyectoId={id}
         semanaId={semana.id}
         gastos={gastos}

@@ -49,12 +49,14 @@ export function RequisicionesView({
   requisiciones,
   proveedores,
   puedeAutorizar,
+  verPrivado,
 }: {
   proyectoId: string;
   semanaId: string;
   requisiciones: FilaRequisicion[];
   proveedores: { id: string; nombre: string }[];
   puedeAutorizar: boolean;
+  verPrivado: boolean;
 }) {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [editando, setEditando] = useState<FilaRequisicion | null>(null);
@@ -222,6 +224,7 @@ export function RequisicionesView({
             semanaId={semanaId}
             proveedores={[]}
             orden={null}
+          verPrivado={verPrivado}
             requisicion={{
               id: generandoOCPara.id,
               concepto: generandoOCPara.concepto,
