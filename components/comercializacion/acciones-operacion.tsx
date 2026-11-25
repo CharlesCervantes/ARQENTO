@@ -9,6 +9,7 @@ import type { EstadoCancelacionOrden } from "@/lib/server/comercializacion/cance
 import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
+import { pedirCondiciones } from "./asistente-condiciones";
 import { PanelLateral } from "./panel-lateral";
 import { MenuAcciones, type OpcionMenu } from "./menu-acciones";
 import { PanelCancelarOrden, PanelCerrarCotizacion } from "./cancelaciones";
@@ -118,7 +119,7 @@ export function AccionesOperacion({
       )}
 
       <PanelLateral abierto={panel === "aceptar"} onCerrar={cerrar} titulo="Registrar aceptación" contexto={`${folio}${contexto ? ` · ${contexto}` : ""}`}>
-        <FormularioAceptacion cotizacionId={cotizacionId} fechaMinima={fechaMinima} hoy={hoy} onListo={cerrar} />
+        <FormularioAceptacion esAdmin={esAdmin} cotizacionId={cotizacionId} fechaMinima={fechaMinima} hoy={hoy} onListo={cerrar} />
       </PanelLateral>
 
       {orden && (
@@ -166,7 +167,7 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactN
   );
 }
 
-function FormularioAceptacion({ cotizacionId, fechaMinima, hoy, onListo }: { cotizacionId: string; fechaMinima: string; hoy: string; onListo: () => void }) {
+function FormularioAceptacion({ esAdmin, cotizacionId, fechaMinima, hoy, onListo }: { esAdmin: boolean; cotizacionId: string; fechaMinima: string; hoy: string; onListo: () => void }) {
   const router = useRouter();
   const [state, formAction, pendiente] = useActionState<AceptacionState, FormData>(registrarAceptacionAction.bind(null, cotizacionId), undefined);
   // Campos controlados: se conservan si el servidor rechaza la aceptación.
@@ -178,9 +179,11 @@ function FormularioAceptacion({ cotizacionId, fechaMinima, hoy, onListo }: { cot
   useEffect(() => {
     if (state?.folio) {
       onListo();
+      // Las condiciones de cobro son de administración.
+      if (esAdmin && state.ordenId) pedirCondiciones(state.ordenId);
       router.refresh();
     }
-  }, [state, router, onListo]);
+  }, [state, router, onListo, esAdmin]);
   return (
     <form action={formAction} className="space-y-4">
       <p className="text-sm text-[var(--muted)]">Genera la orden de venta (OV). Es un registro interno, no una firma electrónica.</p>

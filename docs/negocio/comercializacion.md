@@ -1274,6 +1274,16 @@ Casos verificados:
 - Duplicar una emitida «Sin IVA» (Vendedor y Administración) conserva «Sin IVA».
 - La demo «Sin vendedor» hasta el PDF, la OV y la cuenta por cobrar de $278.40.
 
+### Condiciones de cobro y pago al momento (noviembre 2026; implementado, sin desplegar)
+
+Solicitado por el usuario: definir condiciones debe ser más fácil y automático, y mostrarse al registrar.
+
+- Al aceptar una cotización (administración), confirmar una compra o guardar un gasto se abre «Condiciones de cobro/pago» del documento. «Definir después» la deja como antes, en «Condiciones por definir». Si acepta un vendedor no se le muestra (sigue sin ver cuentas).
+- Formas rápidas: de contado, a 15/30/60/90 días, anticipo y saldo, varias cuotas iguales (semanal, cada 15 días o mensual) y a mano. Se ve el resultado antes de guardar y puede ajustarse. La fecha desde la que corre un plazo la elige el usuario (propone hoy): no se asume compra, factura ni recepción.
+- Varias cuotas iguales está disponible también para cobros y gastos (sustituye la limitación de captura manual). En compras, mensualidades de 3, 6, 12, 18 o 24 sin ajustar las sigue generando el servidor.
+- «Por atender» y el resumen abren la captura directamente. Se muestran las condiciones escritas en la cotización como referencia; no se interpretan.
+- Sin cambios en reglas del servidor: permisos, suma exacta, calendario fijo con movimientos, y guardar condiciones no registra dinero. Sin migración.
+
 ## 21. Inventario del alcance pendiente (17 de noviembre de 2026; actualizado con B7, B8A y B8B)
 
 Revisión del documento contra la implementación. Las recomendaciones son **propuestas**; ninguna fila convierte una propuesta en acuerdo confirmado.

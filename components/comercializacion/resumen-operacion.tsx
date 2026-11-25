@@ -8,6 +8,7 @@ import type { ResumenGastosOrden } from "@/lib/server/comercializacion/gastos";
 import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
 import { etiquetaImpuestoPartidaVenta, formatearCantidad, formatearImporte } from "@/lib/comercializacion/importes";
 import { filasImpuestoVenta } from "@/lib/comercializacion/totales-venta";
+import { enlaceDefinir } from "@/lib/comercializacion/condiciones";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { ETIQUETA_ESTADO_ENTREGA } from "@/lib/comercializacion/entregas";
 import { ETIQUETA_METODO } from "@/lib/comercializacion/cuentas";
@@ -139,7 +140,7 @@ function pendientesDe(d: DatosResumen): Pendiente[] {
   }
   if (cuenta && cuenta.estatus === "VIGENTE") {
     const e = cuenta.estado;
-    if (e.situacion === "SIN_CALENDARIO") p.push({ texto: "Definir las condiciones de cobro (contado o crédito) para registrar cobros.", href: "#cobros", enlace: "Ver cobros", tono: "aviso" });
+    if (e.situacion === "SIN_CALENDARIO") p.push({ texto: "Definir las condiciones de cobro (contado o crédito) para registrar cobros.", href: enlaceDefinir("?vista=resumen", cuenta.id), enlace: "Definir ahora", tono: "aviso" });
     else if (e.vencido !== "0.00") p.push({ texto: `Cobro vencido: ${formatearImporte(e.vencido)}.`, href: "#cobros", enlace: "Ver cobros", tono: "alerta" });
     else if (e.situacion === "VENCE_HOY") p.push({ texto: "Hay un cobro que vence hoy.", href: "#cobros", enlace: "Ver cobros", tono: "aviso" });
   }

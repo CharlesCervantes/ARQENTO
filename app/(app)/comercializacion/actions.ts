@@ -217,7 +217,7 @@ export async function duplicarCotizacionAction(entrada: {
   }
 }
 
-export type AceptacionState = { error?: string; folio?: string } | undefined;
+export type AceptacionState = { error?: string; folio?: string; ordenId?: string } | undefined;
 
 export async function registrarAceptacionAction(
   cotizacionId: string,
@@ -239,7 +239,7 @@ export async function registrarAceptacionAction(
     );
     revalidatePath("/comercializacion");
     revalidatePath(`/comercializacion/cotizaciones/${cotizacionId}`);
-    return { folio: r.folio };
+    return { folio: r.folio, ordenId: r.ordenId };
   } catch (error) {
     return { error: mensajeError(error) };
   }
@@ -419,18 +419,19 @@ export async function registrarEntregaAction(ordenVentaId: string, _state: Entre
   return { ok: true };
 }
 
-export type GastoState = { error?: string; ok?: boolean } | undefined;
+export type GastoState = { error?: string; ok?: boolean; gastoId?: string } | undefined;
 
 /** B7 — registra un gasto adicional de la OV con su cuenta por pagar (solo administración). */
 export async function registrarGastoAction(ordenVentaId: string, _state: GastoState, formData: FormData): Promise<GastoState> {
   const usuario = await requireSession();
+  let gastoId: string;
   try {
     const leer = (k: string) => {
       const v = formData.get(k);
       return typeof v === "string" ? v : undefined;
     };
     const archivo = formData.get("comprobante");
-    await registrarGastoComercial(
+    ({ gastoId } = await registrarGastoComercial(
       usuario,
       ordenVentaId,
       {
@@ -444,12 +445,12 @@ export async function registrarGastoAction(ordenVentaId: string, _state: GastoSt
       },
       archivo instanceof File && archivo.size > 0 ? { nombre: archivo.name, bytes: new Uint8Array(await archivo.arrayBuffer()) } : null,
       leer("clave")
-    );
+    ));
   } catch (error) {
     return { error: mensajeError(error) };
   }
   revalidatePath("/comercializacion", "layout");
-  return { ok: true };
+  return { ok: true, gastoId };
 }
 
 /** B7 — anula un gasto sin historial de pagos, junto con su cuenta (solo administración). */

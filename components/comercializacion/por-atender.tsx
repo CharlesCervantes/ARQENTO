@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Table, Thead, Th, Tr, Td } from "@/components/ui/table";
 import { formatearImporte } from "@/lib/comercializacion/importes";
+import { enlaceDefinir } from "@/lib/comercializacion/condiciones";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { CATEGORIAS_AVISO, ETIQUETA_CATEGORIA_AVISO, type CategoriaAviso, type TotalesAviso } from "@/lib/comercializacion/recordatorios";
 import type { RecordatoriosComerciales } from "@/lib/server/comercializacion/recordatorios";
@@ -99,8 +100,8 @@ export function PorAtender({ datos, parametros }: { datos: RecordatoriosComercia
                   </Td>
                   <Td className="text-right tabular-nums whitespace-nowrap">{formatearImporte(a.saldo)}</Td>
                   <Td className="whitespace-nowrap">
-                    <Link href={a.enlace} className="text-sm font-medium text-[var(--foreground)] underline decoration-[var(--border)] underline-offset-4 hover:decoration-[var(--foreground)]">
-                      {a.tipo === "COBRO" ? "Ir a cobros" : "Ir a pagos"}
+                    <Link href={a.categoria === "SIN_CONDICIONES" ? enlaceDefinir(a.enlace, a.clave) : a.enlace} className="text-sm font-medium text-[var(--foreground)] underline decoration-[var(--border)] underline-offset-4 hover:decoration-[var(--foreground)]">
+                      {a.categoria === "SIN_CONDICIONES" ? "Definir condiciones" : a.tipo === "COBRO" ? "Ir a cobros" : "Ir a pagos"}
                     </Link>
                   </Td>
                 </Tr>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { pedirCondiciones } from "./asistente-condiciones";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 import { MB_POR_CARGA } from "@/lib/comercializacion/cargas";
 import Link from "next/link";
@@ -477,7 +478,13 @@ export function FormularioCompra({
             anularla. Confirmar no registra pagos ni recepciones.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <Button type="button" disabled={pendiente} onClick={() => guardar((v) => confirmarCompraAction({ id: compra.id, version: v }))}>
+            <Button type="button" disabled={pendiente} onClick={() =>
+                guardar(async (v) => {
+                  const r = await confirmarCompraAction({ id: compra.id, version: v });
+                  if (!r.error) pedirCondiciones(compra.id);
+                  return r;
+                })
+              }>
               {pendiente ? "Confirmando…" : "Confirmar compra"}
             </Button>
             <button type="button" onClick={() => setConfirmando(false)} className={claseSecundaria} disabled={pendiente}>
