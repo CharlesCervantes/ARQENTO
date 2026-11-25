@@ -1,8 +1,9 @@
 import { requireSession } from "@/lib/server/auth/dal";
-import { puedeAdministrarProyectos, puedeEliminarEstructuraContractual } from "@/lib/server/permisos";
+import { puedeAdministrarProyectos, puedeEliminarEstructuraContractual, puedeProponerContrato, puedeResolverPropuestas } from "@/lib/server/permisos";
 import {
   obtenerPartidasProyecto,
 } from "@/lib/server/control-de-obra/estructura-contractual";
+import { obtenerPropuestas } from "@/lib/server/control-de-obra/propuestas-contrato";
 import { obtenerProyecto } from "@/lib/server/control-de-obra/proyectos";
 import { ContratoGeneralView } from "@/components/control-de-obra/contrato-general-view";
 
@@ -12,9 +13,10 @@ export default async function ContratoGeneralPage({
   const usuario = await requireSession();
   const { id } = await params;
 
-  const [proyecto, partidas] = await Promise.all([
+  const [proyecto, partidas, propuestas] = await Promise.all([
     obtenerProyecto(usuario, id),
     obtenerPartidasProyecto(usuario, id),
+    obtenerPropuestas(usuario, id),
   ]);
 
   return (
@@ -32,6 +34,9 @@ export default async function ContratoGeneralPage({
         }
         puedeAdministrar={puedeAdministrarProyectos(usuario)}
         puedeEliminar={puedeEliminarEstructuraContractual(usuario)}
+        propuestas={propuestas}
+        puedeProponer={puedeProponerContrato(usuario)}
+        puedeResolver={puedeResolverPropuestas(usuario)}
       />
     </div>
   );

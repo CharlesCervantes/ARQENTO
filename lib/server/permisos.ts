@@ -129,6 +129,16 @@ export function puedeEliminarEstructuraContractual(usuario: UsuarioSesion): bool
   return usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR";
 }
 
+/** Proponer partidas/conceptos en Contrato General; quedan por aprobar. */
+export function puedeProponerContrato(usuario: UsuarioSesion): boolean {
+  return usuario.rol === "SUPERVISOR";
+}
+
+/** Aprobar o rechazar lo propuesto: cambia el contrato. Sin Master. */
+export function puedeResolverPropuestas(usuario: UsuarioSesion): boolean {
+  return usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR";
+}
+
 /** Aprobar avance que excede lo contratado (amplía el contrato). Sin Master. */
 export function puedeAprobarExcedente(usuario: UsuarioSesion): boolean {
   return usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR";

@@ -1775,6 +1775,10 @@ Decisión (24-nov-2026): la estimación 42 de MISSISSIPPI es la semana 48 normal
 
 El Supervisor puede asignar conceptos a los contratos existentes de sus obras y quitarlos. Crear contratistas o contratos sigue siendo de Administrador/Director. Quitar deja el concepto libre y conserva su avance; queda en bitácora. No se puede quitar si ya está en un corte. Con avance aprobado de una semana operada en ARQENTO solo lo quita Administrador o Director, porque cambia a quién se le pagaría.
 
+### Partidas y conceptos propuestos por el Supervisor (noviembre 2026)
+
+El Supervisor propone partidas y conceptos en Contrato General de sus obras; quedan por aprobar en `PropuestaContrato`, fuera del contrato: no suman, no se capturan ni se asignan. Administrador o Director aprueban (se crea la partida o el concepto) o rechazan con motivo. Aprobar un concepto de una partida pendiente aprueba la partida; rechazar la partida rechaza sus conceptos pendientes. El Supervisor retira lo suyo y ve el motivo de lo rechazado 30 días. No edita ni elimina lo ya aprobado. Todo queda en bitácora.
+
 ### Avance que excede lo contratado (noviembre 2026)
 
 Sustituye el bloqueo de 49.8. Se puede guardar; se ve en rojo y queda pendiente. Solo Administrador o Director lo aprueba, confirmando la nueva cantidad. Al aprobar, lo contratado sube hasta lo ejecutado: Contrato General, la cantidad propia de Privado si su estimado también la rebasa (sin cantidad propia sigue a General) y la cantidad del contrato del contratista (sin histórico importado). Los P.U., estimaciones emitidas y cortes no cambian; contratos, saldos y avances se recalculan solos. Rechazar no cambia el contrato. Solo aumenta: si después se corrige a la baja, lo contratado se ajusta a mano en Contrato General. Todo queda en bitácora.

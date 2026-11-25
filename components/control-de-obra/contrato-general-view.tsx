@@ -3,10 +3,12 @@ import { FormNuevaPartida } from "./form-nueva-partida";
 import { FormNuevoConcepto } from "./form-nuevo-concepto";
 import { IconoPartida } from "./icono-partida";
 import { BotonEliminarPartida } from "./boton-eliminar-partida";
+import { AccionesPropuesta, ConceptosPropuestos, EtiquetaPorAprobar } from "./propuestas-contrato";
 import { TablaOperativaEditable, type ConceptoOperativoPlano } from "./tabla-operativa-editable";
 import { formatMoney } from "@/lib/dinero";
 import { calcularPrecioOperativoConcepto } from "@/lib/control-de-obra/contrato-general";
 import type { obtenerPartidasProyecto } from "@/lib/server/control-de-obra/estructura-contractual";
+import type { FilaPropuesta } from "@/lib/server/control-de-obra/propuestas-contrato";
 import type { EsquemaContractual } from "@/lib/generated/prisma/enums";
 
 type Partidas = Awaited<ReturnType<typeof obtenerPartidasProyecto>>;
@@ -81,6 +83,9 @@ export function ContratoGeneralView({
   porcentajeAdministracionDefault,
   puedeAdministrar,
   puedeEliminar,
+  propuestas,
+  puedeProponer,
+  puedeResolver,
 }: {
   proyectoId: string;
   partidas: Partidas;
@@ -88,7 +93,21 @@ export function ContratoGeneralView({
   porcentajeAdministracionDefault: number | null;
   puedeAdministrar: boolean;
   puedeEliminar: boolean;
+  propuestas: FilaPropuesta[];
+  puedeProponer: boolean;
+  puedeResolver: boolean;
 }) {
+  const pendientes = propuestas.filter((p) => p.estatus === "PENDIENTE");
+  const rechazadas = propuestas.filter((p) => p.estatus === "RECHAZADA");
+  const partidasPropuestas = pendientes.filter((p) => p.tipo === "PARTIDA");
+  const idsPartida = new Set(partidas.map((p) => p.id));
+  const idsPropuestas = new Set(partidasPropuestas.map((p) => p.id));
+  const conceptosDe = (id: string) => pendientes.filter((p) => p.tipo === "CONCEPTO" && p.partidaId === id);
+  // Su partida se eliminó después de proponerlos: solo queda rechazarlos.
+  const sinPartida = pendientes.filter(
+    (p) => p.tipo === "CONCEPTO" && !idsPartida.has(p.partidaId ?? "") && !idsPropuestas.has(p.padreId ?? "")
+  );
+
   const esPrecioAlzado = esquemaContractual === "PRECIO_ALZADO";
   const esAdministracion = esquemaContractual === "ADMINISTRACION";
 
@@ -156,6 +175,11 @@ export function ContratoGeneralView({
                   <span className="text-sm font-semibold text-[var(--foreground)]">
                     {partida.nombre}
                   </span>
+                  {conceptosDe(partida.id).length > 0 && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                      {conceptosDe(partida.id).length} por aprobar
+                    </span>
+                  )}
                   {puedeEliminar && (
                     <BotonEliminarPartida
                       proyectoId={proyectoId}
@@ -206,7 +230,9 @@ export function ContratoGeneralView({
                   />
                 )}
 
-                {puedeAdministrar && (
+                <ConceptosPropuestos proyectoId={proyectoId} propuestas={conceptosDe(partida.id)} puedeResolver={puedeResolver} />
+
+                {(puedeAdministrar || puedeProponer) && (
                   <details>
                     <summary className="inline-flex w-fit cursor-pointer list-none items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium text-[var(--foreground)] transition-colors duration-150 ease-out select-none hover:bg-black/[0.03] [&::-webkit-details-marker]:hidden">
                       + Agregar concepto
@@ -216,6 +242,7 @@ export function ContratoGeneralView({
                         partidaId={partida.id}
                         proyectoId={proyectoId}
                         esquemaContractual={esquemaContractual}
+                        proponer={puedeProponer}
                       />
                     </div>
                   </details>
@@ -226,9 +253,55 @@ export function ContratoGeneralView({
         );
       })}
 
-      {puedeAdministrar && (
+      {partidasPropuestas.map((propuesta) => (
+        <Card key={propuesta.id} className="space-y-4 border-amber-200 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
+                {propuesta.descripcion} {puedeResolver && <EtiquetaPorAprobar />}
+              </p>
+              <p className="mt-0.5 text-xs text-[var(--muted)]">Partida propuesta por {propuesta.solicitadoPorNombre}</p>
+            </div>
+            <AccionesPropuesta proyectoId={proyectoId} propuesta={propuesta} puedeResolver={puedeResolver} />
+          </div>
+          <ConceptosPropuestos proyectoId={proyectoId} propuestas={pendientes.filter((p) => p.padreId === propuesta.id)} puedeResolver={puedeResolver} />
+          {puedeProponer && (
+            <details>
+              <summary className="inline-flex w-fit cursor-pointer list-none items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium text-[var(--foreground)] select-none hover:bg-black/[0.03] [&::-webkit-details-marker]:hidden">
+                + Agregar concepto
+              </summary>
+              <div className="mt-3">
+                <FormNuevoConcepto partidaId={propuesta.id} proyectoId={proyectoId} esquemaContractual={esquemaContractual} proponer enPropuesta />
+              </div>
+            </details>
+          )}
+        </Card>
+      ))}
+
+      {sinPartida.length > 0 && (
+        <Card className="space-y-3 p-5">
+          <p className="text-sm font-semibold text-[var(--foreground)]">Su partida ya no existe</p>
+          <ConceptosPropuestos proyectoId={proyectoId} propuestas={sinPartida} puedeResolver={puedeResolver} />
+        </Card>
+      )}
+
+      {rechazadas.length > 0 && (
+        <Card className="p-5">
+          <p className="text-sm font-semibold text-[var(--foreground)]">Propuestas tuyas rechazadas (últimos 30 días)</p>
+          <ul className="mt-2 space-y-2">
+            {rechazadas.map((p) => (
+              <li key={p.id} className="text-sm">
+                <span className="text-[var(--foreground)]">{p.descripcion}</span>
+                <span className="block text-xs text-red-700">Motivo: {p.motivo}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {(puedeAdministrar || puedeProponer) && (
         <Card className="p-4">
-          <FormNuevaPartida proyectoId={proyectoId} />
+          <FormNuevaPartida proyectoId={proyectoId} proponer={puedeProponer} />
         </Card>
       )}
     </div>

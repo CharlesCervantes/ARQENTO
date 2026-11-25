@@ -17,6 +17,14 @@ import {
   RegistroNoEncontradoError,
 } from "@/lib/server/control-de-obra/estructura-contractual";
 import {
+  aprobarPropuesta,
+  proponerConcepto,
+  proponerPartida,
+  rechazarPropuesta,
+  retirarPropuesta,
+} from "@/lib/server/control-de-obra/propuestas-contrato";
+import { puedeProponerContrato } from "@/lib/server/permisos";
+import {
   guardarAvanceSemanal,
   cambiarEstatusAprobacionAvance,
 } from "@/lib/server/control-de-obra/avance";
@@ -112,7 +120,8 @@ export async function crearPartidaAction(
 ): Promise<FormState> {
   const usuario = await requireSession();
   try {
-    await crearPartida(usuario, proyectoId, {
+    const crear = puedeProponerContrato(usuario) ? proponerPartida : crearPartida;
+    await crear(usuario, proyectoId, {
       nombre: formData.get("nombre"),
       orden: formData.get("orden") || 0,
       icono: opcional(formData.get("icono")),
@@ -133,19 +142,60 @@ export async function crearConceptoAction(
 ): Promise<FormState> {
   const usuario = await requireSession();
   try {
-    await crearConcepto(usuario, partidaId, {
-      descripcion: formData.get("descripcion"),
-      unidad: formData.get("unidad"),
-      cantidadContratada: formData.get("cantidadContratada"),
-      notas: opcional(formData.get("notas")),
-      precioUnitarioContratista: opcional(formData.get("precioUnitarioContratista")),
-      precioUnitarioMateriales: opcional(formData.get("precioUnitarioMateriales")),
-    });
+    const datos = datosConceptoDeFormulario(formData);
+    if (puedeProponerContrato(usuario)) await proponerConcepto(usuario, proyectoId, { partidaId }, datos);
+    else await crearConcepto(usuario, partidaId, datos);
   } catch (error) {
     return { error: mensajeError(error) };
   }
   revalidatePath(`/control-de-obra/${proyectoId}/contrato/general`);
   return undefined;
+}
+
+function datosConceptoDeFormulario(formData: FormData) {
+  return {
+    descripcion: formData.get("descripcion"),
+    unidad: formData.get("unidad"),
+    cantidadContratada: formData.get("cantidadContratada"),
+    notas: opcional(formData.get("notas")),
+    precioUnitarioContratista: opcional(formData.get("precioUnitarioContratista")),
+    precioUnitarioMateriales: opcional(formData.get("precioUnitarioMateriales")),
+  };
+}
+
+// Concepto dentro de una partida que todavía está por aprobar.
+export async function proponerConceptoEnPropuestaAction(
+  propuestaPartidaId: string,
+  proyectoId: string,
+  _state: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const usuario = await requireSession();
+  try {
+    await proponerConcepto(usuario, proyectoId, { propuestaPartidaId }, datosConceptoDeFormulario(formData));
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/control-de-obra/${proyectoId}/contrato/general`);
+  return undefined;
+}
+
+export async function resolverPropuestaAction(
+  proyectoId: string,
+  propuestaId: string,
+  decision: "APROBAR" | "RECHAZAR" | "RETIRAR",
+  motivo?: string
+): Promise<{ error?: string }> {
+  const usuario = await requireSession();
+  try {
+    if (decision === "APROBAR") await aprobarPropuesta(usuario, proyectoId, propuestaId);
+    else if (decision === "RECHAZAR") await rechazarPropuesta(usuario, proyectoId, propuestaId, motivo);
+    else await retirarPropuesta(usuario, proyectoId, propuestaId);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/control-de-obra/${proyectoId}`, "layout");
+  return {};
 }
 
 export async function crearContratoAction(
