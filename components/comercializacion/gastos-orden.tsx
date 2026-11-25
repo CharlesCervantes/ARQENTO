@@ -10,6 +10,7 @@ import { aCentavos, calcularImpuesto, deCentavos, ETIQUETA_TRATAMIENTO, formatea
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
 import { ETIQUETA_LIQUIDACION, ETIQUETA_SITUACION } from "@/lib/comercializacion/cuentas";
 import { anularGastoAction, crearProveedorCompraAction, registrarGastoAction, type GastoState } from "@/app/(app)/comercializacion/actions";
+import { pedirCondiciones } from "./asistente-condiciones";
 import { CuentaComercialView } from "./cuenta-comercial";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 import { PanelLateral } from "./panel-lateral";
@@ -103,6 +104,7 @@ function FormularioGasto({
   useEffect(() => {
     if (state?.ok) {
       onListo();
+      if (state.gastoId) pedirCondiciones(state.gastoId);
       router.refresh();
     }
   }, [state, onListo, router]);

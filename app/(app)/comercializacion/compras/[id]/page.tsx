@@ -4,6 +4,7 @@ import { evaluarAccesoComercial } from "@/lib/server/comercializacion/acceso";
 import { esAdministradorComercial } from "@/lib/server/permisos";
 import { listarProveedoresComerciales, obtenerCompraComercial } from "@/lib/server/comercializacion/compras";
 import { detalleCuentaDeCompra } from "@/lib/server/comercializacion/cuentas";
+import { AsistenteCondiciones } from "@/components/comercializacion/asistente-condiciones";
 import { CuentaComercialView } from "@/components/comercializacion/cuenta-comercial";
 import { RegistroNoEncontradoError } from "@/lib/server/control-de-obra/estructura-contractual";
 import { Card } from "@/components/ui/card";
@@ -40,11 +41,14 @@ export default async function CompraPage(props: PageProps<"/comercializacion/com
       enlaces: b.entregas.map((e) => ({ href: `/comercializacion/cotizaciones/${compra.orden.cotizacionId}#entrega-${e.entregaId}`, etiqueta: `Entrega ${e.numero}` })),
     })),
   ];
+  const proveedor = compra.proveedorConfirmado?.nombre ?? compra.proveedorNombre;
+  const contextoCuenta = `Compra ${compra.folio}${proveedor ? ` · ${proveedor}` : ""}`;
   return (
     <div className="space-y-6">
+      <AsistenteCondiciones cuentas={cuenta && compra.estatus === "CONFIRMADA" ? [{ cuenta, contexto: contextoCuenta }] : []} />
       <FormularioCompra key={`${compra.id}-${compra.version}`} compra={compra} proveedoresIniciales={proveedores} bloqueosAnulacion={bloqueosAnulacion} />
       {surtido && <SurtidoCompraView surtido={surtido} />}
-      {cuenta && <CuentaComercialView cuenta={cuenta} contexto={`Compra ${compra.folio}${(compra.proveedorConfirmado?.nombre ?? compra.proveedorNombre) ? ` · ${compra.proveedorConfirmado?.nombre ?? compra.proveedorNombre}` : ""}`} />}
+      {cuenta && <CuentaComercialView cuenta={cuenta} contexto={contextoCuenta} />}
     </div>
   );
 }

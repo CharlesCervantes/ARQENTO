@@ -3,6 +3,7 @@
 import { useActionState, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { AvisosArchivos, useArchivosDeCarga } from "./campo-archivos";
 import { PanelLateral } from "./panel-lateral";
+import { FormularioCondiciones } from "./formulario-condiciones";
 import { ACCION_EN_LINEA, BOTON_PRIMARIO, BOTON_SECUNDARIO } from "./estilos";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
@@ -11,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import type { DetalleCuenta } from "@/lib/server/comercializacion/cuentas";
 import { aCentavos, deCentavos, formatearImporte, normalizarImporte } from "@/lib/comercializacion/importes";
 import { formatearFechaCalendario } from "@/lib/comercializacion/fechas";
-import { generarMensualidades, PLAZOS_MENSUALES, type CuotaGenerada, type PlazoMensual } from "@/lib/comercializacion/mensualidades";
 import {
   ETIQUETA_LIQUIDACION,
   ETIQUETA_METODO,
@@ -22,7 +22,6 @@ import {
 import {
   anularMovimientoAction,
   cambiarVencimientoAction,
-  definirCondicionesAction,
   registrarMovimientoAction,
   type MovimientoState,
 } from "@/app/(app)/comercializacion/actions";
@@ -137,7 +136,7 @@ export function CuentaComercialView({ cuenta, contexto }: { cuenta: DetalleCuent
             </button>
           )}
         </div>
-        <PanelLateral abierto={editandoCondiciones} onCerrar={cerrarCondiciones} titulo={sinCalendario ? "Definir condiciones" : "Cambiar condiciones"} contexto={documento}>
+        <PanelLateral abierto={editandoCondiciones} onCerrar={cerrarCondiciones} titulo={sinCalendario ? "Definir condiciones" : "Cambiar condiciones"} contexto={documento} ancho="amplio">
           <FormularioCondiciones cuenta={cuenta} onListo={cerrarCondiciones} />
         </PanelLateral>
         {sinCalendario ? (
@@ -306,185 +305,6 @@ function FormularioVencimiento({ cuenta, cuota, onListo }: { cuenta: DetalleCuen
           {pendiente ? "Guardando…" : "Guardar vencimiento"}
         </button>
         <button type="button" onClick={onListo} className={BOTON_SECUNDARIO} disabled={pendiente}>
-          Cancelar
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function FormularioCondiciones({ cuenta, onListo }: { cuenta: DetalleCuenta; onListo: () => void }) {
-  const router = useRouter();
-  const [modalidad, setModalidad] = useState<"CONTADO" | "CREDITO">(cuenta.modalidad ?? "CREDITO");
-  const [fechaContado, setFechaContado] = useState(cuenta.estado.cuotas[0]?.fechaVencimiento ?? cuenta.hoy);
-  const [cuotas, setCuotas] = useState<{ fecha: string; importe: string }[]>(() =>
-    cuenta.estado.cuotas.length > 0 ? cuenta.estado.cuotas.map((q) => ({ fecha: q.fechaVencimiento, importe: q.importe })) : [{ fecha: cuenta.hoy, importe: cuenta.estado.total }]
-  );
-  // Crédito de compras a proveedor: mensualidades automáticas o cuotas manuales.
-  const admiteMensualidades = cuenta.origen === "COMPRA";
-  const [plazo, setPlazo] = useState<PlazoMensual | "MANUAL">("MANUAL");
-  const [primerVencimiento, setPrimerVencimiento] = useState("");
-  const automatico = admiteMensualidades && modalidad === "CREDITO" && plazo !== "MANUAL";
-  const propuesta = useMemo((): { cuotas: CuotaGenerada[] } | { error: string } | null => {
-    if (!automatico || !primerVencimiento) return null;
-    try {
-      return { cuotas: generarMensualidades(cuenta.estado.total, plazo, primerVencimiento) };
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : "No se pudo generar el calendario." };
-    }
-  }, [automatico, plazo, primerVencimiento, cuenta.estado.total]);
-  const [error, setError] = useState<string | null>(null);
-  const [pendiente, start] = useTransition();
-  const suma = cuotas.reduce((s, q) => {
-    const n = normalizarImporte(q.importe, { permitirCero: false });
-    return n ? s + aCentavos(n) : s;
-  }, BigInt(0));
-  const diferencia = aCentavos(cuenta.estado.total) - suma;
-
-  function guardar() {
-    setError(null);
-    // En automático solo se envían plazo y fecha: el servidor genera los importes.
-    const datos =
-      modalidad === "CONTADO"
-        ? { modalidad, cuotas: [{ fechaVencimiento: fechaContado, importe: cuenta.estado.total }] }
-        : automatico
-          ? { modalidad, mensualidades: { plazo, primerVencimiento } }
-          : { modalidad, cuotas: cuotas.map((q) => ({ fechaVencimiento: q.fecha, importe: q.importe })) };
-    start(async () => {
-      const r = await definirCondicionesAction({ cuentaId: cuenta.id, version: cuenta.version, datos });
-      if (r.error) return setError(r.error);
-      onListo();
-      router.refresh();
-    });
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2 text-sm">
-        {(["CONTADO", "CREDITO"] as const).map((m) => (
-          <label key={m} className="flex items-center gap-2">
-            <input type="radio" name={`modalidad-${cuenta.id}`} checked={modalidad === m} onChange={() => setModalidad(m)} />
-            {m === "CONTADO" ? "Contado (una fecha por el total)" : "Crédito (una o varias cuotas)"}
-          </label>
-        ))}
-      </div>
-      {modalidad === "CONTADO" ? (
-        <label className="block max-w-xs">
-          <span className="mb-1.5 block text-sm font-medium">Fecha de pago ({formatearImporte(cuenta.estado.total)})</span>
-          <Input type="date" value={fechaContado} onChange={(ev) => setFechaContado(ev.target.value)} aria-label="Fecha de contado" />
-        </label>
-      ) : (
-        <div className="space-y-2">
-          {admiteMensualidades && (
-            <label className="block max-w-xs">
-              <span className="mb-1.5 block text-sm font-medium">Plazo</span>
-              <select
-                value={plazo}
-                onChange={(ev) => setPlazo(ev.target.value === "MANUAL" ? "MANUAL" : (Number(ev.target.value) as PlazoMensual))}
-                className={claseSelect}
-                aria-label="Plazo del crédito"
-              >
-                {PLAZOS_MENSUALES.map((p) => (
-                  <option key={p} value={p}>
-                    {p} meses
-                  </option>
-                ))}
-                <option value="MANUAL">Cuotas manuales</option>
-              </select>
-            </label>
-          )}
-          {automatico ? (
-            <div className="space-y-2" data-mensualidades>
-              <label className="block max-w-xs">
-                <span className="mb-1.5 block text-sm font-medium">Primer vencimiento</span>
-                <Input type="date" value={primerVencimiento} onChange={(ev) => setPrimerVencimiento(ev.target.value)} aria-label="Fecha del primer vencimiento" />
-              </label>
-              <p className="text-xs text-[var(--muted)]">
-                {plazo} mensualidades por el total de {formatearImporte(cuenta.estado.total)} (incluye el impuesto de la compra), sin intereses ni comisiones. Cada mes vence el mismo
-                día; si un mes no lo tiene, vence su último día. La última cuota ajusta los centavos.
-              </p>
-              {!propuesta ? (
-                <p className="text-xs text-amber-800">Indica el primer vencimiento para ver el calendario.</p>
-              ) : "error" in propuesta ? (
-                <p className="text-xs text-red-700">{propuesta.error}</p>
-              ) : (
-                <>
-                  <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-                    <table className="w-full text-sm" aria-label="Calendario propuesto">
-                      <thead className="bg-black/[0.02] text-left text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                        <tr>
-                          <th className="border-b border-[var(--border)] px-3 py-1.5">Cuota</th>
-                          <th className="border-b border-[var(--border)] px-3 py-1.5">Vence</th>
-                          <th className="border-b border-[var(--border)] px-3 py-1.5 text-right">Importe</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {propuesta.cuotas.map((q) => (
-                          <tr key={q.numero} className="border-b border-[var(--border)] last:border-0" data-mensualidad={q.numero}>
-                            <td className="px-3 py-1.5">{q.numero}</td>
-                            <td className="px-3 py-1.5">{formatearFechaCalendario(q.fechaVencimiento)}</td>
-                            <td className="px-3 py-1.5 text-right tabular-nums">{formatearImporte(q.importe)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCuotas(propuesta.cuotas.map((q) => ({ fecha: q.fechaVencimiento, importe: q.importe })));
-                      setPlazo("MANUAL");
-                    }}
-                    className="text-sm font-medium text-[var(--brand)] hover:underline"
-                  >
-                    Editar como cuotas manuales
-                  </button>
-                </>
-              )}
-            </div>
-          ) : (
-            <>
-          {cuotas.map((q, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2">
-              <span className="w-16 text-sm text-[var(--muted)]">Cuota {i + 1}</span>
-              <Input type="date" value={q.fecha} onChange={(ev) => setCuotas((cs) => cs.map((x, j) => (j === i ? { ...x, fecha: ev.target.value } : x)))} className="w-44" aria-label={`Fecha de la cuota ${i + 1}`} />
-              <Input
-                value={q.importe}
-                onChange={(ev) => setCuotas((cs) => cs.map((x, j) => (j === i ? { ...x, importe: ev.target.value } : x)))}
-                inputMode="decimal"
-                placeholder="0.00"
-                className="w-36"
-                aria-label={`Importe de la cuota ${i + 1}`}
-              />
-              {cuotas.length > 1 && (
-                <button type="button" onClick={() => setCuotas((cs) => cs.filter((_, j) => j !== i))} className={claseSecundaria}>
-                  Quitar
-                </button>
-              )}
-            </div>
-          ))}
-          <button type="button" onClick={() => setCuotas((cs) => [...cs, { fecha: cuenta.hoy, importe: diferencia > BigInt(0) ? deCentavos(diferencia) : "" }])} className="text-sm font-medium text-[var(--brand)] hover:underline">
-            + Agregar fecha
-          </button>
-          <p className={`text-xs ${diferencia === BigInt(0) ? "text-[var(--muted)]" : "text-amber-800"}`}>
-            Suma de cuotas: {formatearImporte(deCentavos(suma))} de {formatearImporte(cuenta.estado.total)}
-            {diferencia !== BigInt(0) && ` · diferencia ${formatearImporte(deCentavos(diferencia))}`}. Se admiten fechas pasadas para compromisos ya existentes.
-          </p>
-            </>
-          )}
-        </div>
-      )}
-      <p className="text-xs text-[var(--muted)]">Guardar las condiciones no registra dinero recibido ni pagado.</p>
-      {error && (
-        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-      <div className="flex items-center gap-3">
-        <Button type="button" onClick={guardar} disabled={pendiente || (automatico && !(propuesta && "cuotas" in propuesta))}>
-          {pendiente ? "Guardando…" : "Guardar condiciones"}
-        </Button>
-        <button type="button" onClick={onListo} className={claseSecundaria} disabled={pendiente}>
           Cancelar
         </button>
       </div>

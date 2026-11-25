@@ -10,6 +10,7 @@ import type { SurtidoEntrega } from "@/lib/server/comercializacion/surtido";
 import type { EstadoCancelacionOrden } from "@/lib/server/comercializacion/cancelaciones";
 import type { EstadoCuenta } from "@/lib/comercializacion/cuentas";
 import { ComprasOrden } from "./compras-orden";
+import { AsistenteCondiciones } from "./asistente-condiciones";
 import { CuentaComercialView } from "./cuenta-comercial";
 import { EntregasOrden } from "./entregas-orden";
 import { GastosOrden } from "./gastos-orden";
@@ -206,8 +207,17 @@ export function CotizacionEmitidaView({
     cuerpo = <VistasOperacion vistas={vistas} inicial={vistaInicial} paneles={paneles} />;
   }
 
+  const cuentasPorDefinir =
+    esAdmin && orden && !ordenCancelada
+      ? [
+          ...(cuenta ? [{ cuenta, contexto: `Venta ${orden.folio}${doc.cliente ? ` · ${doc.cliente.nombre}` : ""}`, referencia: doc.condiciones }] : []),
+          ...(gastos?.resumen.gastos ?? []).flatMap((g) => (g.cuenta ? [{ cuenta: g.cuenta, contexto: g.cuenta.documento.folio }] : [])),
+        ]
+      : [];
+
   return (
     <div className="space-y-6">
+      <AsistenteCondiciones cuentas={cuentasPorDefinir} />
       <EncabezadoOperacion
         descripcion={doc.descripcion}
         clienteNombre={doc.cliente?.nombre ?? null}
