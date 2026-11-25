@@ -12,6 +12,8 @@ import { listarMediosFinancieros } from "@/lib/server/contabilidad/medios-financ
 import { ResumenControlContractual } from "@/components/control-de-obra/resumen-control-contractual";
 import { HistorialEstimacionesCliente } from "@/components/control-de-obra/historial-estimaciones-cliente";
 import { AportacionesFondo } from "@/components/control-de-obra/aportaciones-fondo";
+import { EstimacionesExternas } from "@/components/control-de-obra/estimaciones-externas";
+import { obtenerEstimacionesExternas } from "@/lib/server/control-de-obra/estimaciones-externas";
 
 // A diferencia de cliente/privado/control-contractual, esta pantalla NO
 // tiene gate propio — cualquiera con acceso al proyecto entra, igual que
@@ -36,9 +38,10 @@ export default async function ClienteGeneralControlContractualPage({
   // puedeVerFinanciero arriba (arquitectura por capas, agosto 2026).
   const puedeRegistrar = puedeRegistrarMovimientoFinancieroClienteOperativo(usuario);
 
-  const [datos, historial, aportaciones, mediosFinancieros] = await Promise.all([
+  const [datos, historial, externas, aportaciones, mediosFinancieros] = await Promise.all([
     obtenerControlContractual(usuario, id, "operativo"),
     obtenerHistorialEstimacionesCliente(usuario, id, "operativo"),
+    obtenerEstimacionesExternas(usuario, id, "operativo"),
     puedeVerFinanciero ? obtenerAportacionesFondo(usuario, id) : Promise.resolve([]),
     puedeRegistrar ? listarMediosFinancieros(usuario, true) : Promise.resolve([]),
   ]);
@@ -60,6 +63,8 @@ export default async function ClienteGeneralControlContractualPage({
         puedeRegistrar={puedeRegistrar}
         mediosFinancieros={mediosFinancieros}
       />
+
+      <EstimacionesExternas filas={externas} verPago={puedeVerFinanciero} />
 
       {puedeVerFinanciero && (
         <AportacionesFondo

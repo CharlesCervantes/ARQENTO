@@ -21,6 +21,9 @@ import { ResumenEstimacionOperativa } from "@/components/control-de-obra/resumen
 import { ConfigurarIvaEstimacion } from "@/components/control-de-obra/configurar-iva-estimacion";
 import { EmitirEstimacion } from "@/components/control-de-obra/emitir-estimacion";
 import { Card } from "@/components/ui/card";
+import { obtenerProyecto } from "@/lib/server/control-de-obra/proyectos";
+import { DetalleExterna } from "@/components/control-de-obra/estimaciones-externas";
+import { obtenerDetalleEstimacionExterna } from "@/lib/server/control-de-obra/estimaciones-externas";
 
 // Semana abierta y cerrada usan la misma fila de capa (cantidad estimada por
 // capa, noviembre 2026): las semanas históricas importadas aportan su
@@ -86,6 +89,10 @@ export default async function ClienteGeneralEstimacionPage({
         conceptos: p.conceptos.map(aFilaTablaCapa),
       }));
 
+  const externa = resumenCierre.historicoImportado
+    ? await obtenerDetalleEstimacionExterna(usuario, id, semana.id, "operativo")
+    : null;
+
   const fechaAnterior = new Date(semana.fechaInicio);
   fechaAnterior.setDate(fechaAnterior.getDate() - 7);
   const fechaSiguiente = new Date(semana.fechaInicio);
@@ -125,7 +132,13 @@ export default async function ClienteGeneralEstimacionPage({
         </p>
       )}
 
-      {sinSnapshot ? (
+      {sinSnapshot && externa ? (
+        <DetalleExterna
+          detalle={externa}
+          porcentajeAdministracion={Number((await obtenerProyecto(usuario, id)).porcentajeAdministracionDefault ?? 0)}
+          hrefControl={`/control-de-obra/${id}/cliente/general/control-contractual`}
+        />
+      ) : sinSnapshot ? (
         <Card className="p-6 text-sm text-[var(--muted)]">
           {resumenCierre.historicoImportado
             ? "Semana histórica migrada desde Excel: su estimación se emitió fuera de ARQENTO."

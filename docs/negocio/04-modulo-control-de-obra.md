@@ -1780,3 +1780,11 @@ Administrador y Director eligen qué obras ve cada Supervisor en Proyectos → A
 - Reporte General del Supervisor: solo sus pagos (por su registro de pago vinculado) y los gastos que capturó o pagó, de cualquier obra: perder el acceso no oculta lo que se le debe.
 - Gastos de Empresa: puede capturar, pero solo ve los suyos.
 - Administrador, Director y Master no cambian. Comercialización tiene su propio alcance y no cambia.
+
+## 49.15 Estimaciones emitidas antes de ARQENTO (noviembre 2026)
+
+`EstimacionExterna` guarda, por número y capa, el importe, IVA, neto, fechas y concepto de la hoja contractual de origen. Es solo consulta y la escribe el importador. Decisión: los montos coinciden con la hoja renglón por renglón y no se recalculan desde los conceptos.
+
+- Suma en estimado, saldo y avance de Control contractual (pantalla y PDF). No entra a cobrado ni por cobrar: su cobro no está conciliado.
+- La semana histórica muestra sus conceptos cargados y, si no suman lo mismo que la hoja, un «Ajuste a la hoja original».
+- La fecha de pago es la escrita en la hoja; no es un cobro. Privado exige ver información privada.

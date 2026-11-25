@@ -13,6 +13,7 @@ import {
   puedeRegistrarMovimientoFinancieroClienteOperativo,
 } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
+import { totalEstimadoExterno } from "./estimaciones-externas";
 import type { EsquemaContractual } from "@/lib/generated/prisma/enums";
 import {
   calcularImportesConcepto,
@@ -275,6 +276,8 @@ export type ControlContractual = {
     // montoContrato, nunca incluye gastos cobrables/administración de
     // gastos/IVA (ver totalTrabajosEmitidoPorCapa).
     trabajosEstimados: number;
+    // Parte de trabajosEstimados emitida antes de ARQENTO (sin conciliar cobro).
+    estimadoExterno: number;
     saldoPorEjercer: number;
     porcentajeEjercido: number;
   };
@@ -517,12 +520,13 @@ export async function obtenerControlContractual(
     capa === "privado" ? puedeVerFinancieroCliente(usuario) : puedeVerFinancieroClienteOperativo(usuario);
   const hastaSemanaFechaInicio = corte?.hastaSemanaFechaInicio;
 
-  const [montoContrato, totalEmitidoCapa, trabajosEstimados, movimientosProyecto, capasEstaCapa] = await Promise.all([
+  const [montoContrato, totalEmitidoCapa, trabajosEmitidos, estimadoExterno, movimientosProyecto, capasEstaCapa] = await Promise.all([
     corte
       ? Promise.resolve(corte.montoContrato)
       : calcularMontoContrato(proyectoId, proyecto.esquemaContractual, porcentajesDefault, capa),
     totalEmitidoPorCapa(proyectoId, capaEnum, hastaSemanaFechaInicio),
     totalTrabajosEmitidoPorCapa(proyectoId, capaEnum, hastaSemanaFechaInicio),
+    totalEstimadoExterno(proyectoId, capaEnum, hastaSemanaFechaInicio),
     db.movimientoFinancieroCliente.findMany({
       where: { proyectoId, estatus: "VIGENTE", ...(corte && { createdAt: { lte: corte.fechaCorte } }) },
       select: { tipo: true, monto: true },
@@ -549,6 +553,9 @@ export async function obtenerControlContractual(
   // usa totalEmitidoCapa (ese incluye gastos cobrables/administración de
   // gastos/IVA, que no consumen saldo contractual — ver comentario en
   // totalTrabajosEmitidoPorCapa).
+  // Las emitidas antes de ARQENTO sí consumen contrato; su cobro no está
+  // conciliado, así que no entran a `financiero`.
+  const trabajosEstimados = trabajosEmitidos + estimadoExterno;
   const saldoPorEjercer = montoContrato - trabajosEstimados;
   const porcentajeEjercido = montoContrato > 0 ? (trabajosEstimados / montoContrato) * 100 : 0;
 
@@ -584,6 +591,7 @@ export async function obtenerControlContractual(
     avanceContractual: {
       montoContrato,
       trabajosEstimados,
+      estimadoExterno,
       saldoPorEjercer,
       porcentajeEjercido,
     },

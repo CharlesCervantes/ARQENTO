@@ -27,6 +27,8 @@ import { ConfigurarIvaEstimacion } from "@/components/control-de-obra/configurar
 import { EmitirEstimacion } from "@/components/control-de-obra/emitir-estimacion";
 import { MaterializarEstimacionHistorica } from "@/components/control-de-obra/materializar-estimacion-historica";
 import { Card } from "@/components/ui/card";
+import { DetalleExterna } from "@/components/control-de-obra/estimaciones-externas";
+import { obtenerDetalleEstimacionExterna } from "@/lib/server/control-de-obra/estimaciones-externas";
 import { EstimadoPrivadoSemana } from "@/components/control-de-obra/estimado-privado-semana";
 import {
   obtenerEstimadosPrivadosSemana,
@@ -126,6 +128,10 @@ export default async function ClientePrivadoEstimacionPage({
 
   const esquemaContractual = congelado?.estimacion.esquemaContractualUsado ?? proyecto.esquemaContractual;
 
+  const externa = resumenCierre.historicoImportado
+    ? await obtenerDetalleEstimacionExterna(usuario, id, semana.id, "privado")
+    : null;
+
   const fechaAnterior = new Date(semana.fechaInicio);
   fechaAnterior.setDate(fechaAnterior.getDate() - 7);
   const fechaSiguiente = new Date(semana.fechaInicio);
@@ -165,7 +171,13 @@ export default async function ClientePrivadoEstimacionPage({
         </p>
       )}
 
-      {sinSnapshot ? (
+      {sinSnapshot && externa ? (
+        <DetalleExterna
+          detalle={externa}
+          porcentajeAdministracion={Number(proyecto.porcentajeAdministracionPrivadoDefault ?? proyecto.porcentajeAdministracionDefault ?? 0)}
+          hrefControl={`/control-de-obra/${id}/cliente/privado/control-contractual`}
+        />
+      ) : sinSnapshot ? (
         resumenCierre.historicoImportado ? (
           <Card className="p-6 text-sm text-[var(--muted)]">
             Semana histórica migrada desde Excel: su estimación se emitió fuera de ARQENTO.

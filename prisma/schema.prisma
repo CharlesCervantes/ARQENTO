@@ -113,30 +113,30 @@ model Empresa {
   // (vencimientos, fechas no futuras). null = America/Monterrey.
   zonaHoraria                String?
 
-  dominiosCorreo         DominioCorreo[]
-  usuarios               Usuario[]
-  registros              RegistroAuditoria[]
-  proyectos              Proyecto[]
-  beneficiarios          Beneficiario[]
-  semanas                Semana[]
-  avancesConcepto        AvanceConcepto[]
-  cierresSemana          CierreSemanaProyecto[]
-  cortesSemana           CorteSemanal[]
-  recibosPago            ReciboPago[]
-  estimacionesCliente    EstimacionCliente[]
-  movimientosFinancieros MovimientoFinancieroCliente[]
-  gastosObra             GastoObra[]
-  reposicionesGastos     ReposicionGastos[]
-  ordenesCompra          OrdenCompra[]
-  requisiciones          Requisicion[]
-  gastosRecurrentes      GastoRecurrente[]
-  mediosFinancieros      MedioFinanciero[]
-  egresos                Egreso[]
-  ingresos               Ingreso[]
-  facturas               Factura[]
-  trabajosProcesamiento  TrabajoProcesamientoDocumento[]
-  consumoInteligencia    RegistroConsumoInteligencia[]
-  documentosEgreso       DocumentoEgreso[]
+  dominiosCorreo          DominioCorreo[]
+  usuarios                Usuario[]
+  registros               RegistroAuditoria[]
+  proyectos               Proyecto[]
+  beneficiarios           Beneficiario[]
+  semanas                 Semana[]
+  avancesConcepto         AvanceConcepto[]
+  cierresSemana           CierreSemanaProyecto[]
+  cortesSemana            CorteSemanal[]
+  recibosPago             ReciboPago[]
+  estimacionesCliente     EstimacionCliente[]
+  movimientosFinancieros  MovimientoFinancieroCliente[]
+  gastosObra              GastoObra[]
+  reposicionesGastos      ReposicionGastos[]
+  ordenesCompra           OrdenCompra[]
+  requisiciones           Requisicion[]
+  gastosRecurrentes       GastoRecurrente[]
+  mediosFinancieros       MedioFinanciero[]
+  egresos                 Egreso[]
+  ingresos                Ingreso[]
+  facturas                Factura[]
+  trabajosProcesamiento   TrabajoProcesamientoDocumento[]
+  consumoInteligencia     RegistroConsumoInteligencia[]
+  documentosEgreso        DocumentoEgreso[]
   capacidadesInteligencia EmpresaCapacidadInteligencia[]
   productosComerciales    ProductoComercial[]
   clientesComerciales     ClienteComercial[]
@@ -363,7 +363,6 @@ model Usuario {
   // queda bloqueado al migrar.
   debeCambiarPassword Boolean @default(false)
 
-
   // Comercialización, B1 (noviembre 2026) — función "Vendedor" dentro del
   // módulo, SIN rol global nuevo: solo tiene efecto para rol SUPERVISOR de
   // una Empresa con el módulo `comercializacion` habilitado (ver
@@ -555,7 +554,8 @@ model Proyecto {
   supervisorUsuario   Usuario? @relation("ProyectoSupervisor", fields: [supervisorUsuarioId], references: [id])
   supervisorUsuarioId String?
 
-  accesosObra AccesoObra[]
+  accesosObra          AccesoObra[]
+  estimacionesExternas EstimacionExterna[]
 
   // Imagen de portada (Inicio: dashboard ejecutivo, agosto 2026) — mismo
   // patrón que GastoObra.ticketRef/ReciboPago.archivoEvidenciaRef: solo se
@@ -815,15 +815,16 @@ model Semana {
   fechaFin    DateTime
   estado      EstatusSemana @default(ABIERTA)
 
-  movimientos         MovimientoSemanal[]
-  avancesConcepto     AvanceConcepto[]
-  estimadosCapa       EstimadoCapaConcepto[]
-  cierresSemana       CierreSemanaProyecto[]
-  cortesSemana        CorteSemanal[]
-  estimacionesCliente EstimacionCliente[]
-  gastosObra          GastoObra[]
-  reposicionesGastos  ReposicionGastos[]
-  ordenesCompra       OrdenCompra[]
+  movimientos          MovimientoSemanal[]
+  avancesConcepto      AvanceConcepto[]
+  estimadosCapa        EstimadoCapaConcepto[]
+  estimacionesExternas EstimacionExterna[]
+  cierresSemana        CierreSemanaProyecto[]
+  cortesSemana         CorteSemanal[]
+  estimacionesCliente  EstimacionCliente[]
+  gastosObra           GastoObra[]
+  reposicionesGastos   ReposicionGastos[]
+  ordenesCompra        OrdenCompra[]
 
   @@unique([empresaId, numero, anio])
   @@map("semanas")
@@ -1657,6 +1658,38 @@ model EstimadoCapaConcepto {
   @@index([proyectoId, capa])
   @@index([semanaId])
   @@map("estimados_capa_concepto")
+}
+
+// Estimación emitida ANTES de ARQENTO (noviembre 2026): copia de la hoja
+// contractual de origen, una por número y capa. Solo consulta: cuenta en
+// estimado, saldo y avance de Control contractual, pero nunca en cobrado ni
+// por cobrar, folios, gastos o movimientos. Los importes son los de la hoja,
+// no se recalculan, con
+// sus decimales de origen (6) para que también cuadren los totales. importe incluye administración y es antes de IVA. Las
+// fechas se guardan como texto, tal cual vienen. La escribe el importador.
+model EstimacionExterna {
+  id         String         @id @default(cuid())
+  empresaId  String
+  proyecto   Proyecto       @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  proyectoId String
+  semana     Semana         @relation(fields: [semanaId], references: [id])
+  semanaId   String
+  capa       CapaEstimacion
+  numero     Int
+
+  importe        Decimal @db.Decimal(18, 6)
+  iva            Decimal @db.Decimal(18, 6)
+  importeNeto    Decimal @db.Decimal(18, 6)
+  fechaRecepcion String?
+  fechaPago      String?
+  concepto       String?
+  origen         String
+
+  createdAt DateTime @default(now())
+
+  @@unique([proyectoId, capa, numero])
+  @@unique([proyectoId, semanaId, capa])
+  @@map("estimaciones_externas")
 }
 
 // Gasto cobrable congelado dentro de la estimación de UNA capa — mismo
@@ -3471,8 +3504,8 @@ model CuentaComercial {
   anuladaPorId    String?
   motivoAnulacion String?
 
-  cuotas      CuotaCuentaComercial[]
-  movimientos MovimientoComercial[]
+  cuotas             CuotaCuentaComercial[]
+  movimientos        MovimientoComercial[]
   cambiosVencimiento CambioVencimientoCuota[]
 
   createdAt DateTime @default(now())
@@ -3503,7 +3536,7 @@ model CuotaCuentaComercial {
   vigente          Boolean   @default(true)
   sustituidaEn     DateTime?
 
-  aplicaciones AplicacionMovimientoComercial[]
+  aplicaciones       AplicacionMovimientoComercial[]
   // B8B — historial de cambios individuales de vencimiento. La fecha
   // originalmente pactada es la fecha anterior del primer cambio (o la
   // vigente si nunca cambió).

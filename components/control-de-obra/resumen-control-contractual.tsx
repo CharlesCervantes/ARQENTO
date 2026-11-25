@@ -47,6 +47,12 @@ export function ResumenControlContractual({
             </>
           )}
         </dl>
+        {datos.avanceContractual.estimadoExterno > 0 && (
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            Estimado incluye {formatMoney(datos.avanceContractual.estimadoExterno)} de estimaciones emitidas antes de ARQENTO, sin IVA.
+            {datos.financiero && " Cobrado y por cobrar no las incluyen: su cobro está por conciliar."}
+          </p>
+        )}
       </Card>
 
       <Card className="enter p-5">

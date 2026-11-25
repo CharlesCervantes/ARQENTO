@@ -1,6 +1,7 @@
 import "server-only";
 import { puedeVerContratoGeneralPrivado } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
+import { obtenerEstimacionesExternas, type FilaEstimacionExterna } from "./estimaciones-externas";
 import type { EsquemaContractual } from "@/lib/generated/prisma/enums";
 import { formatearRangoSemana } from "@/lib/server/semanas";
 import { db } from "@/lib/server/db";
@@ -63,6 +64,7 @@ export type DatosDocumentoEstimacion = {
   fechaCorteDocumento: string;
   controlContractual: ControlContractual;
   historial: FilaHistorialEstimacion[];
+  externas: FilaEstimacionExterna[];
   estimacionSemanal: {
     esquemaContractual: EsquemaContractual | null;
     subtotalTrabajos: number;
@@ -109,7 +111,7 @@ export async function obtenerDatosDocumentoEstimacion(
   if (capa === "privado" && !puedeVerContratoGeneralPrivado(usuario)) throw new SinPermisoError();
 
   const estimacionCorte = await obtenerOFijarCorteDocumento(usuario, estimacionClienteCapaId);
-  const [proyecto, semana, congelado, controlContractual, historial] = await Promise.all([
+  const [proyecto, semana, congelado, controlContractual, historial, externas] = await Promise.all([
     obtenerProyecto(usuario, estimacionCorte.proyectoId),
     db.semana.findUniqueOrThrow({
       where: { id: estimacionCorte.semanaId },
@@ -118,6 +120,7 @@ export async function obtenerDatosDocumentoEstimacion(
     obtenerEstimacionCliente(usuario, estimacionCorte.proyectoId, estimacionCorte.semanaId, estimacionCorte.capa),
     obtenerControlContractual(usuario, estimacionCorte.proyectoId, capa, estimacionCorte.corte),
     obtenerHistorialEstimacionesCliente(usuario, estimacionCorte.proyectoId, capa, estimacionCorte.corte),
+    obtenerEstimacionesExternas(usuario, estimacionCorte.proyectoId, capa, { hasta: estimacionCorte.corte.hastaSemanaFechaInicio }),
   ]);
 
   // Una capa EMITIDA siempre tiene snapshot congelado — obtenerOFijarCorteDocumento
@@ -150,6 +153,7 @@ export async function obtenerDatosDocumentoEstimacion(
     fechaCorteDocumento: estimacionCorte.corte.fechaCorte.toISOString(),
     controlContractual,
     historial,
+    externas,
     estimacionSemanal: {
       esquemaContractual: congelado.estimacion.esquemaContractualUsado ?? proyecto.esquemaContractual,
       subtotalTrabajos: congelado.estimacion.subtotal,
