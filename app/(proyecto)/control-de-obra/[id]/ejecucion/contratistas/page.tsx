@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/server/auth/dal";
-import { puedeAdministrarProyectos, puedeVerRecibosFinancieros } from "@/lib/server/permisos";
+import { puedeAdministrarProyectos, puedeAsignarConceptos, puedeVerRecibosFinancieros } from "@/lib/server/permisos";
 import {
   obtenerContratistasProyecto,
   listarContratistasDisponibles,
@@ -48,6 +48,7 @@ export default async function ContratistasPage({
         contratistasDisponibles={contratistasDisponibles}
         avancePorConcepto={avancePorConcepto}
         puedeAdministrar={puedeAdministrar}
+        puedeAsignar={puedeAsignarConceptos(usuario)}
         puedeVerRecibosFinancieros={puedeVerRecibos}
         resumenFinancieroPorBeneficiario={resumenFinancieroPorBeneficiario}
         historialPorBeneficiario={historialPorBeneficiario}

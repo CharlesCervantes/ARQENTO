@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Table, Thead, Tr, Th, Td } from "@/components/ui/table";
 import { FormNuevoContrato } from "./form-nuevo-contrato";
 import { FormAsignarConcepto } from "./form-asignar-concepto";
+import { QuitarConcepto } from "./quitar-concepto";
 import { BarraAvance } from "./barra-avance";
 import { ResumenFinancieroIndicadores } from "./expediente-financiero-contratista";
 import { ContratistaTabs } from "./contratista-tabs";
@@ -60,6 +61,7 @@ export function ContratistasView({
   contratistasDisponibles,
   avancePorConcepto,
   puedeAdministrar,
+  puedeAsignar,
   puedeVerRecibosFinancieros,
   resumenFinancieroPorBeneficiario,
   historialPorBeneficiario,
@@ -70,6 +72,7 @@ export function ContratistasView({
   contratistasDisponibles: ContratistasDisponibles;
   avancePorConcepto: Map<string, AvanceContratista>;
   puedeAdministrar: boolean;
+  puedeAsignar: boolean;
   puedeVerRecibosFinancieros: boolean;
   resumenFinancieroPorBeneficiario: Map<string, ResumenFinancieroContratista>;
   historialPorBeneficiario: Map<string, CorteHistorial[]>;
@@ -205,6 +208,7 @@ export function ContratistasView({
                                   <Th className="text-right">Ejecutado</Th>
                                   <Th className="text-right">Pendiente</Th>
                                   <Th className="text-right">Avance</Th>
+                                  {puedeAsignar && <Th><span className="sr-only">Acciones</span></Th>}
                                 </Tr>
                               </Thead>
                               <tbody>
@@ -249,6 +253,15 @@ export function ContratistasView({
                                           </Td>
                                         </>
                                       )}
+                                      {puedeAsignar && (
+                                        <Td className="align-middle">
+                                          <QuitarConcepto
+                                            proyectoId={proyectoId}
+                                            asignacionId={asignacion.id}
+                                            descripcion={asignacion.concepto.descripcion}
+                                          />
+                                        </Td>
+                                      )}
                                     </Tr>
                                   );
                                 })}
@@ -260,7 +273,7 @@ export function ContratistasView({
                             </p>
                           )}
 
-                          {puedeAdministrar && hayConceptosDisponibles && (
+                          {puedeAsignar && hayConceptosDisponibles && (
                             <details className="mt-3">
                               <summary className="inline-flex w-fit cursor-pointer list-none items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-sm font-medium text-[var(--foreground)] transition-colors duration-150 ease-out select-none hover:bg-black/[0.03] [&::-webkit-details-marker]:hidden">
                                 + Asignar concepto
