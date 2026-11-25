@@ -151,6 +151,7 @@ function PartidaAvance({
   }
 
   const conMovimiento = partida.conceptos.filter((c) => c.estaSemana > 0).length;
+  const excedidos = partida.conceptos.filter((c) => c.contratadoSiSeAprueba !== null).length;
 
   return (
     <Card
@@ -169,6 +170,11 @@ function PartidaAvance({
             {partida.conceptos.length} concepto
             {partida.conceptos.length === 1 ? "" : "s"}
             {conMovimiento > 0 && ` · ${conMovimiento} con movimiento esta semana`}
+            {excedidos > 0 && (
+              <span className="font-medium text-red-700">
+                {` · ${excedidos} excede${excedidos === 1 ? "" : "n"} lo contratado`}
+              </span>
+            )}
           </span>
         </summary>
 
@@ -400,7 +406,14 @@ function FilaConcepto({
           excede ? "text-red-700" : "text-[var(--muted)]"
         )}
       >
-        {excede ? `Excede ${formatCantidad(pendiente.abs())}` : formatCantidad(pendiente)}
+        {excede ? (
+          <>
+            <span className="block font-medium">Excede {formatCantidad(pendiente.abs())}</span>
+            {precio !== null && <span className="block text-[11px]">{formatMoney(pendiente.abs().times(precio))}</span>}
+          </>
+        ) : (
+          formatCantidad(pendiente)
+        )}
       </Td>
       <Td>
         <BarraAvance porcentaje={avancePorcentaje} />
@@ -413,6 +426,11 @@ function FilaConcepto({
               proyectoId={proyectoId}
               conceptoId={concepto.id}
               semanaId={semanaId}
+              excedente={
+                concepto.contratadoSiSeAprueba === null
+                  ? null
+                  : { actual: concepto.cantidadTotal, nuevo: concepto.contratadoSiSeAprueba, unidad: concepto.unidad, precio }
+              }
             />
           )}
         </div>
@@ -432,33 +450,69 @@ function ControlesAprobacion({
   proyectoId,
   conceptoId,
   semanaId,
+  excedente,
 }: {
   proyectoId: string;
   conceptoId: string;
   semanaId: string;
+  excedente: { actual: number; nuevo: number; unidad: string; precio: number | null } | null;
 }) {
   const [enviando, setEnviando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const [error, setError] = useState<string>();
 
   async function cambiarEstatus(nuevoEstatus: "APROBADO" | "RECHAZADO") {
     setEnviando(true);
+    setError(undefined);
     try {
-      await cambiarEstatusAprobacionAvanceAction(
+      const r = await cambiarEstatusAprobacionAvanceAction(
         proyectoId,
         conceptoId,
         semanaId,
-        nuevoEstatus
+        nuevoEstatus,
+        nuevoEstatus === "APROBADO" ? excedente?.nuevo : undefined
       );
+      setError(r.error);
+      setConfirmando(false);
     } finally {
       setEnviando(false);
     }
   }
 
+  if (confirmando && excedente) {
+    const diferencia = new Prisma.Decimal(excedente.nuevo).minus(excedente.actual);
+    return (
+      <div className="min-w-[190px] space-y-1 text-[11px]">
+        <p className="text-red-700">
+          Excede lo contratado. Al aprobar pasa de {formatCantidad(excedente.actual)} a{" "}
+          <strong>
+            {formatCantidad(excedente.nuevo)} {excedente.unidad}
+          </strong>
+          {excedente.precio !== null && ` (+${formatMoney(diferencia.times(excedente.precio))} de mano de obra)`} y sube el contrato.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={enviando}
+            onClick={() => cambiarEstatus("APROBADO")}
+            className="font-medium text-emerald-700 hover:underline disabled:opacity-50"
+          >
+            {enviando ? "Aprobando…" : "Aprobar y ampliar"}
+          </button>
+          <button type="button" disabled={enviando} onClick={() => setConfirmando(false)} className="text-[var(--muted)] hover:underline">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <button
         type="button"
         disabled={enviando}
-        onClick={() => cambiarEstatus("APROBADO")}
+        onClick={() => (excedente ? setConfirmando(true) : cambiarEstatus("APROBADO"))}
         className="text-[11px] font-medium text-emerald-700 transition-colors duration-150 ease-out hover:underline disabled:opacity-50"
       >
         Aprobar
@@ -471,6 +525,7 @@ function ControlesAprobacion({
       >
         Rechazar
       </button>
+      {error && <p className="w-full min-w-[150px] text-[11px] text-red-700">{error}</p>}
     </div>
   );
 }
