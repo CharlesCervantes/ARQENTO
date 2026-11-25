@@ -303,6 +303,8 @@ model Usuario {
   cortesSemanaGenerados   CorteSemanal[]         @relation("CorteSemanalGenerado")
   proyectosSupervisados   Proyecto[]             @relation("ProyectoSupervisor")
   accesosObra             AccesoObra[]
+  propuestasSolicitadas   PropuestaContrato[]    @relation("PropuestaSolicitada")
+  propuestasResueltas     PropuestaContrato[]    @relation("PropuestaResuelta")
 
   recibosGenerados       ReciboPago[] @relation("ReciboPagoGenerado")
   recibosEvidenciaSubida ReciboPago[] @relation("ReciboPagoEvidenciaSubida")
@@ -509,6 +511,57 @@ enum EsquemaContractual {
 // Solo limita al rol SUPERVISOR; Administrador/Director ven todas. Se asigna
 // en Proyectos → Accesos de supervisores. Distinto de
 // Proyecto.supervisorUsuario (responsable que aparece en documentos).
+// Partida o concepto que propone un Supervisor para Contrato General
+// (noviembre 2026). Vive aparte a propósito: nada de contrato, avance,
+// asignaciones ni estimaciones la lee. Al aprobarse crea la fila real.
+enum TipoPropuestaContrato {
+  PARTIDA
+  CONCEPTO
+}
+
+enum EstatusPropuestaContrato {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  RETIRADA
+}
+
+model PropuestaContrato {
+  id                        String                   @id @default(cuid())
+  empresaId                 String
+  proyecto                  Proyecto                 @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  proyectoId                String
+  tipo                      TipoPropuestaContrato
+  estatus                   EstatusPropuestaContrato @default(PENDIENTE)
+  // Concepto: su partida real, o la partida propuesta que aún no existe.
+  partida                   Partida?                 @relation(fields: [partidaId], references: [id], onDelete: SetNull)
+  partidaId                 String?
+  padre                     PropuestaContrato?       @relation("PropuestaPadre", fields: [padreId], references: [id], onDelete: SetNull)
+  padreId                   String?
+  hijas                     PropuestaContrato[]      @relation("PropuestaPadre")
+  descripcion               String
+  icono                     String?
+  color                     String?
+  unidad                    String?
+  cantidad                  Decimal?                 @db.Decimal(14, 3)
+  precioUnitarioContratista Decimal?                 @db.Decimal(14, 2)
+  precioUnitarioMateriales  Decimal?                 @db.Decimal(14, 2)
+  solicitadoPor             Usuario                  @relation("PropuestaSolicitada", fields: [solicitadoPorId], references: [id])
+  solicitadoPorId           String
+  resueltoPor               Usuario?                 @relation("PropuestaResuelta", fields: [resueltoPorId], references: [id])
+  resueltoPorId             String?
+  resueltoEn                DateTime?
+  motivo                    String?
+  // Partida o Concepto que creó al aprobarse.
+  resultadoId               String?
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+
+  @@index([proyectoId, estatus])
+  @@index([empresaId, estatus])
+  @@map("propuestas_contrato")
+}
+
 model AccesoObra {
   id         String   @id @default(cuid())
   usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
@@ -555,6 +608,7 @@ model Proyecto {
   supervisorUsuarioId String?
 
   accesosObra          AccesoObra[]
+  propuestasContrato   PropuestaContrato[]
   estimacionesExternas EstimacionExterna[]
 
   // Imagen de portada (Inicio: dashboard ejecutivo, agosto 2026) — mismo
@@ -968,7 +1022,8 @@ model Partida {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  conceptos Concepto[]
+  conceptos  Concepto[]
+  propuestas PropuestaContrato[]
 
   @@index([proyectoId])
   @@map("partidas")

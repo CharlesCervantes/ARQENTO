@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CampoDinero } from "@/components/ui/campo-dinero";
-import { crearConceptoAction, type FormState } from "@/app/(proyecto)/control-de-obra/[id]/actions";
+import { crearConceptoAction, proponerConceptoEnPropuestaAction, type FormState } from "@/app/(proyecto)/control-de-obra/[id]/actions";
 import type { EsquemaContractual } from "@/lib/generated/prisma/enums";
 
 // Solo campos operativos (Contrato General) — descripción, unidad, cantidad,
@@ -17,12 +17,17 @@ export function FormNuevoConcepto({
   partidaId,
   proyectoId,
   esquemaContractual,
+  proponer = false,
+  enPropuesta = false,
 }: {
+  // Con `enPropuesta`, es el id de una partida todavía por aprobar.
   partidaId: string;
   proyectoId: string;
   esquemaContractual: EsquemaContractual | null;
+  proponer?: boolean;
+  enPropuesta?: boolean;
 }) {
-  const action = crearConceptoAction.bind(null, partidaId, proyectoId);
+  const action = (enPropuesta ? proponerConceptoEnPropuestaAction : crearConceptoAction).bind(null, partidaId, proyectoId);
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
     undefined
@@ -59,7 +64,7 @@ export function FormNuevoConcepto({
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending} className="shrink-0">
-          {pending ? "Guardando…" : "Guardar concepto"}
+          {pending ? "Guardando…" : proponer ? "Enviar a aprobación" : "Guardar concepto"}
         </Button>
         {state?.error && <p className="text-sm text-red-700">{state.error}</p>}
       </div>

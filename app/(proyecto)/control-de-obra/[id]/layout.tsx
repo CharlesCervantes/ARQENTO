@@ -11,6 +11,7 @@ import {
   ProyectoNoEncontradoError,
 } from "@/lib/server/control-de-obra/proyectos";
 import { hayAvancePendiente } from "@/lib/server/control-de-obra/avance";
+import { hayPropuestasPendientes } from "@/lib/server/control-de-obra/propuestas-contrato";
 import { hayGastosPendientesRevision } from "@/lib/server/control-de-obra/gastos";
 import { DirtyAvanceProvider } from "@/components/control-de-obra/dirty-avance-context";
 import { AppShell } from "@/app/(app)/_components/app-shell";
@@ -44,16 +45,16 @@ export default async function ProyectoLayout({
   // Puntito de "algo pendiente" junto a Avance de obra/Gastos — mismo
   // criterio que en el sidebar global (solo quien puede aprobar).
   const puedeVerAlertas = puedeAdministrarProyectos(usuario);
-  const [avancePendiente, gastosPendientes] = puedeVerAlertas
-    ? await Promise.all([hayAvancePendiente(id), hayGastosPendientesRevision(id)])
-    : [false, false];
+  const [avancePendiente, gastosPendientes, propuestasPendientes] = puedeVerAlertas
+    ? await Promise.all([hayAvancePendiente(id), hayGastosPendientesRevision(id), hayPropuestasPendientes({ proyectoId: id })])
+    : [false, false, false];
 
   const grupos = [
     {
       label: "Contrato",
       hrefActivo: `/control-de-obra/${id}/contrato`,
       hijos: [
-        { href: `/control-de-obra/${id}/contrato/general`, label: "General" },
+        { href: `/control-de-obra/${id}/contrato/general`, label: "General", pendiente: propuestasPendientes },
         ...(puedeVerPrivado
           ? [{ href: `/control-de-obra/${id}/contrato/privado`, label: "Privado" }]
           : []),

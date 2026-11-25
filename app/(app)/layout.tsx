@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/server/auth/dal";
 import { empresaTieneModulo, esMaster, obtenerModulosVisibles, puedeAdministrarProyectos } from "@/lib/server/permisos";
 import { contarPendientesPorProyecto } from "@/lib/server/control-de-obra/avance";
+import { hayPropuestasPendientes } from "@/lib/server/control-de-obra/propuestas-contrato";
 import { contarGastosPendientesRevisionPorProyecto } from "@/lib/server/control-de-obra/gastos";
 import { RUTA_MODULO } from "@/lib/modulos";
 import { NOMBRE_ROL } from "@/lib/roles";
@@ -28,11 +29,12 @@ export default async function AppLayout({
   // consulta datos de obras.
   let hayPendientesProyectos = false;
   if (usuario.empresa && empresaTieneModulo(usuario, "control_de_obra") && puedeAdministrarProyectos(usuario)) {
-    const [avancePendientes, gastosPendientes] = await Promise.all([
+    const [avancePendientes, gastosPendientes, propuestas] = await Promise.all([
       contarPendientesPorProyecto(usuario.empresa.id),
       contarGastosPendientesRevisionPorProyecto(usuario.empresa.id),
+      hayPropuestasPendientes({ empresaId: usuario.empresa.id }),
     ]);
-    hayPendientesProyectos = avancePendientes.size > 0 || gastosPendientes.size > 0;
+    hayPendientesProyectos = avancePendientes.size > 0 || gastosPendientes.size > 0 || propuestas;
   }
 
   const modulosVisibles = await obtenerModulosVisibles(usuario);

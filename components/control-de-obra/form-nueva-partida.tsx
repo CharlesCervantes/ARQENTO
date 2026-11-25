@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 import { crearPartidaAction, type FormState } from "@/app/(proyecto)/control-de-obra/[id]/actions";
 import { ICONOS_PARTIDA, COLORES_PARTIDA } from "@/lib/control-de-obra/iconos-partida";
 
-export function FormNuevaPartida({ proyectoId }: { proyectoId: string }) {
+export function FormNuevaPartida({ proyectoId, proponer = false }: { proyectoId: string; proponer?: boolean }) {
   const action = crearPartidaAction.bind(null, proyectoId);
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
@@ -30,7 +30,7 @@ export function FormNuevaPartida({ proyectoId }: { proyectoId: string }) {
           <Input name="nombre" required placeholder="Ej. Obra Civil" />
         </div>
         <Button type="submit" disabled={pending}>
-          {pending ? "Agregando…" : "+ Agregar partida"}
+          {pending ? "Agregando…" : proponer ? "Proponer partida" : "+ Agregar partida"}
         </Button>
       </div>
 
@@ -94,6 +94,7 @@ export function FormNuevaPartida({ proyectoId }: { proyectoId: string }) {
         </div>
       )}
 
+      {proponer && <p className="text-xs text-[var(--muted)]">Quedará por aprobar. Mientras tanto puedes agregarle conceptos.</p>}
       {state?.error && <p className="text-sm text-red-700">{state.error}</p>}
     </form>
   );

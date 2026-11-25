@@ -294,7 +294,7 @@ export async function listarContratistasDisponibles(usuario: UsuarioSesion) {
 
 // icono/color se validan contra el catálogo curado — nunca un string libre
 // (evita que alguien mande cualquier valor directo a la API).
-const DatosPartidaSchema = z.object({
+export const DatosPartidaSchema = z.object({
   nombre: z.string().trim().min(1, "El nombre de la partida es obligatorio."),
   orden: z.coerce.number().int().default(0),
   icono: z.enum(CLAVES_ICONOS_PARTIDA as [string, ...string[]]).optional().nullable(),
@@ -361,7 +361,7 @@ export async function editarPartida(
 // son exclusivos de Contrato General Privado (DatosConceptoPrivadoSchema),
 // nunca se capturan aquí ni al crear ni al editar (decisión de sesión,
 // agosto 2026 — separación real por pestaña).
-const DatosConceptoSchema = z.object({
+export const DatosConceptoSchema = z.object({
   descripcion: z.string().trim().min(1, "La descripción es obligatoria."),
   unidad: z.string().trim().min(1, "La unidad es obligatoria."),
   cantidadContratada: z.coerce
@@ -390,7 +390,7 @@ const DatosConceptoEstructuralSchema = z.object({
 // es seguro; editarConceptoEstructural NO llama a esta función porque si ya
 // existiera un valor legado, forzarlo a null lo destruiría (precisión de
 // sesión, agosto 2026).
-function normalizarCostosParaCreacion<T extends { precioUnitarioMateriales?: number | null }>(
+export function normalizarCostosParaCreacion<T extends { precioUnitarioMateriales?: number | null }>(
   datos: T,
   esquema: EsquemaContractual | null
 ): T {
