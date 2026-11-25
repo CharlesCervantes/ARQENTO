@@ -3,6 +3,7 @@ import * as z from "zod";
 import { db } from "@/lib/server/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { registrarAuditoriaTx } from "@/lib/server/auditoria";
+import { filtroReposicionesVisibles } from "./obras-visibles";
 import { puedeCapturarGastos, puedeRegistrarAbonoReposicion, puedeVerContabilidad } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { formatMoney } from "@/lib/dinero";
@@ -280,7 +281,7 @@ export async function obtenerReposiciones(
   await obtenerProyecto(usuario, proyectoId);
 
   const reposiciones = await db.reposicionGastos.findMany({
-    where: { proyectoId, semanaId },
+    where: { proyectoId, semanaId, ...filtroReposicionesVisibles(usuario) },
     include: {
       beneficiario: { select: { nombre: true } },
       creadoPor: { select: { nombre: true } },

@@ -599,7 +599,7 @@ export async function obtenerGastos(
 
   const categoriasOcultas = categoriasOcultasPara(usuario);
   const gastos = await db.gastoObra.findMany({
-    where: { proyectoId, semanaId, ...(categoriasOcultas.length > 0 && { categoria: { notIn: categoriasOcultas } }) },
+    where: { AND: [filtroGastosVisibles(usuario)], proyectoId, semanaId, ...(categoriasOcultas.length > 0 && { categoria: { notIn: categoriasOcultas } }) },
     include: SELECT_FILA_GASTO,
     orderBy: { fecha: "desc" },
   });

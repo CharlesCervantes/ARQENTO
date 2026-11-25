@@ -24,6 +24,53 @@ export function filtroObrasVisibles(usuario: UsuarioSesion): Prisma.ProyectoWher
 export function filtroGastosVisibles(usuario: UsuarioSesion): Prisma.GastoObraWhereInput {
   if (!limitadoASusObras(usuario)) return {};
   return {
-    OR: [{ proyecto: filtroObrasVisibles(usuario) }, { proyecto: { tipo: "OFICINA" }, capturadoPorId: usuario.id }],
+    AND: [
+      { OR: [{ proyecto: filtroObrasVisibles(usuario) }, { proyecto: { tipo: "OFICINA" }, capturadoPorId: usuario.id }] },
+      {
+        OR: [
+          { tratamientoCliente: { not: "COBRABLE_SOLO_PRIVADO" } },
+          { capturadoPorId: usuario.id },
+          { pagador: { usuarioId: usuario.id } },
+        ],
+      },
+    ],
+  };
+}
+
+// Lo «Cobrable solo en Privado» no existe para el Supervisor: ni el gasto, ni
+// su orden de compra, requisición o reposición. Conserva lo que él mismo
+// capturó, solicitó o pagó, para no ocultarle lo que se le debe.
+
+export function filtroOrdenesVisibles(usuario: UsuarioSesion): Prisma.OrdenCompraWhereInput {
+  if (!limitadoASusObras(usuario)) return {};
+  return {
+    proyecto: filtroObrasVisibles(usuario),
+    AND: [
+      {
+        OR: [
+          {
+            tratamientoCliente: { not: "COBRABLE_SOLO_PRIVADO" },
+            gastosGenerados: { none: { tratamientoCliente: "COBRABLE_SOLO_PRIVADO" } },
+          },
+          { creadoPorId: usuario.id },
+        ],
+      },
+    ],
+  };
+}
+
+export function filtroRequisicionesVisibles(usuario: UsuarioSesion): Prisma.RequisicionWhereInput {
+  if (!limitadoASusObras(usuario)) return {};
+  return {
+    proyecto: filtroObrasVisibles(usuario),
+    AND: [{ OR: [{ ordenCompra: { is: null } }, { ordenCompra: { is: filtroOrdenesVisibles(usuario) } }, { solicitantePorId: usuario.id }] }],
+  };
+}
+
+export function filtroReposicionesVisibles(usuario: UsuarioSesion): Prisma.ReposicionGastosWhereInput {
+  if (!limitadoASusObras(usuario)) return {};
+  return {
+    proyecto: filtroObrasVisibles(usuario),
+    AND: [{ OR: [{ gastos: { none: { tratamientoCliente: "COBRABLE_SOLO_PRIVADO", capturadoPorId: { not: usuario.id } } } }, { beneficiario: { usuarioId: usuario.id } }] }],
   };
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/server/db";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError } from "@/lib/server/control-de-obra/proyectos";
-import { filtroObrasVisibles } from "@/lib/server/control-de-obra/obras-visibles";
+import { filtroGastosVisibles, filtroObrasVisibles } from "@/lib/server/control-de-obra/obras-visibles";
 import { puedeVerInformacionPrivada, puedeVerContabilidad, puedeVerInicio } from "@/lib/server/permisos";
 import { obtenerOCrearSemanaActual, formatearRangoSemana } from "@/lib/server/semanas";
 import {
@@ -595,7 +595,7 @@ async function cargarDatosDashboard(
 
   const gastosPendientes = await db.gastoObra.groupBy({
     by: ["proyectoId"],
-    where: { proyectoId: { in: proyectoIds }, estatus: "PENDIENTE_REVISION" },
+    where: { AND: [filtroGastosVisibles(usuario)], proyectoId: { in: proyectoIds }, estatus: "PENDIENTE_REVISION" },
     _count: { _all: true },
   });
 
