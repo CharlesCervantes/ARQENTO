@@ -61,6 +61,7 @@ async function sembrar() {
       { id: PROYECTO_AJENO, empresaId: EMPRESA_AJENA, nombre: "Obra Ajena" },
     ],
   });
+  await db.accesoObra.create({ data: { usuarioId: supervisor.id, proyectoId: PROYECTO } });
   const semana = { numero: 41, anio: 2026, fechaInicio: new Date(Date.UTC(2026, 9, 5)), fechaFin: new Date(Date.UTC(2026, 9, 11)) };
   await db.semana.createMany({
     data: [

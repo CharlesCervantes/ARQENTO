@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileInput } from "@/components/ui/file-input";
 import { formatMoney } from "@/lib/dinero";
+import { opcionesTratamientoCliente } from "@/lib/control-de-obra/tratamiento-cliente";
 import {
   categoriasParaAmbito,
   CATEGORIA_GASTO_LABEL,
@@ -34,12 +35,6 @@ const METODOS_PAGO = [
   { value: "TARJETA_CREDITO", label: "Tarjeta crédito" },
 ];
 
-const TRATAMIENTOS_CLIENTE = [
-  { value: "NO_COBRABLE", label: "No cobrable al cliente" },
-  { value: "COBRABLE_EN_ESTIMACION", label: "Cobrable en estimación" },
-  { value: "INCLUIDO_EN_CONTRATO", label: "Incluido en contrato" },
-];
-
 // Modal tipo wizard — Destino (solo desde el acceso global, sin proyecto de
 // contexto) → Gasto → Quién/cómo se pagó → Evidencia. Pensado para llenarse
 // desde el celular en obra — campos mínimos, input de archivo con
@@ -58,6 +53,7 @@ export function FormularioGasto({
   beneficiarios,
   beneficiarioVinculado,
   gasto,
+  verPrivado,
   onClose,
 }: {
   // Ausentes = modal abierto desde el acceso global "+ Registrar gasto" (sin
@@ -71,6 +67,7 @@ export function FormularioGasto({
   beneficiarios: { id: string; nombre: string; tipo: string }[];
   beneficiarioVinculado: { id: string; nombre: string } | null;
   gasto: FilaGasto | null;
+  verPrivado: boolean;
   onClose: () => void;
 }) {
   const esGlobal = !proyectoId;
@@ -410,7 +407,7 @@ export function FormularioGasto({
                   defaultValue={gasto?.tratamientoCliente ?? "NO_COBRABLE"}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15"
                 >
-                  {TRATAMIENTOS_CLIENTE.map((t) => (
+                  {opcionesTratamientoCliente(verPrivado).map((t) => (
                     <option key={t.value} value={t.value}>
                       {t.label}
                     </option>

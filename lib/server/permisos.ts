@@ -101,6 +101,14 @@ export function puedeAdministrarProyectos(usuario: UsuarioSesion): boolean {
 }
 
 /**
+ * Elegir qué obras puede ver cada Supervisor — solo Administrador/Director de
+ * la Empresa (Master es plataforma y no opera el tenant).
+ */
+export function puedeAsignarObras(usuario: UsuarioSesion): boolean {
+  return usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR";
+}
+
+/**
  * Eliminar un proyecto (borrado en cascada, irreversible) es más restrictivo
  * que administrarlo — a propósito no incluye MASTER (decisión de sesión,
  * agosto 2026: el rol de plataforma no debe poder borrar datos de un tenant

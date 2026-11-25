@@ -6,6 +6,7 @@ import { puedeCapturarGastos, puedeAutorizarOrdenesCompra } from "@/lib/server/p
 import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
+import { filtroObrasVisibles } from "./obras-visibles";
 import { EMPRESA_PROYECTO_LABEL } from "./proyecto-oficina";
 
 // Requisición = la necesidad detectada en obra/Empresa, sin proveedor ni
@@ -73,7 +74,7 @@ export async function editarRequisicion(usuario: UsuarioSesion, requisicionId: s
   const empresaId = requerirEmpresa(usuario);
   const datos = DatosRequisicionSchema.parse(datosCrudos);
 
-  const anterior = await db.requisicion.findFirst({ where: { id: requisicionId, empresaId } });
+  const anterior = await db.requisicion.findFirst({ where: { id: requisicionId, empresaId, proyecto: filtroObrasVisibles(usuario) } });
   if (!anterior) throw new RegistroNoEncontradoError("La requisición");
   if (!ESTATUS_EDITABLES_REQUISICION.includes(anterior.estatus as (typeof ESTATUS_EDITABLES_REQUISICION)[number])) {
     throw new ValidacionError("Esta requisición ya no se puede editar.");
@@ -147,7 +148,7 @@ export async function cancelarRequisicion(usuario: UsuarioSesion, requisicionId:
   const empresaId = requerirEmpresa(usuario);
   const motivo = MotivoSchema.parse(motivoCrudo);
 
-  const requisicion = await db.requisicion.findFirst({ where: { id: requisicionId, empresaId } });
+  const requisicion = await db.requisicion.findFirst({ where: { id: requisicionId, empresaId, proyecto: filtroObrasVisibles(usuario) } });
   if (!requisicion) throw new RegistroNoEncontradoError("La requisición");
   if (requisicion.solicitantePorId !== usuario.id && !puedeAutorizarOrdenesCompra(usuario)) {
     throw new SinPermisoError();
@@ -195,7 +196,7 @@ export async function agregarCotizacion(usuario: UsuarioSesion, requisicionId: s
   const empresaId = requerirEmpresa(usuario);
   const datos = DatosCotizacionSchema.parse(datosCrudos);
 
-  const requisicion = await db.requisicion.findFirst({ where: { id: requisicionId, empresaId } });
+  const requisicion = await db.requisicion.findFirst({ where: { id: requisicionId, empresaId, proyecto: filtroObrasVisibles(usuario) } });
   if (!requisicion) throw new RegistroNoEncontradoError("La requisición");
   if (!ESTATUS_EDITABLES_REQUISICION.includes(requisicion.estatus as (typeof ESTATUS_EDITABLES_REQUISICION)[number])) {
     throw new ValidacionError("Esta requisición ya no acepta nuevas cotizaciones.");
@@ -410,7 +411,7 @@ export async function obtenerRequisicion(usuario: UsuarioSesion, requisicionId: 
   const empresaId = requerirEmpresa(usuario);
 
   const requisicion = await db.requisicion.findFirst({
-    where: { id: requisicionId, empresaId },
+    where: { id: requisicionId, empresaId, proyecto: filtroObrasVisibles(usuario) },
     include: INCLUDE_REQUISICION,
   });
   if (!requisicion) throw new RegistroNoEncontradoError("La requisición");
@@ -427,7 +428,7 @@ export async function obtenerRefEvidenciaRequisicion(
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
   const requisicion = await db.requisicion.findFirst({
-    where: { id: requisicionId, empresaId },
+    where: { id: requisicionId, empresaId, proyecto: filtroObrasVisibles(usuario) },
     select: { evidenciaRef: true },
   });
   if (!requisicion) throw new RegistroNoEncontradoError("La requisición");
@@ -438,7 +439,7 @@ export async function obtenerRefArchivoCotizacion(usuario: UsuarioSesion, cotiza
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
   const cotizacion = await db.cotizacion.findFirst({
-    where: { id: cotizacionId, requisicion: { empresaId } },
+    where: { id: cotizacionId, requisicion: { empresaId, proyecto: filtroObrasVisibles(usuario) } },
     select: { archivoRef: true },
   });
   if (!cotizacion) throw new RegistroNoEncontradoError("La cotización");
@@ -455,7 +456,7 @@ export async function obtenerRequisicionesGlobal(usuario: UsuarioSesion): Promis
   const empresaId = requerirEmpresa(usuario);
 
   const requisiciones = await db.requisicion.findMany({
-    where: { empresaId, estatus: { in: ["PENDIENTE", "EN_COTIZACION"] } },
+    where: { empresaId, proyecto: filtroObrasVisibles(usuario), estatus: { in: ["PENDIENTE", "EN_COTIZACION"] } },
     include: INCLUDE_REQUISICION,
     orderBy: { createdAt: "desc" },
   });

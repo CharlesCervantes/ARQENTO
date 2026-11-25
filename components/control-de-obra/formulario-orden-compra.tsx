@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/dinero";
+import { opcionesTratamientoCliente } from "@/lib/control-de-obra/tratamiento-cliente";
 import {
   crearOrdenCompraAction,
   editarOrdenCompraAction,
@@ -43,6 +44,7 @@ export function FormularioOrdenCompra({
   proveedores,
   orden,
   requisicion,
+  verPrivado,
   onClose,
 }: {
   proyectoId: string;
@@ -50,6 +52,7 @@ export function FormularioOrdenCompra({
   proveedores: { id: string; nombre: string }[];
   orden: FilaOrdenCompra | null;
   requisicion?: OrigenRequisicion;
+  verPrivado: boolean;
   onClose: () => void;
 }) {
   const action = orden
@@ -236,6 +239,21 @@ export function FormularioOrdenCompra({
           <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] pt-2 text-sm font-semibold text-[var(--foreground)]">
             Total <span className="tabular-nums">{formatMoney(total)}</span>
           </div>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-[var(--foreground)]">Tratamiento para cliente</span>
+            <select
+              name="tratamientoCliente"
+              defaultValue={orden?.tratamientoCliente ?? "NO_COBRABLE"}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15"
+            >
+              {opcionesTratamientoCliente(verPrivado).map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
             <input

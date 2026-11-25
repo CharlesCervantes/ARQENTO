@@ -1,3 +1,4 @@
+import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { requireSession } from "@/lib/server/auth/dal";
 import { puedeCapturarGastos, puedeAutorizarOrdenesCompra } from "@/lib/server/permisos";
 import { obtenerOCrearSemanaActual } from "@/lib/server/semanas";
@@ -47,6 +48,7 @@ export default async function RequisicionesPage({
       </div>
 
       <RequisicionesView
+        verPrivado={puedeVerInformacionPrivada(usuario)}
         proyectoId={id}
         semanaId={semanaActual.id}
         requisiciones={requisiciones}

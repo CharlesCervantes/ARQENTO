@@ -13,6 +13,7 @@ import {
   calcularTotalesEstimacion,
   type PorcentajesDefaultProyecto,
 } from "@/lib/control-de-obra/contrato-general";
+import { TRATAMIENTOS_COBRABLES, cobrableEnCapa, type TratamientoCliente } from "@/lib/control-de-obra/tratamiento-cliente";
 import { sumaEjecutadaPorConcepto } from "./avance-calculo";
 import { baseDeImporteCongelado, importesBase } from "@/lib/control-de-obra/presentacion-estimacion-privada";
 import { exigirEstimacionesPermitidas, motivoBloqueoEstimaciones } from "./bloqueo-estimaciones";
@@ -949,16 +950,18 @@ async function resolverCapaElegibleParaGasto(
 function filtroGastosPorReclamar(proyectoId: string, hastaFechaInicio: Date): Prisma.GastoObraWhereInput {
   return {
     proyectoId,
-    tratamientoCliente: "COBRABLE_EN_ESTIMACION",
     estatus: "APROBADO",
     semana: { fechaInicio: { lte: hastaFechaInicio } },
-    OR: [{ incluidoEnCapaOperativoId: null }, { incluidoEnCapaPrivadoId: null }],
+    OR: [
+      { tratamientoCliente: "COBRABLE_EN_ESTIMACION", OR: [{ incluidoEnCapaOperativoId: null }, { incluidoEnCapaPrivadoId: null }] },
+      { tratamientoCliente: "COBRABLE_SOLO_PRIVADO", incluidoEnCapaPrivadoId: null },
+    ],
   };
 }
 
 async function hayGastoCobrableAprobadoEnSemana(cliente: Cliente, proyectoId: string, semanaId: string) {
   const gasto = await cliente.gastoObra.findFirst({
-    where: { proyectoId, semanaId, estatus: "APROBADO", tratamientoCliente: "COBRABLE_EN_ESTIMACION" },
+    where: { proyectoId, semanaId, estatus: "APROBADO", tratamientoCliente: { in: TRATAMIENTOS_COBRABLES } },
     select: { id: true },
   });
   return gasto !== null;
@@ -977,14 +980,15 @@ export async function intentarReclamarGastoParaCapas(
     semanaId: string;
     incluidoEnCapaOperativoId: string | null;
     incluidoEnCapaPrivadoId: string | null;
+    tratamientoCliente: TratamientoCliente;
   }
 ): Promise<void> {
   const updates: { incluidoEnCapaOperativoId?: string; incluidoEnCapaPrivadoId?: string } = {};
-  if (!gasto.incluidoEnCapaOperativoId) {
+  if (!gasto.incluidoEnCapaOperativoId && cobrableEnCapa(gasto.tratamientoCliente, "OPERATIVO")) {
     const destino = await resolverCapaElegibleParaGasto(tx, proyectoId, "OPERATIVO", gasto.semanaId);
     if (destino) updates.incluidoEnCapaOperativoId = destino.id;
   }
-  if (!gasto.incluidoEnCapaPrivadoId) {
+  if (!gasto.incluidoEnCapaPrivadoId && cobrableEnCapa(gasto.tratamientoCliente, "PRIVADO")) {
     const destino = await resolverCapaElegibleParaGasto(tx, proyectoId, "PRIVADO", gasto.semanaId);
     if (destino) updates.incluidoEnCapaPrivadoId = destino.id;
   }
@@ -1000,7 +1004,7 @@ async function reclamarGastosCobrablesPendientes(
 ): Promise<void> {
   const candidatos = await tx.gastoObra.findMany({
     where: filtroGastosPorReclamar(proyectoId, semanaActual.fechaInicio),
-    select: { id: true, semanaId: true, incluidoEnCapaOperativoId: true, incluidoEnCapaPrivadoId: true },
+    select: { id: true, semanaId: true, incluidoEnCapaOperativoId: true, incluidoEnCapaPrivadoId: true, tratamientoCliente: true },
   });
   for (const g of candidatos) {
     await intentarReclamarGastoParaCapas(tx, proyectoId, g);
@@ -1060,7 +1064,7 @@ async function simularGastosDelCierre(
 
     const nuevos = [];
     for (const g of candidatos) {
-      if (g[campo] !== null) continue;
+      if (g[campo] !== null || !cobrableEnCapa(g.tratamientoCliente, capa)) continue;
       const d = await resolverCapaElegibleParaGasto(cliente, proyectoId, capa, g.semanaId, hipotetica);
       if (d?.id === destino) nuevos.push(g);
     }

@@ -11,11 +11,14 @@ import {
 } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { CATEGORIAS_GASTO, CATEGORIA_GASTO_SENSIBLE } from "@/lib/control-de-obra/categorias-gasto";
+import { TRATAMIENTOS_CLIENTE, esCobrable, tratamientoAGuardar, tratamientoVisible } from "@/lib/control-de-obra/tratamiento-cliente";
+import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
 import { asignarGastoAReposicionTx } from "./reposiciones";
 import { asegurarEstimacionDeSemanaCerradaTx, intentarReclamarGastoParaCapas } from "./estimacion-cliente";
 import { EMPRESA_PROYECTO_LABEL } from "./proyecto-oficina";
+import { filtroGastosVisibles, limitadoASusObras } from "./obras-visibles";
 
 function requerirEmpresa(usuario: UsuarioSesion): string {
   if (!usuario.empresa) throw new SinPermisoError();
@@ -90,7 +93,7 @@ const DatosGastoSchema = z.object({
   comentario: z.string().trim().optional().nullable(),
   requiereFactura: z.coerce.boolean().default(false),
   tratamientoCliente: z
-    .enum(["INCLUIDO_EN_CONTRATO", "COBRABLE_EN_ESTIMACION", "NO_COBRABLE"])
+    .enum(TRATAMIENTOS_CLIENTE)
     .default("NO_COBRABLE"),
   ticketRef: z.string().trim().optional().nullable(),
   ticketNombre: z.string().trim().optional().nullable(),
@@ -141,9 +144,16 @@ export async function crearGasto(
 ) {
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
-  await obtenerProyecto(usuario, proyectoId);
+  // Un Supervisor captura en sus obras y en Gastos de Empresa (que no es una
+  // obra asignable: ahí solo ve lo que él captura).
+  const esGastoEmpresa =
+    limitadoASusObras(usuario) &&
+    (await db.proyecto.count({ where: { id: proyectoId, empresaId, tipo: "OFICINA" } })) > 0;
+  if (!esGastoEmpresa) await obtenerProyecto(usuario, proyectoId);
   const datos = DatosGastoSchema.parse(datosCrudos);
   requerirPermisoCategoria(usuario, datos.categoria);
+  const tratamientoCliente = tratamientoAGuardar(datos.tratamientoCliente, null, puedeVerInformacionPrivada(usuario));
+  if (!tratamientoCliente) throw new SinPermisoError();
 
   const semana = await db.semana.findFirst({ where: { id: semanaId, empresaId } });
   if (!semana) throw new RegistroNoEncontradoError("La semana");
@@ -172,7 +182,7 @@ export async function crearGasto(
         proveedorBeneficiarioId: datos.proveedorBeneficiarioId || null,
         comentario: datos.comentario || null,
         requiereFactura: datos.requiereFactura,
-        tratamientoCliente: datos.tratamientoCliente,
+        tratamientoCliente,
         ticketRef: datos.ticketRef || null,
         ticketNombre: datos.ticketNombre || null,
         capturadoPorId: usuario.id,
@@ -212,7 +222,7 @@ export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datos
   const empresaId = requerirEmpresa(usuario);
   const datos = DatosGastoSchema.parse(datosCrudos);
 
-  const anterior = await db.gastoObra.findFirst({ where: { id: gastoId, empresaId } });
+  const anterior = await db.gastoObra.findFirst({ where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] } });
   if (!anterior) throw new RegistroNoEncontradoError("El gasto");
   // Se valida la categoría actual del gasto Y la nueva — nunca basta con
   // revisar solo a dónde se quiere mover si ya estaba en una categoría
@@ -229,6 +239,13 @@ export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datos
   if (anterior.capturadoPorId !== usuario.id && !puedeAprobarGastos(usuario)) {
     throw new SinPermisoError();
   }
+
+  const tratamientoCliente = tratamientoAGuardar(
+    datos.tratamientoCliente,
+    anterior.tratamientoCliente,
+    puedeVerInformacionPrivada(usuario)
+  );
+  if (!tratamientoCliente) throw new SinPermisoError();
 
   const pagadorBeneficiarioId = await resolverPagadorBeneficiarioId(usuario, empresaId, datos);
   const tieneDetalle = (datos.detalle?.length ?? 0) > 0;
@@ -249,7 +266,7 @@ export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datos
         proveedorBeneficiarioId: datos.proveedorBeneficiarioId || null,
         comentario: datos.comentario || null,
         requiereFactura: datos.requiereFactura,
-        tratamientoCliente: datos.tratamientoCliente,
+        tratamientoCliente,
         ticketRef: datos.ticketRef || anterior.ticketRef,
         ticketNombre: datos.ticketNombre || anterior.ticketNombre,
       },
@@ -297,7 +314,7 @@ export async function enviarGastoARevision(usuario: UsuarioSesion, gastoId: stri
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
 
-  const gasto = await db.gastoObra.findFirst({ where: { id: gastoId, empresaId } });
+  const gasto = await db.gastoObra.findFirst({ where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] } });
   if (!gasto) throw new RegistroNoEncontradoError("El gasto");
   if (gasto.capturadoPorId !== usuario.id && !puedeAprobarGastos(usuario)) {
     throw new SinPermisoError();
@@ -389,7 +406,7 @@ export async function aprobarGasto(usuario: UsuarioSesion, gastoId: string) {
     // sin reclamar — nunca se crea una capa por adelantado solo para tener
     // dónde ponerlo; se resuelve más tarde, en el próximo cierre de semana
     // que sí toque esa capa (arquitectura por capas, agosto 2026).
-    if (gasto.tratamientoCliente === "COBRABLE_EN_ESTIMACION") {
+    if (esCobrable(gasto.tratamientoCliente)) {
       // Semana ya cerrada que nunca generó estimación: se crea ahora (misma
       // lógica que el cierre) para que el gasto tenga dónde reclamarse. No
       // hace nada si la semana está abierta o ya tiene estimación.
@@ -404,6 +421,7 @@ export async function aprobarGasto(usuario: UsuarioSesion, gastoId: string) {
         semanaId: gasto.semanaId,
         incluidoEnCapaOperativoId: gasto.incluidoEnCapaOperativoId,
         incluidoEnCapaPrivadoId: gasto.incluidoEnCapaPrivadoId,
+        tratamientoCliente: gasto.tratamientoCliente,
       });
     }
 
@@ -457,7 +475,7 @@ export async function registrarFacturaGasto(
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
 
-  const gasto = await db.gastoObra.findFirst({ where: { id: gastoId, empresaId } });
+  const gasto = await db.gastoObra.findFirst({ where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] } });
   if (!gasto) throw new RegistroNoEncontradoError("El gasto");
 
   const actualizado = await db.gastoObra.update({
@@ -523,7 +541,7 @@ const SELECT_FILA_GASTO = {
 
 type GastoObraConRelaciones = Prisma.GastoObraGetPayload<{ include: typeof SELECT_FILA_GASTO }>;
 
-function aFilaGasto(g: GastoObraConRelaciones): FilaGasto {
+function aFilaGasto(usuario: UsuarioSesion, g: GastoObraConRelaciones): FilaGasto {
   return {
     id: g.id,
     proyectoId: g.proyectoId,
@@ -539,7 +557,7 @@ function aFilaGasto(g: GastoObraConRelaciones): FilaGasto {
     comentario: g.comentario,
     requiereFactura: g.requiereFactura,
     estatusFiscal: calcularEstatusFiscal(g),
-    tratamientoCliente: g.tratamientoCliente,
+    tratamientoCliente: tratamientoVisible(g.tratamientoCliente, puedeVerInformacionPrivada(usuario)),
     ticketRef: g.ticketRef,
     ticketNombre: g.ticketNombre,
     facturaRef: g.facturaRef,
@@ -586,7 +604,7 @@ export async function obtenerGastos(
     orderBy: { fecha: "desc" },
   });
 
-  return gastos.map(aFilaGasto);
+  return gastos.map((g) => aFilaGasto(usuario, g));
 }
 
 export type FilaGastoGlobal = FilaGasto & { proyectoNombre: string; esEmpresa: boolean };
@@ -605,13 +623,13 @@ export async function obtenerGastosGlobal(
 
   const categoriasOcultas = categoriasOcultasPara(usuario);
   const gastos = await db.gastoObra.findMany({
-    where: { empresaId, semanaId, ...(categoriasOcultas.length > 0 && { categoria: { notIn: categoriasOcultas } }) },
+    where: { AND: [filtroGastosVisibles(usuario)], empresaId, semanaId, ...(categoriasOcultas.length > 0 && { categoria: { notIn: categoriasOcultas } }) },
     include: { ...SELECT_FILA_GASTO, proyecto: { select: { nombre: true, tipo: true } } },
     orderBy: { fecha: "desc" },
   });
 
   return gastos.map((g) => ({
-    ...aFilaGasto(g),
+    ...aFilaGasto(usuario, g),
     proyectoNombre: g.proyecto.tipo === "OFICINA" ? EMPRESA_PROYECTO_LABEL : g.proyecto.nombre,
     esEmpresa: g.proyecto.tipo === "OFICINA",
   }));
@@ -631,7 +649,7 @@ export async function obtenerRefArchivoGasto(
   const empresaId = requerirEmpresa(usuario);
 
   const gasto = await db.gastoObra.findFirst({
-    where: { id: gastoId, empresaId },
+    where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] },
     select: { ticketRef: true, facturaRef: true },
   });
   if (!gasto) throw new RegistroNoEncontradoError("El gasto");

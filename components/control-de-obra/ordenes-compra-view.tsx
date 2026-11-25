@@ -53,12 +53,14 @@ export function OrdenesCompraView({
   ordenes,
   proveedores,
   puedeAutorizar,
+  verPrivado,
 }: {
   proyectoId: string;
   semanaId: string;
   ordenes: FilaOrdenCompra[];
   proveedores: { id: string; nombre: string }[];
   puedeAutorizar: boolean;
+  verPrivado: boolean;
 }) {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [ordenEditando, setOrdenEditando] = useState<FilaOrdenCompra | null>(null);
@@ -199,6 +201,7 @@ export function OrdenesCompraView({
           semanaId={semanaId}
           proveedores={proveedores}
           orden={ordenEditando}
+          verPrivado={verPrivado}
           onClose={() => {
             setModalAbierto(false);
             setOrdenEditando(null);
