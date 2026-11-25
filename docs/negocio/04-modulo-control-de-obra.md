@@ -1771,6 +1771,10 @@ Un gasto u orden de compra puede ser «Cobrable solo en Privado»: entra a la es
 
 Decisión (24-nov-2026): la estimación 42 de MISSISSIPPI es la semana 48 normal, en ambas capas: vigilancia en General y Privado, y material Jerez solo en Privado. Sustituye la representación aparte de la 42; sus cobros y pagos todavía no se realizan.
 
+### Captura de avance por monto (noviembre 2026)
+
+Todo rol que reporta avance, Supervisor incluido, puede capturar la cantidad o el monto; el otro se calcula solo. Un concepto sin contratista usa el P.U. del concepto en Contrato General, el mismo que hereda la asignación. El monto tecleado se conserva exacto para el corte del contratista; la estimación al cliente sigue calculándose con la cantidad (3 decimales). Queda pendiente de aprobación como siempre, y la semana no cierra con conceptos sin contratista.
+
 ## 49.14 Obras visibles por Supervisor (noviembre 2026)
 
 Administrador y Director eligen qué obras ve cada Supervisor en Proyectos → Accesos de supervisores (tabla `accesos_obra`, con bitácora). El servidor lo aplica en Proyectos, Inicio, Gastos, órdenes de compra, requisiciones, archivos y cualquier enlace directo: una obra sin acceso «no existe» para él. Regla única en `lib/server/control-de-obra/obras-visibles.ts`.

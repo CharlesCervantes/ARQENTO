@@ -12,6 +12,14 @@ import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/dinero";
 import { Prisma } from "@/lib/generated/prisma/browser";
 import {
+  cantidadDesdeMonto,
+  cantidadInicial,
+  montoAEnviar,
+  montoDesdeCantidad,
+  montoInicial,
+  precioDeCaptura,
+} from "@/lib/control-de-obra/captura-avance";
+import {
   guardarAvanceAction,
   cambiarEstatusAprobacionAvanceAction,
   type AvanceFormState,
@@ -24,26 +32,6 @@ type ConceptoConAvance = Partidas[number]["conceptos"][number];
 function formatCantidad(valor: InstanceType<typeof Prisma.Decimal> | number): string {
   const n = typeof valor === "number" ? valor : valor.toNumber();
   return n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
-}
-
-function valorInicial(concepto: ConceptoConAvance): string {
-  return concepto.estaSemana > 0 ? formatCantidad(concepto.estaSemana) : "";
-}
-
-function calcularTextoMonto(textoCantidad: string, precio: number | null): string {
-  if (!precio || textoCantidad === "") return "";
-  return new Prisma.Decimal(textoCantidad || 0).times(precio).toDecimalPlaces(2).toString();
-}
-
-// Monto inicial a mostrar/comparar: el exacto ya guardado esta semana
-// (AvanceConcepto.montoEjecutado) si existe — nunca recalculado desde la
-// cantidad, que solo guarda 3 decimales y volvería a mostrar un monto
-// impreciso al reabrir/recargar la página. Si todavía no hay monto guardado
-// (fila nueva, o se capturó por Cantidad directamente), se deriva de
-// cantidad × P.U. como siempre.
-function montoInicial(concepto: ConceptoConAvance): string {
-  if (concepto.montoEstaSemana !== null) return String(concepto.montoEstaSemana);
-  return calcularTextoMonto(valorInicial(concepto), concepto.precioUnitarioContratistaContratado);
 }
 
 export function FormAvanceSemanal({
@@ -108,7 +96,7 @@ function PartidaAvance({
   const { marcarPartida } = useDirtyAvance();
 
   const [baseline, setBaseline] = useState<Record<string, string>>(() =>
-    Object.fromEntries(partida.conceptos.map((c) => [c.id, valorInicial(c)]))
+    Object.fromEntries(partida.conceptos.map((c) => [c.id, cantidadInicial(c)]))
   );
   const [valores, setValores] = useState<Record<string, string>>(baseline);
 
@@ -292,7 +280,7 @@ function FilaConcepto({
     : 0;
   const excede = acumulado.gt(total);
 
-  const precio = concepto.precioUnitarioContratistaContratado;
+  const precio = precioDeCaptura(concepto);
   const tienePrecio = precio !== null;
 
   // Cantidad y Monto ahora viven en el padre (PartidaAvance) — cada input
@@ -303,7 +291,7 @@ function FilaConcepto({
 
   function alCambiarCantidad(texto: string) {
     onCambiar(texto);
-    onCambiarMonto(calcularTextoMonto(texto, precio));
+    onCambiarMonto(montoDesdeCantidad(texto, precio));
   }
 
   function alCambiarMonto(textoCrudo: string) {
@@ -326,11 +314,7 @@ function FilaConcepto({
     // decimales). El monto EXACTO tecleado se conserva tal cual en
     // valorMonto — nunca se vuelve a derivar de esta cantidad ya redondeada
     // (ver AvanceConcepto.montoEjecutado).
-    const nuevaCantidad = new Prisma.Decimal(texto)
-      .div(precio)
-      .toDecimalPlaces(3)
-      .toString();
-    onCambiar(nuevaCantidad);
+    onCambiar(cantidadDesdeMonto(texto, precio));
   }
 
   return (
@@ -340,6 +324,9 @@ function FilaConcepto({
       <Td className="text-right tabular-nums">{formatCantidad(concepto.cantidadTotal)}</Td>
       <Td className="text-right tabular-nums text-[var(--muted)]">
         {precio !== null ? formatMoney(precio) : "—"}
+        {precio !== null && concepto.precioUnitarioContratistaContratado === null && (
+          <span className="block text-[11px]">Sin contratista</span>
+        )}
       </Td>
       <Td className="text-right tabular-nums text-[var(--muted)]">
         {formatCantidad(concepto.anterior)}
@@ -371,7 +358,7 @@ function FilaConcepto({
                 lo usa como importe real del corte, en vez de recalcularlo
                 desde la cantidad ya redondeada a 3 decimales (evita perder
                 centavos frente a lo que el contratista realmente pidió). */}
-            <input type="hidden" name={`monto_${concepto.id}`} value={valorMonto} />
+            <input type="hidden" name={`monto_${concepto.id}`} value={montoAEnviar(concepto, valor, valorMonto)} />
             <input
               type="text"
               inputMode="decimal"
@@ -382,7 +369,13 @@ function FilaConcepto({
                     ? ""
                     : formatMoney(valorMonto)
               }
-              onFocus={() => setMontoEnfocado(true)}
+              onFocus={(e) => {
+                // Al enfocar cambia «$10,000.00» por «10000»; se selecciona
+                // todo para que teclear reemplace y no agregue dígitos.
+                const campo = e.currentTarget;
+                setMontoEnfocado(true);
+                requestAnimationFrame(() => campo.select());
+              }}
               onBlur={() => setMontoEnfocado(false)}
               onChange={(e) => alCambiarMonto(e.target.value)}
               disabled={soloLectura}

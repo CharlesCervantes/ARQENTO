@@ -300,6 +300,11 @@ export async function guardarAvanceSemanal(
     const montoNuevo = fila.montoEjecutado ?? null;
     if (fila.cantidadEjecutada === valorPrevio && montoNuevo === montoPrevio) continue; // sin cambios
 
+    // Un monto menor a 0.001 unidades daría cantidad 0: no contaría en nada.
+    if (fila.cantidadEjecutada === 0 && (montoNuevo ?? 0) > 0) {
+      throw new ValidacionError(`"${concepto.descripcion}": el monto es muy pequeño para su precio unitario.`);
+    }
+
     const anterior = anteriorPorConcepto.get(fila.conceptoId) ?? 0;
     const acumuladoProspectivo = anterior + fila.cantidadEjecutada;
     const total = Number(concepto.cantidadContratada);
