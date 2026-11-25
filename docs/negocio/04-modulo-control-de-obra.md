@@ -1764,3 +1764,13 @@ Una obra sin semanas históricas importadas y sin capturas privadas se comporta 
 Se usa cuando operar duplicaría cargos resueltos fuera de ARQENTO. Primera obra: MISSISSIPPI, mientras no se represente la estimación privada 42 en su periodo. Se pone y se quita con `scripts/mantenimiento/bloqueo-estimaciones.ts` (bitácora). El motivo lo ve cualquier rol de la obra: no debe incluir información privada.
 
 Capturar y aprobar avance físico, y asignar contratistas, sigue permitido.
+
+## 49.14 Obras visibles por Supervisor (noviembre 2026)
+
+Administrador y Director eligen qué obras ve cada Supervisor en Proyectos → Accesos de supervisores (tabla `accesos_obra`, con bitácora). El servidor lo aplica en Proyectos, Inicio, Gastos, órdenes de compra, requisiciones, archivos y cualquier enlace directo: una obra sin acceso «no existe» para él. Regla única en `lib/server/control-de-obra/obras-visibles.ts`.
+
+- Los supervisores que ya existían conservan todas sus obras hasta que se ajusten; obras y supervisores nuevos empiezan sin acceso.
+- Nombrar a un Supervisor responsable de una obra le da acceso a ella.
+- Reporte General del Supervisor: solo sus pagos (por su registro de pago vinculado) y los gastos que capturó o pagó, de cualquier obra: perder el acceso no oculta lo que se le debe.
+- Gastos de Empresa: puede capturar, pero solo ve los suyos.
+- Administrador, Director y Master no cambian. Comercialización tiene su propio alcance y no cambia.
