@@ -22,8 +22,7 @@ test("el Supervisor captura por monto un concepto sin contratista: monto exacto 
   assert.deepEqual([c.estaSemana, c.montoEstaSemana, c.estatusAprobacion, c.precioUnitarioContratista, c.precioUnitarioContratistaContratado], [35.714, 10000, "PENDIENTE", 280, null]);
 });
 
-test("rechaza exceder lo contratado y montos que dan cantidad cero", async () => {
-  await assert.rejects(guardar(2000.001, 560000.28));
+test("rechaza montos que dan cantidad cero", async () => {
   await assert.rejects(guardar(0, 0.1), /muy pequeño/);
   assert.equal(await db.avanceConcepto.count({ where: { conceptoId: C } }), 0);
 });

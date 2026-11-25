@@ -129,6 +129,11 @@ export function puedeEliminarEstructuraContractual(usuario: UsuarioSesion): bool
   return usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR";
 }
 
+/** Aprobar avance que excede lo contratado (amplía el contrato). Sin Master. */
+export function puedeAprobarExcedente(usuario: UsuarioSesion): boolean {
+  return usuario.rol === "ADMINISTRADOR" || usuario.rol === "DIRECTOR";
+}
+
 /**
  * Asignar o quitar conceptos en el contrato de un contratista. Incluye al
  * Supervisor (en sus obras); crear contratistas y contratos no.

@@ -2,8 +2,8 @@ import "server-only";
 import * as z from "zod";
 import { db } from "@/lib/server/db";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { registrarAuditoria } from "@/lib/server/auditoria";
-import { puedeReportarAvance, puedeAdministrarProyectos } from "@/lib/server/permisos";
+import { registrarAuditoriaTx } from "@/lib/server/auditoria";
+import { puedeReportarAvance, puedeAdministrarProyectos, puedeAprobarExcedente } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
 import type { EstatusAprobacionAvance } from "@/lib/generated/prisma/enums";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
@@ -13,6 +13,7 @@ import {
   RegistroNoEncontradoError,
 } from "./estructura-contractual";
 import { verificarSemanaEditable } from "./cierre-semana";
+import { ampliarContratadoTx, aprobadoEnOtrasSemanas, contratadoConExcedente } from "./excedente-avance";
 import { sumaEjecutadaPorConcepto, sumaHistoricaImportadaPorConcepto } from "./avance-calculo";
 
 export { sumaEjecutadaPorConcepto };
@@ -98,6 +99,9 @@ export type ConceptoConAvance = Omit<ConceptoBase, CamposDecimalConcepto> &
     // Visible a los 4 roles (sección 49.9, sustituye el gate por
     // puedeAdministrarProyectos que tenía esta pantalla antes).
     precioUnitarioContratistaContratado: number | null;
+    // Lo guardado excede lo contratado: cantidad contratada que quedaría al
+    // aprobarlo. null = no excede o no está pendiente.
+    contratadoSiSeAprueba: number | null;
   };
 
 function numOrNull(valor: { toNumber(): number } | null): number | null {
@@ -120,8 +124,9 @@ export async function obtenerAvanceSemanal(
   ]);
   const conceptoIds = partidas.flatMap((p) => p.conceptos.map((c) => c.id));
 
-  const [anteriorPorConcepto, filasEstaSemana] = await Promise.all([
+  const [anteriorPorConcepto, aprobadoTotal, filasEstaSemana] = await Promise.all([
     sumaEjecutadaPorConcepto(conceptoIds, semana.fechaInicio),
+    sumaEjecutadaPorConcepto(conceptoIds),
     db.avanceConcepto.findMany({
       where: { conceptoId: { in: conceptoIds }, semanaId: semana.id },
     }),
@@ -164,6 +169,10 @@ export async function obtenerAvanceSemanal(
         estatusAprobacion: estatusSemana,
         precioUnitarioContratistaContratado:
           resolucionContratista.get(concepto.id)?.precioUnitarioContratista ?? null,
+        contratadoSiSeAprueba:
+          estatusSemana === "PENDIENTE"
+            ? contratadoConExcedente(concepto.cantidadContratada, aprobadoTotal.get(concepto.id) ?? 0, estaSemana)
+            : null,
         ...calcularAvance(Number(concepto.cantidadContratada), acumulado),
       };
     }),
@@ -231,10 +240,10 @@ export async function obtenerAvanceAcumuladoPorConcepto(
 
 const FilaCapturaSchema = z.object({
   conceptoId: z.string().min(1),
-  cantidadEjecutada: z.coerce.number().min(0, "La cantidad no puede ser negativa."),
+  cantidadEjecutada: z.coerce.number().min(0, "La cantidad no puede ser negativa.").max(99_999_999, "La cantidad es demasiado grande."),
   // Monto exacto tecleado (cuando la captura fue por el campo Monto) — ver
   // comentario de AvanceConcepto.montoEjecutado en el schema.
-  montoEjecutado: z.coerce.number().nonnegative().optional().nullable(),
+  montoEjecutado: z.coerce.number().nonnegative().max(99_999_999_999, "El monto es demasiado grande.").optional().nullable(),
 });
 
 const CapturaAvanceSchema = z.object({
@@ -267,20 +276,17 @@ export async function guardarAvanceSemanal(
   const conceptoIds = datos.filas.map((f) => f.conceptoId);
   const conceptos = await db.concepto.findMany({
     where: { id: { in: conceptoIds }, partida: { proyectoId } },
-    select: { id: true, descripcion: true, cantidadContratada: true },
+    select: { id: true, descripcion: true },
   });
   const conceptoPorId = new Map(conceptos.map((c) => [c.id, c]));
 
-  const [anteriorPorConcepto, existentes] = await Promise.all([
-    sumaEjecutadaPorConcepto([...conceptoPorId.keys()], semana.fechaInicio),
-    db.avanceConcepto.findMany({
-      where: { conceptoId: { in: [...conceptoPorId.keys()] }, semanaId: semana.id },
-    }),
-  ]);
+  const existentes = await db.avanceConcepto.findMany({
+    where: { conceptoId: { in: [...conceptoPorId.keys()] }, semanaId: semana.id },
+  });
   const existentePorConcepto = new Map(existentes.map((f) => [f.conceptoId, f]));
 
-  // Pase 1: validar TODO antes de escribir nada — si algo excede lo
-  // contratado, no se guarda ni siquiera lo que sí era válido en el mismo envío.
+  // Pase 1: validar TODO antes de escribir nada. Exceder lo contratado no
+  // impide guardar: queda pendiente y lo decide quien aprueba.
   const porGuardar: {
     conceptoId: string;
     cantidadEjecutada: number;
@@ -303,17 +309,6 @@ export async function guardarAvanceSemanal(
     // Un monto menor a 0.001 unidades daría cantidad 0: no contaría en nada.
     if (fila.cantidadEjecutada === 0 && (montoNuevo ?? 0) > 0) {
       throw new ValidacionError(`"${concepto.descripcion}": el monto es muy pequeño para su precio unitario.`);
-    }
-
-    const anterior = anteriorPorConcepto.get(fila.conceptoId) ?? 0;
-    const acumuladoProspectivo = anterior + fila.cantidadEjecutada;
-    const total = Number(concepto.cantidadContratada);
-
-    if (acumuladoProspectivo > total) {
-      throw new ValidacionError(
-        `"${concepto.descripcion}" excede la cantidad contratada (${total}). ` +
-          `El acumulado resultante sería ${acumuladoProspectivo}.`
-      );
     }
 
     porGuardar.push({
@@ -474,39 +469,65 @@ export async function cambiarEstatusAprobacionAvance(
   usuario: UsuarioSesion,
   conceptoId: string,
   semanaId: string,
-  nuevoEstatus: "APROBADO" | "RECHAZADO"
+  nuevoEstatus: "APROBADO" | "RECHAZADO",
+  // Cantidad contratada que quien aprueba vio y aceptó. Obligatoria si el
+  // avance excede: nunca se amplía un contrato sin confirmarlo, ni por una
+  // cifra que cambió mientras se revisaba.
+  contratadoConfirmado?: number
 ) {
   if (!puedeAdministrarProyectos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
 
   const avance = await db.avanceConcepto.findFirst({
     where: { conceptoId, semanaId, empresaId },
-    include: { concepto: { select: { partida: { select: { proyectoId: true } } } } },
+    include: { concepto: { select: { partida: { select: { proyectoId: true } } } }, semana: { select: { id: true, fechaInicio: true } } },
   });
   if (!avance) throw new RegistroNoEncontradoError("El avance de este concepto");
 
   await verificarSemanaEditable(avance.concepto.partida.proyectoId, semanaId, [conceptoId]);
 
-  const actualizado = await db.avanceConcepto.update({
-    where: { id: avance.id },
-    data: {
-      estatusAprobacion: nuevoEstatus,
-      aprobadoPorId: usuario.id,
-      fechaAprobacion: new Date(),
-    },
-  });
+  const proyectoId = avance.concepto.partida.proyectoId;
 
-  await registrarAuditoria({
-    empresaId,
-    usuarioId: usuario.id,
-    entidad: "AvanceConcepto",
-    entidadId: actualizado.id,
-    accion: nuevoEstatus === "APROBADO" ? "CONFIRMAR" : "RECHAZAR",
-    valorAnterior: { estatusAprobacion: avance.estatusAprobacion },
-    valorNuevo: { estatusAprobacion: actualizado.estatusAprobacion },
-  });
+  return db.$transaction(async (tx) => {
+    // Serializa con otra aprobación del mismo concepto y relee lo vigente.
+    await tx.$queryRaw`SELECT id FROM conceptos WHERE id = ${conceptoId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM avance_conceptos WHERE id = ${avance.id} FOR UPDATE`;
+    const vigente = await tx.avanceConcepto.findUniqueOrThrow({
+      where: { id: avance.id },
+      select: { cantidadEjecutada: true, estatusAprobacion: true, concepto: { select: { cantidadContratada: true } } },
+    });
 
-  return actualizado;
+    if (nuevoEstatus === "APROBADO") {
+      const estaSemana = Number(vigente.cantidadEjecutada);
+      const nuevoContratado = contratadoConExcedente(
+        vigente.concepto.cantidadContratada,
+        await aprobadoEnOtrasSemanas(tx, conceptoId, semanaId),
+        estaSemana
+      );
+      if (nuevoContratado !== null) {
+        if (!puedeAprobarExcedente(usuario)) throw new SinPermisoError();
+        if (contratadoConfirmado !== nuevoContratado) {
+          throw new ValidacionError("Este avance excede lo contratado o cambió mientras lo revisabas. Actualiza la página y confirma la nueva cantidad.");
+        }
+        await ampliarContratadoTx(tx, { empresaId, usuarioId: usuario.id, proyectoId, conceptoId, semana: avance.semana, estaSemana, nuevoContratado });
+      }
+    }
+
+    const actualizado = await tx.avanceConcepto.update({
+      where: { id: avance.id },
+      data: { estatusAprobacion: nuevoEstatus, aprobadoPorId: usuario.id, fechaAprobacion: new Date() },
+    });
+    await registrarAuditoriaTx(tx, {
+      empresaId,
+      usuarioId: usuario.id,
+      entidad: "AvanceConcepto",
+      entidadId: actualizado.id,
+      accion: nuevoEstatus === "APROBADO" ? "CONFIRMAR" : "RECHAZAR",
+      valorAnterior: { estatusAprobacion: vigente.estatusAprobacion },
+      valorNuevo: { estatusAprobacion: actualizado.estatusAprobacion },
+    });
+    return actualizado;
+  });
 }
 
 // ---------------------------------------------------------------------------

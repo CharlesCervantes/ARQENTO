@@ -220,13 +220,20 @@ export async function cambiarEstatusAprobacionAvanceAction(
   proyectoId: string,
   conceptoId: string,
   semanaId: string,
-  nuevoEstatus: "APROBADO" | "RECHAZADO"
-) {
+  nuevoEstatus: "APROBADO" | "RECHAZADO",
+  contratadoConfirmado?: number
+): Promise<{ error?: string }> {
   const usuario = await requireSession();
-  await cambiarEstatusAprobacionAvance(usuario, conceptoId, semanaId, nuevoEstatus);
+  try {
+    await cambiarEstatusAprobacionAvance(usuario, conceptoId, semanaId, nuevoEstatus, contratadoConfirmado);
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(`/control-de-obra/${proyectoId}`, "layout");
   revalidatePath(`/control-de-obra/${proyectoId}/ejecucion/avance`);
   revalidatePath(`/control-de-obra/${proyectoId}/ejecucion/contratistas`);
   revalidatePath("/control-de-obra");
+  return {};
 }
 
 // A diferencia de FormState (undefined en éxito), este estado sí distingue
