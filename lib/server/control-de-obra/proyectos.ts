@@ -9,6 +9,7 @@ import {
   puedeVerContratoGeneralPrivado,
 } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
+import { filtroObrasVisibles } from "./obras-visibles";
 import type { EstatusProyecto } from "@/lib/generated/prisma/enums";
 
 export class SinPermisoError extends Error {
@@ -136,16 +137,17 @@ async function validarSupervisorUsuarioId(
 export async function listarProyectos(usuario: UsuarioSesion) {
   const empresaId = requerirEmpresa(usuario);
   return db.proyecto.findMany({
-    where: { empresaId, tipo: { not: "OFICINA" } },
+    where: { AND: [{ empresaId, tipo: { not: "OFICINA" } }, filtroObrasVisibles(usuario)] },
     orderBy: { nombre: "asc" },
   });
 }
 
+// Un Supervisor sin acceso a la obra recibe "no existe", igual que una ajena.
 // cache() evita repetir esta consulta cuando layout.tsx y page.tsx la piden
 // ambos dentro del mismo request (mismo patrón que verifySession en dal.ts).
 export const obtenerProyecto = cache(async (usuario: UsuarioSesion, id: string) => {
   const empresaId = requerirEmpresa(usuario);
-  const proyecto = await db.proyecto.findFirst({ where: { id, empresaId } });
+  const proyecto = await db.proyecto.findFirst({ where: { id, empresaId, ...filtroObrasVisibles(usuario) } });
   if (!proyecto) throw new ProyectoNoEncontradoError();
   return proyecto;
 });
@@ -254,6 +256,13 @@ export async function editarProyecto(
     where: { id },
     data: datos,
   });
+  // El responsable nuevo de la obra debe poder verla.
+  if (datos.supervisorUsuarioId && datos.supervisorUsuarioId !== anterior.supervisorUsuarioId) {
+    await db.accesoObra.createMany({
+      data: [{ usuarioId: datos.supervisorUsuarioId, proyectoId: id }],
+      skipDuplicates: true,
+    });
+  }
 
   await registrarAuditoria({
     empresaId,

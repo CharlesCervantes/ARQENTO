@@ -7,6 +7,9 @@ import {
   parametroAFecha,
 } from "@/lib/server/semanas";
 import { obtenerReporteSemana } from "@/lib/server/reporte-general/queries";
+import { obtenerMiReporte } from "@/lib/server/reporte-general/mi-reporte";
+import { limitadoASusObras } from "@/lib/server/control-de-obra/obras-visibles";
+import { MiReporteView } from "@/components/reporte-general/mi-reporte-view";
 import {
   obraTieneEstado,
   obraCoincideBusqueda,
@@ -66,6 +69,29 @@ export default async function ReporteGeneralPage(
   // transversal — recurrentes, septiembre 2026).
   await asegurarGastosRecurrentesGenerados(usuario.empresa.id, semana.id);
 
+  const fechaAnterior = new Date(semana.fechaInicio);
+  fechaAnterior.setDate(fechaAnterior.getDate() - 7);
+  const fechaSiguiente = new Date(semana.fechaInicio);
+  fechaSiguiente.setDate(fechaSiguiente.getDate() + 7);
+
+  // Supervisor: solo lo suyo. Se resuelve antes de consultar cualquier obra.
+  if (limitadoASusObras(usuario)) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-[var(--foreground)]">Reporte General</h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">Mis pagos y mis gastos · {formatearRangoSemana(semana)}</p>
+        </div>
+        <NavegacionSemana
+          etiquetaSemana={`Semana ${semana.numero}`}
+          fechaAnteriorParametro={fechaAParametro(fechaAnterior)}
+          fechaSiguienteParametro={fechaAParametro(fechaSiguiente)}
+        />
+        <MiReporteView reporte={await obtenerMiReporte(usuario, semana.id)} />
+      </div>
+    );
+  }
+
   const proyectoOficinaId = await obtenerProyectoOficinaId(usuario.empresa.id);
   const [reporteCompleto, resumenGastosEmpresa] = await Promise.all([
     obtenerReporteSemana(usuario.empresa.id, semana.id),
@@ -104,11 +130,6 @@ export default async function ReporteGeneralPage(
     : obrasFiltradas.filter((o) => o.totalSemana === 0);
 
   const puedeLiquidar = puedeLiquidarPagos(usuario);
-
-  const fechaAnterior = new Date(semana.fechaInicio);
-  fechaAnterior.setDate(fechaAnterior.getDate() - 7);
-  const fechaSiguiente = new Date(semana.fechaInicio);
-  fechaSiguiente.setDate(fechaSiguiente.getDate() + 7);
 
   return (
     <div className="space-y-6">

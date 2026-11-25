@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/server/auth/dal";
 import {
   empresaTieneModulo,
   puedeAdministrarProyectos,
+  puedeAsignarObras,
   puedeEliminarProyectos,
 } from "@/lib/server/permisos";
 import { listarProyectos } from "@/lib/server/control-de-obra/proyectos";
@@ -67,11 +68,18 @@ export default async function ControlDeObraPage() {
             Administración de proyectos
           </p>
         </div>
-        {puedeAdministrar && (
-          <Link href="/control-de-obra/nuevo">
-            <Button>+ Nuevo proyecto</Button>
-          </Link>
-        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          {puedeAsignarObras(usuario) && (
+            <Link href="/control-de-obra/accesos">
+              <Button variant="outline">Accesos de supervisores</Button>
+            </Link>
+          )}
+          {puedeAdministrar && (
+            <Link href="/control-de-obra/nuevo">
+              <Button>+ Nuevo proyecto</Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {operativos.length === 0 ? (

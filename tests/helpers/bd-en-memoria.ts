@@ -92,10 +92,18 @@ export function crearBdEnMemoria(inicial: { capas: CapaSimulada[]; movimientos: 
     };
   };
 
+  // El alcance del Supervisor (obras-visibles.ts) se da por asignado aquí: estas
+  // pruebas comprueban los permisos que siguen. Se prueba en obras-supervisor.
+  const sinAlcance = (where?: Fila) => {
+    const resto = { ...where };
+    delete resto.accesosObra;
+    delete resto.tipo;
+    return resto;
+  };
   const delegados = {
     // Un solo proyecto, de la Empresa simulada (ver obtenerProyecto).
     proyecto: {
-      findFirst: async ({ where }: { where?: Fila }) => (await ceder(), coincide({ id: PROYECTO }, where) ? { id: PROYECTO, empresaId: EMPRESA, nombre: "Obra Prueba" } : null),
+      findFirst: async ({ where }: { where?: Fila }) => (await ceder(), coincide({ id: PROYECTO }, sinAlcance(where)) ? { id: PROYECTO, empresaId: EMPRESA, nombre: "Obra Prueba" } : null),
     },
     estimacionClienteCapa: {
       findFirst: async ({ where }: { where?: Fila }) => (await ceder(), capas.map(conRelaciones).find((c) => coincide(c, where)) ?? null),

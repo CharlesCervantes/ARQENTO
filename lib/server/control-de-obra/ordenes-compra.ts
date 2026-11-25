@@ -12,6 +12,7 @@ import { TRATAMIENTOS_CLIENTE, tratamientoAGuardar, tratamientoVisible } from "@
 import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { RegistroNoEncontradoError } from "./estructura-contractual";
+import { filtroObrasVisibles } from "./obras-visibles";
 import { CATEGORIAS_GASTO } from "@/lib/control-de-obra/categorias-gasto";
 import { EMPRESA_PROYECTO_LABEL } from "./proyecto-oficina";
 import { obtenerBrandingEmpresa, type BrandingEmpresa } from "@/lib/server/branding";
@@ -156,7 +157,7 @@ export async function editarOrdenCompra(usuario: UsuarioSesion, ocId: string, da
   const empresaId = requerirEmpresa(usuario);
   const datos = DatosOrdenCompraSchema.parse(datosCrudos);
 
-  const anterior = await db.ordenCompra.findFirst({ where: { id: ocId, empresaId } });
+  const anterior = await db.ordenCompra.findFirst({ where: { id: ocId, empresaId, proyecto: filtroObrasVisibles(usuario) } });
   if (!anterior) throw new RegistroNoEncontradoError("La orden de compra");
   if (!ESTATUS_EDITABLES.includes(anterior.estatus as (typeof ESTATUS_EDITABLES)[number])) {
     throw new ValidacionError("Esta orden de compra ya no se puede editar.");
@@ -458,7 +459,7 @@ export async function marcarRecepcionOrdenCompra(usuario: UsuarioSesion, ocId: s
   const empresaId = requerirEmpresa(usuario);
   const datos = DatosRecepcionSchema.parse(datosCrudos);
 
-  const oc = await db.ordenCompra.findFirst({ where: { id: ocId, empresaId } });
+  const oc = await db.ordenCompra.findFirst({ where: { id: ocId, empresaId, proyecto: filtroObrasVisibles(usuario) } });
   if (!oc) throw new RegistroNoEncontradoError("La orden de compra");
   if (oc.estatus !== "AUTORIZADA") {
     throw new ValidacionError("Solo se puede registrar la recepción de una orden de compra autorizada.");
@@ -698,7 +699,7 @@ export async function obtenerDatosPdfOrdenCompra(usuario: UsuarioSesion, ocId: s
   const empresaId = requerirEmpresa(usuario);
 
   const oc = await db.ordenCompra.findFirst({
-    where: { id: ocId, empresaId },
+    where: { id: ocId, empresaId, proyecto: filtroObrasVisibles(usuario) },
     include: {
       proyecto: { select: { nombre: true, tipo: true } },
       proveedor: { select: { nombre: true, proveedor: { select: { razonSocial: true, rfc: true } } } },

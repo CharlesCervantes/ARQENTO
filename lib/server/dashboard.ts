@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/server/db";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError } from "@/lib/server/control-de-obra/proyectos";
+import { filtroObrasVisibles } from "@/lib/server/control-de-obra/obras-visibles";
 import { puedeVerInformacionPrivada, puedeVerContabilidad, puedeVerInicio } from "@/lib/server/permisos";
 import { obtenerOCrearSemanaActual, formatearRangoSemana } from "@/lib/server/semanas";
 import {
@@ -504,7 +505,9 @@ async function cargarDatosDashboard(
     // tipo != OFICINA — ese Proyecto es el vehículo interno de Gastos de
     // Empresa (ver proyecto-oficina.ts), nunca una obra real; no debe
     // distorsionar el dashboard ejecutivo (Gastos transversal, sept. 2026).
-    where: { empresaId, estatus: { in: ["ACTIVO", "PAUSADO"] }, tipo: { not: "OFICINA" } },
+    // Un Supervisor solo ve sus obras asignadas: todo lo demás de Inicio se
+    // calcula a partir de esta lista.
+    where: { AND: [{ empresaId, estatus: { in: ["ACTIVO", "PAUSADO"] }, tipo: { not: "OFICINA" } }, filtroObrasVisibles(usuario)] },
     select: {
       id: true,
       nombre: true,

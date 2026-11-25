@@ -1770,3 +1770,13 @@ Capturar y aprobar avance físico, y asignar contratistas, sigue permitido.
 Un gasto u orden de compra puede ser «Cobrable solo en Privado»: entra a la estimación privada con su administración y nunca a la General. Solo la elige y la ve quien ve información privada; para los demás aparece como no cobrable, y si lo editan se conserva. Las órdenes de compra ahora también dejan elegir el tratamiento, que pasa al gasto que generan. «Cobrable en estimación» sigue entrando a las dos capas.
 
 Decisión (24-nov-2026): la estimación 42 de MISSISSIPPI es la semana 48 normal, en ambas capas: vigilancia en General y Privado, y material Jerez solo en Privado. Sustituye la representación aparte de la 42; sus cobros y pagos todavía no se realizan.
+
+## 49.14 Obras visibles por Supervisor (noviembre 2026)
+
+Administrador y Director eligen qué obras ve cada Supervisor en Proyectos → Accesos de supervisores (tabla `accesos_obra`, con bitácora). El servidor lo aplica en Proyectos, Inicio, Gastos, órdenes de compra, requisiciones, archivos y cualquier enlace directo: una obra sin acceso «no existe» para él. Regla única en `lib/server/control-de-obra/obras-visibles.ts`.
+
+- Los supervisores que ya existían conservan todas sus obras hasta que se ajusten; obras y supervisores nuevos empiezan sin acceso.
+- Nombrar a un Supervisor responsable de una obra le da acceso a ella.
+- Reporte General del Supervisor: solo sus pagos (por su registro de pago vinculado) y los gastos que capturó o pagó, de cualquier obra: perder el acceso no oculta lo que se le debe.
+- Gastos de Empresa: puede capturar, pero solo ve los suyos.
+- Administrador, Director y Master no cambian. Comercialización tiene su propio alcance y no cambia.

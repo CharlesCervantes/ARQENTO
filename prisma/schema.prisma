@@ -302,6 +302,7 @@ model Usuario {
   cierresSemanaReabiertos CierreSemanaProyecto[] @relation("CierreSemanaReabierto")
   cortesSemanaGenerados   CorteSemanal[]         @relation("CorteSemanalGenerado")
   proyectosSupervisados   Proyecto[]             @relation("ProyectoSupervisor")
+  accesosObra             AccesoObra[]
 
   recibosGenerados       ReciboPago[] @relation("ReciboPagoGenerado")
   recibosEvidenciaSubida ReciboPago[] @relation("ReciboPagoEvidenciaSubida")
@@ -505,6 +506,23 @@ enum EsquemaContractual {
   ADMINISTRACION
 }
 
+// Obras que puede ver un Supervisor (noviembre 2026). Sin fila = no la ve.
+// Solo limita al rol SUPERVISOR; Administrador/Director ven todas. Se asigna
+// en Proyectos → Accesos de supervisores. Distinto de
+// Proyecto.supervisorUsuario (responsable que aparece en documentos).
+model AccesoObra {
+  id         String   @id @default(cuid())
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId  String
+  proyecto   Proyecto @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  proyectoId String
+  createdAt  DateTime @default(now())
+
+  @@unique([usuarioId, proyectoId])
+  @@index([proyectoId])
+  @@map("accesos_obra")
+}
+
 model Proyecto {
   id          String          @id @default(cuid())
   empresa     Empresa         @relation(fields: [empresaId], references: [id])
@@ -536,6 +554,8 @@ model Proyecto {
   // altera un documento ya generado.
   supervisorUsuario   Usuario? @relation("ProyectoSupervisor", fields: [supervisorUsuarioId], references: [id])
   supervisorUsuarioId String?
+
+  accesosObra AccesoObra[]
 
   // Imagen de portada (Inicio: dashboard ejecutivo, agosto 2026) — mismo
   // patrón que GastoObra.ticketRef/ReciboPago.archivoEvidenciaRef: solo se

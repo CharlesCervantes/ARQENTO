@@ -18,6 +18,7 @@ import { RegistroNoEncontradoError } from "./estructura-contractual";
 import { asignarGastoAReposicionTx } from "./reposiciones";
 import { asegurarEstimacionDeSemanaCerradaTx, intentarReclamarGastoParaCapas } from "./estimacion-cliente";
 import { EMPRESA_PROYECTO_LABEL } from "./proyecto-oficina";
+import { filtroGastosVisibles, limitadoASusObras } from "./obras-visibles";
 
 function requerirEmpresa(usuario: UsuarioSesion): string {
   if (!usuario.empresa) throw new SinPermisoError();
@@ -143,7 +144,12 @@ export async function crearGasto(
 ) {
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
-  await obtenerProyecto(usuario, proyectoId);
+  // Un Supervisor captura en sus obras y en Gastos de Empresa (que no es una
+  // obra asignable: ahí solo ve lo que él captura).
+  const esGastoEmpresa =
+    limitadoASusObras(usuario) &&
+    (await db.proyecto.count({ where: { id: proyectoId, empresaId, tipo: "OFICINA" } })) > 0;
+  if (!esGastoEmpresa) await obtenerProyecto(usuario, proyectoId);
   const datos = DatosGastoSchema.parse(datosCrudos);
   requerirPermisoCategoria(usuario, datos.categoria);
   const tratamientoCliente = tratamientoAGuardar(datos.tratamientoCliente, null, puedeVerInformacionPrivada(usuario));
@@ -216,7 +222,7 @@ export async function editarGasto(usuario: UsuarioSesion, gastoId: string, datos
   const empresaId = requerirEmpresa(usuario);
   const datos = DatosGastoSchema.parse(datosCrudos);
 
-  const anterior = await db.gastoObra.findFirst({ where: { id: gastoId, empresaId } });
+  const anterior = await db.gastoObra.findFirst({ where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] } });
   if (!anterior) throw new RegistroNoEncontradoError("El gasto");
   // Se valida la categoría actual del gasto Y la nueva — nunca basta con
   // revisar solo a dónde se quiere mover si ya estaba en una categoría
@@ -308,7 +314,7 @@ export async function enviarGastoARevision(usuario: UsuarioSesion, gastoId: stri
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
 
-  const gasto = await db.gastoObra.findFirst({ where: { id: gastoId, empresaId } });
+  const gasto = await db.gastoObra.findFirst({ where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] } });
   if (!gasto) throw new RegistroNoEncontradoError("El gasto");
   if (gasto.capturadoPorId !== usuario.id && !puedeAprobarGastos(usuario)) {
     throw new SinPermisoError();
@@ -469,7 +475,7 @@ export async function registrarFacturaGasto(
   if (!puedeCapturarGastos(usuario)) throw new SinPermisoError();
   const empresaId = requerirEmpresa(usuario);
 
-  const gasto = await db.gastoObra.findFirst({ where: { id: gastoId, empresaId } });
+  const gasto = await db.gastoObra.findFirst({ where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] } });
   if (!gasto) throw new RegistroNoEncontradoError("El gasto");
 
   const actualizado = await db.gastoObra.update({
@@ -617,7 +623,7 @@ export async function obtenerGastosGlobal(
 
   const categoriasOcultas = categoriasOcultasPara(usuario);
   const gastos = await db.gastoObra.findMany({
-    where: { empresaId, semanaId, ...(categoriasOcultas.length > 0 && { categoria: { notIn: categoriasOcultas } }) },
+    where: { AND: [filtroGastosVisibles(usuario)], empresaId, semanaId, ...(categoriasOcultas.length > 0 && { categoria: { notIn: categoriasOcultas } }) },
     include: { ...SELECT_FILA_GASTO, proyecto: { select: { nombre: true, tipo: true } } },
     orderBy: { fecha: "desc" },
   });
@@ -643,7 +649,7 @@ export async function obtenerRefArchivoGasto(
   const empresaId = requerirEmpresa(usuario);
 
   const gasto = await db.gastoObra.findFirst({
-    where: { id: gastoId, empresaId },
+    where: { AND: [{ id: gastoId, empresaId }, filtroGastosVisibles(usuario)] },
     select: { ticketRef: true, facturaRef: true },
   });
   if (!gasto) throw new RegistroNoEncontradoError("El gasto");
