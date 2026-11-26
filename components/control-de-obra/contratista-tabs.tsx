@@ -21,11 +21,13 @@ const TAB_LABEL: Record<Tab, string> = {
 export function ContratistaTabs({
   proyectoId,
   puedeVerRecibosFinancieros,
+  puedeGestionarRecibos,
   historial,
   contratoBody,
 }: {
   proyectoId: string;
   puedeVerRecibosFinancieros: boolean;
+  puedeGestionarRecibos: boolean;
   historial: CorteHistorial[];
   contratoBody: ReactNode;
 }) {
@@ -55,7 +57,7 @@ export function ContratistaTabs({
         ))}
       </div>
       {tab === "contrato" && contratoBody}
-      {tab === "estimaciones" && <EstimacionesYPagos proyectoId={proyectoId} historial={historial} />}
+      {tab === "estimaciones" && <EstimacionesYPagos proyectoId={proyectoId} historial={historial} puedeGestionarRecibos={puedeGestionarRecibos} />}
     </div>
   );
 }

@@ -15,12 +15,15 @@ export function CeldaRecibo({
   reciboId,
   reciboFirmado,
   puedeVerRecibos,
+  puedeGenerarRecibos,
 }: {
   proyectoId: string;
   corteId: string | null;
   reciboId: string | null;
   reciboFirmado: boolean;
   puedeVerRecibos: boolean;
+  // Supervisor: descarga, pero no genera folios.
+  puedeGenerarRecibos: boolean;
 }) {
   if (!puedeVerRecibos || !corteId) {
     return <span className="text-[var(--muted)]">—</span>;
@@ -37,6 +40,7 @@ export function CeldaRecibo({
       </a>
     );
   }
+  if (!puedeGenerarRecibos) return <span className="text-xs text-[var(--muted)]">Sin recibo</span>;
   return <GenerarRecibo proyectoId={proyectoId} corteId={corteId} />;
 }
 

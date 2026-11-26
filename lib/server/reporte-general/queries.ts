@@ -19,6 +19,8 @@ export type ResumenReposicionFila = {
   saldoPendiente: number;
   estado: EstadoReposicion;
   requiereRevision: boolean;
+  // De qué es la reposición: los gastos que incluye (noviembre 2026).
+  gastos: { descripcion: string; fecha: string; monto: number }[];
 };
 
 // Un beneficiario puede tener más de un MovimientoSemanal la misma semana
@@ -81,6 +83,8 @@ export type FilaAdministracion = {
   origen: OrigenMovimientoSemanal | null;
   nombre: string;
   puesto: string | null;
+  // Concepto del beneficiario en esta obra (texto libre de Reporte General).
+  concepto: string | null;
   montoEntreSemana: number;
   montoFinSemana: number;
   estatusAprobacion: EstatusAprobacion | null;
@@ -137,7 +141,7 @@ export async function obtenerReporteSemana(
                 reposicionGastos: {
                   select: {
                     cerrada: true,
-                    gastos: { select: { monto: true } },
+                    gastos: { select: { monto: true, descripcion: true, fecha: true }, orderBy: { fecha: "asc" } },
                     abonos: { select: { monto: true } },
                   },
                 },
@@ -305,6 +309,7 @@ export async function obtenerReporteSemana(
             origen,
             nombre: bp.beneficiario.nombre,
             puesto: bp.puesto,
+            concepto: bp.concepto,
             montoEntreSemana,
             montoFinSemana,
             estatusAprobacion,
@@ -353,7 +358,7 @@ function resumirReposicion(
     estatusPago: EstatusPago;
     reposicionGastos: {
       cerrada: boolean;
-      gastos: { monto: unknown }[];
+      gastos: { monto: unknown; descripcion: string; fecha: Date }[];
       abonos: { monto: unknown }[];
     } | null;
   } | null,
@@ -370,7 +375,14 @@ function resumirReposicion(
     estatusPago: movimiento.estatusPago,
     montoMovimiento,
   });
-  return { total, abonado, saldoPendiente, estado, requiereRevision: estado === "REQUIERE_REVISION" };
+  return {
+    total,
+    abonado,
+    saldoPendiente,
+    estado,
+    requiereRevision: estado === "REQUIERE_REVISION",
+    gastos: r.gastos.map((g) => ({ descripcion: g.descripcion, fecha: g.fecha.toISOString(), monto: Number(g.monto) })),
+  };
 }
 
 // Solo los movimientos ya Aprobados cuentan en los totales oficiales

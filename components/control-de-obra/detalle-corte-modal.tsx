@@ -30,10 +30,13 @@ function formatFecha(iso: string): string {
 export function DetalleCorteModal({
   corteId,
   proyectoId,
+  puedeGestionarRecibos,
   onClose,
 }: {
   corteId: string;
   proyectoId: string;
+  // Supervisor: ve y descarga el recibo y su evidencia; no genera ni sube.
+  puedeGestionarRecibos: boolean;
   onClose: () => void;
 }) {
   const [estado, setEstado] = useState<
@@ -84,6 +87,7 @@ export function DetalleCorteModal({
         {estado.tipo === "listo" && (
           <ContenidoDetalleCorte
             proyectoId={proyectoId}
+            puedeGestionarRecibos={puedeGestionarRecibos}
             detalle={estado.detalle}
             onClose={onClose}
           />
@@ -96,10 +100,12 @@ export function DetalleCorteModal({
 
 function ContenidoDetalleCorte({
   proyectoId,
+  puedeGestionarRecibos,
   detalle,
   onClose,
 }: {
   proyectoId: string;
+  puedeGestionarRecibos: boolean;
   detalle: DetalleCorte;
   onClose: () => void;
 }) {
@@ -200,7 +206,7 @@ function ContenidoDetalleCorte({
         <p className="mb-3 text-xs font-semibold tracking-wide text-[var(--muted)] uppercase">
           Recibo
         </p>
-        <SeccionRecibo proyectoId={proyectoId} detalle={detalle} />
+        <SeccionRecibo proyectoId={proyectoId} detalle={detalle} puedeGestionar={puedeGestionarRecibos} />
       </div>
     </div>
   );
@@ -234,9 +240,11 @@ function Dato({
 function SeccionRecibo({
   proyectoId,
   detalle,
+  puedeGestionar,
 }: {
   proyectoId: string;
   detalle: DetalleCorte;
+  puedeGestionar: boolean;
 }) {
   const generarAction = generarReciboAction.bind(null, detalle.id, proyectoId);
   const [generarState, generarFormAction, generarPending] = useActionState<
@@ -253,6 +261,10 @@ function SeccionRecibo({
         Recibo {generarState.folio} generado ✓ — ciérralo y vuelve a abrir el corte para verlo.
       </p>
     );
+  }
+
+  if (!detalle.reciboVigente && !puedeGestionar) {
+    return <p className="text-sm text-[var(--muted)]">Todavía no hay recibo generado para esta estimación.</p>;
   }
 
   if (!detalle.reciboVigente) {
@@ -278,7 +290,7 @@ function SeccionRecibo({
             Ver / descargar {detalle.reciboVigente.folio}
           </Button>
         </a>
-        {!detalle.reciboVigente.archivoEvidenciaRef && (
+        {puedeGestionar && !detalle.reciboVigente.archivoEvidenciaRef && (
           <form action={generarFormAction}>
             <button
               type="submit"
@@ -306,8 +318,10 @@ function SeccionRecibo({
           {detalle.reciboVigente.fechaRecepcion &&
             ` · recibido el ${formatFecha(detalle.reciboVigente.fechaRecepcion)}`}
         </div>
-      ) : (
+      ) : puedeGestionar ? (
         <SubirEvidencia proyectoId={proyectoId} reciboId={detalle.reciboVigente.id} />
+      ) : (
+        <p className="text-sm text-[var(--muted)]">Todavía no se ha subido el recibo firmado.</p>
       )}
     </div>
   );

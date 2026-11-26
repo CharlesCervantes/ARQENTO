@@ -1825,3 +1825,12 @@ Decisión de Charles, a raíz de un gasto de gasolina en CIENEGA que se aprobó 
   - Si estaba en una reposición sin pagar, sale de ella y su pago pendiente en Reporte General se recalcula. Si la reposición se queda sin gastos, queda rechazada y su movimiento cancelado en $0; un gasto aprobado después abre una reposición nueva.
   - Si estaba en una estimación al cliente en borrador, se desliga de ella.
   - No se puede cancelar, y no cambia nada, si su reposición ya tiene abonos o está pagada, si ya está en una estimación emitida, si viene de una orden de compra o si Contabilidad ya registró su pago.
+
+## 49.17 Recibos y estimaciones para el Supervisor; concepto en Reporte General (noviembre 2026)
+
+Decisión de Charles.
+
+- **Supervisor:** en Contratistas de sus obras ve las estimaciones de cada contratista (importe, acumulado, saldo, estado de pago, detalle) y descarga sus recibos y el recibo firmado. También «Descargar todos los recibos» de una semana cerrada, que para él solo baja los recibos que ya existen.
+- **Solo Administrador y Director** generan recibos (y regeneran con folio nuevo) y suben el recibo firmado. Nada de esto cambia para ellos.
+- El Supervisor nunca ve recibos ni estimaciones de obras que no tiene asignadas.
+- **Reporte General, Administración:** nueva columna «Concepto» con el concepto de la persona en la obra. En una reposición (en cualquier sección), esa celda muestra de qué gastos se compone: el primero y cuántos más, y al abrirla cada gasto con su fecha e importe.

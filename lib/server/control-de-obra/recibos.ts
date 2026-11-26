@@ -3,7 +3,8 @@ import * as z from "zod";
 import { db } from "@/lib/server/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { registrarAuditoria, registrarAuditoriaTx } from "@/lib/server/auditoria";
-import { puedeVerRecibosFinancieros } from "@/lib/server/permisos";
+import { puedeGestionarRecibos, puedeVerRecibosFinancieros } from "@/lib/server/permisos";
+import { filtroObrasVisibles } from "./obras-visibles";
 import type { UsuarioSesion } from "@/lib/server/session";
 import type { EstatusPago } from "@/lib/generated/prisma/enums";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
@@ -18,10 +19,17 @@ import { obtenerArchivo } from "@/lib/server/archivos";
 // generando.
 type Cliente = Prisma.TransactionClient;
 
+// Ver/descargar (incluye al Supervisor, solo en sus obras: toda búsqueda por
+// id agrega filtroObrasVisibles). Generar y subir evidencia: requerirGestionarRecibos.
 function requerirVerRecibos(usuario: UsuarioSesion): string {
   if (!puedeVerRecibosFinancieros(usuario)) throw new SinPermisoError();
   if (!usuario.empresa) throw new SinPermisoError();
   return usuario.empresa.id;
+}
+
+function requerirGestionarRecibos(usuario: UsuarioSesion): string {
+  if (!puedeGestionarRecibos(usuario)) throw new SinPermisoError();
+  return requerirVerRecibos(usuario);
 }
 
 // ---------------------------------------------------------------------------
@@ -492,7 +500,7 @@ export async function obtenerDetalleCorte(
   const empresaId = requerirVerRecibos(usuario);
 
   const corte = await db.corteSemanal.findFirst({
-    where: { id: corteSemanalId, empresaId },
+    where: { id: corteSemanalId, empresaId, proyecto: filtroObrasVisibles(usuario) },
     include: {
       proyecto: { select: { nombre: true } },
       beneficiarioProyecto: {
@@ -598,7 +606,7 @@ export async function generarRecibo(
   usuario: UsuarioSesion,
   corteSemanalId: string
 ): Promise<ReciboGenerado> {
-  const empresaId = requerirVerRecibos(usuario);
+  const empresaId = requerirGestionarRecibos(usuario);
 
   return db.$transaction(async (tx) => {
     const corte = await tx.corteSemanal.findFirst({
@@ -734,7 +742,7 @@ export async function registrarEvidenciaRecibo(
   reciboId: string,
   datosCrudos: unknown
 ) {
-  const empresaId = requerirVerRecibos(usuario);
+  const empresaId = requerirGestionarRecibos(usuario);
   const datos = EvidenciaSchema.parse(datosCrudos);
 
   const recibo = await db.reciboPago.findFirst({ where: { id: reciboId, empresaId } });
@@ -781,7 +789,7 @@ export async function obtenerRefEvidenciaRecibo(
 ): Promise<string | null> {
   const empresaId = requerirVerRecibos(usuario);
   const recibo = await db.reciboPago.findFirst({
-    where: { id: reciboId, empresaId },
+    where: { id: reciboId, empresaId, corteSemanal: { proyecto: filtroObrasVisibles(usuario) } },
     select: { archivoEvidenciaRef: true },
   });
   if (!recibo) throw new RegistroNoEncontradoError("El recibo");
@@ -859,7 +867,7 @@ export async function obtenerDatosPdfRecibo(
   const empresaId = requerirVerRecibos(usuario);
 
   const recibo = await db.reciboPago.findFirst({
-    where: { id: reciboId, empresaId },
+    where: { id: reciboId, empresaId, corteSemanal: { proyecto: filtroObrasVisibles(usuario) } },
     include: {
       corteSemanal: {
         include: {
@@ -955,10 +963,16 @@ export async function obtenerDatosPdfRecibosSemana(
     select: { id: true, recibos: { where: { estatus: "VIGENTE" }, select: { id: true } } },
   });
 
+  // Quien solo puede ver (Supervisor) descarga los recibos que ya existen;
+  // nunca genera folios nuevos al descargar.
+  const puedeGenerar = puedeGestionarRecibos(usuario);
   const datos: DatosPdfRecibo[] = [];
   for (const corte of cortes) {
-    const reciboId = corte.recibos[0]?.id ?? (await generarRecibo(usuario, corte.id)).id;
-    datos.push(await obtenerDatosPdfRecibo(usuario, reciboId));
+    const reciboId = corte.recibos[0]?.id ?? (puedeGenerar ? (await generarRecibo(usuario, corte.id)).id : null);
+    if (reciboId) datos.push(await obtenerDatosPdfRecibo(usuario, reciboId));
+  }
+  if (datos.length === 0) {
+    throw new ValidacionError("Todavía no hay recibos generados esta semana. Un Administrador o Director los genera.");
   }
   return datos;
 }
