@@ -62,6 +62,7 @@ import {
   enviarGastoARevision,
   aprobarGasto,
   rechazarGasto,
+  cancelarGastoAprobado,
   registrarFacturaGasto,
 } from "@/lib/server/control-de-obra/gastos";
 import { registrarAbonoReposicion } from "@/lib/server/control-de-obra/reposiciones";
@@ -1108,6 +1109,28 @@ export async function rechazarGastoAction(
   }
   revalidatePath(rutaReposiciones(proyectoId));
   return { rechazado: true };
+}
+
+export type CancelarGastoFormState = { error?: string; cancelado?: boolean } | undefined;
+
+// Cancelar un gasto ya aprobado — puede sacar el gasto de su reposición y
+// recalcular (o cancelar) su movimiento: Reporte General también se revalida.
+export async function cancelarGastoAction(
+  proyectoId: string,
+  gastoId: string,
+  _state: CancelarGastoFormState,
+  formData: FormData
+): Promise<CancelarGastoFormState> {
+  const usuario = await requireSession();
+  try {
+    await cancelarGastoAprobado(usuario, gastoId, formData.get("motivo"));
+  } catch (error) {
+    return { error: mensajeError(error) };
+  }
+  revalidatePath(rutaReposiciones(proyectoId));
+  revalidatePath("/reporte-general");
+  revalidatePath("/gastos");
+  return { cancelado: true };
 }
 
 export async function subirFacturaGastoAction(

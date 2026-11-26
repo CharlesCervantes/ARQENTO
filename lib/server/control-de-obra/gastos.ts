@@ -4,6 +4,7 @@ import { db } from "@/lib/server/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { registrarAuditoria, registrarAuditoriaTx } from "@/lib/server/auditoria";
 import {
+  capturaSoloGastosPropios,
   puedeCapturarGastos,
   puedeAprobarGastos,
   puedeCapturarCategoriaGasto,
@@ -112,16 +113,21 @@ async function resolverPagadorBeneficiarioId(
   empresaId: string,
   datos: Pick<DatosGasto, "quienPagoModo" | "pagadorBeneficiarioId">
 ): Promise<string | null> {
-  if (datos.quienPagoModo === "EMPRESA") return null;
+  // El Supervisor no elige: todo gasto que registra lo pagó él (se ignora lo
+  // que mande el formulario).
+  const modo = capturaSoloGastosPropios(usuario) ? "YO" : datos.quienPagoModo;
+  if (modo === "EMPRESA") return null;
 
-  if (datos.quienPagoModo === "YO") {
+  if (modo === "YO") {
     const usuarioConBeneficiario = await db.usuario.findFirst({
       where: { id: usuario.id, empresaId },
       select: { beneficiario: { select: { id: true } } },
     });
     if (!usuarioConBeneficiario?.beneficiario) {
       throw new ValidacionError(
-        "Este usuario no tiene un beneficiario de pago relacionado. Configúralo antes de generar la reposición."
+        capturaSoloGastosPropios(usuario)
+          ? "Tu usuario no tiene un beneficiario de pago vinculado, así que no se te puede reponer este gasto. Pide a un Administrador que lo vincule en Catálogos."
+          : "Este usuario no tiene un beneficiario de pago relacionado. Configúralo antes de generar la reposición."
       );
     }
     return usuarioConBeneficiario.beneficiario.id;
@@ -465,6 +471,184 @@ export async function rechazarGasto(usuario: UsuarioSesion, gastoId: string, mot
   });
 
   return actualizado;
+}
+
+// ---------------------------------------------------------------------------
+// Cancelar un gasto YA APROBADO (noviembre 2026, decisión de Charles) — para
+// un gasto capturado con error (p. ej. sin indicar quién lo pagó): se cancela
+// y quien lo capturó lo vuelve a subir bien. Nunca se elimina: queda
+// CANCELADO con su motivo (en `motivoRechazo`, el mismo campo de «motivo» del
+// rechazo; quién y cuándo canceló, en la bitácora) y conserva quién lo aprobó.
+//
+// Deshace, en la misma transacción, lo que hizo aprobarGasto:
+// - Reposición SIN PAGAR: el gasto sale de ella y su MovimientoSemanal se
+//   recalcula. Si se queda sin gastos, la reposición queda RECHAZADA y su
+//   movimiento CANCELADO en $0 (dejan de contar en Reporte General).
+// - Estimación al cliente en BORRADOR: el gasto se desliga (vuelve a no
+//   estar cobrado en ninguna capa).
+// Y se NIEGA, sin cambiar nada, cuando ya hay consecuencias reales:
+// - la reposición ya tiene abonos, está liquidada/cerrada o pagada con
+//   fondo puente (el dinero ya salió);
+// - el gasto ya está en una estimación EMITIDA al cliente (nunca se modifica);
+// - viene de una orden de compra (se corrige desde Compras);
+// - Contabilidad ya registró su pago (medio financiero o fecha de pago).
+// ---------------------------------------------------------------------------
+
+const MotivoCancelacionSchema = z
+  .string()
+  .trim()
+  .min(1, "El motivo de la cancelación es obligatorio.")
+  .max(500, "El motivo no debe exceder 500 caracteres.");
+
+export async function cancelarGastoAprobado(usuario: UsuarioSesion, gastoId: string, motivoCrudo: unknown) {
+  if (!puedeAprobarGastos(usuario)) throw new SinPermisoError();
+  const empresaId = requerirEmpresa(usuario);
+  const motivo = MotivoCancelacionSchema.parse(motivoCrudo);
+
+  return db.$transaction(async (tx) => {
+    // Mismo orden de bloqueo que aprobarGasto: gasto → movimiento → reposición.
+    await tx.$queryRaw`SELECT id FROM gastos_obra WHERE id = ${gastoId} FOR UPDATE`;
+    const gasto = await tx.gastoObra.findFirst({
+      where: { id: gastoId, empresaId },
+      include: {
+        incluidoEnCapaOperativo: { select: { estatus: true } },
+        incluidoEnCapaPrivado: { select: { estatus: true } },
+        egreso: { select: { estatus: true, medioFinancieroId: true, fechaPago: true } },
+      },
+    });
+    if (!gasto) throw new RegistroNoEncontradoError("El gasto");
+    if (gasto.estatus === "CANCELADO") return gasto;
+    if (gasto.estatus !== "APROBADO") {
+      throw new ValidacionError(
+        gasto.estatus === "PENDIENTE_REVISION"
+          ? "Este gasto todavía no se aprueba: recházalo en lugar de cancelarlo."
+          : "Solo se puede cancelar un gasto aprobado."
+      );
+    }
+    requerirPermisoCategoria(usuario, gasto.categoria);
+
+    if (gasto.ordenCompraId) {
+      throw new ValidacionError("Este gasto se generó desde una orden de compra: corrígelo desde Compras.");
+    }
+    if (
+      gasto.incluidoEnEstimacionClienteId ||
+      gasto.incluidoEnCapaOperativo?.estatus === "EMITIDA" ||
+      gasto.incluidoEnCapaPrivado?.estatus === "EMITIDA"
+    ) {
+      throw new ValidacionError(
+        "Este gasto ya se cobró en una estimación emitida al cliente, que no se puede modificar. No se canceló."
+      );
+    }
+    if (gasto.egreso && gasto.egreso.estatus === "VIGENTE" && (gasto.egreso.medioFinancieroId || gasto.egreso.fechaPago)) {
+      throw new ValidacionError(
+        "Contabilidad ya registró el pago de este gasto. Quita primero ese registro en Contabilidad. No se canceló."
+      );
+    }
+
+    let reposicionAfectada: { id: string; folio: string; quedoVacia: boolean } | null = null;
+    if (gasto.reposicionGastosId) {
+      const ref = await tx.reposicionGastos.findUniqueOrThrow({
+        where: { id: gasto.reposicionGastosId },
+        select: { movimientoSemanalId: true },
+      });
+      if (ref.movimientoSemanalId) {
+        await tx.$queryRaw`SELECT id FROM movimientos_semanales WHERE id = ${ref.movimientoSemanalId} FOR UPDATE`;
+      }
+      await tx.$queryRaw`SELECT id FROM reposiciones_gastos WHERE id = ${gasto.reposicionGastosId} FOR UPDATE`;
+      const reposicion = await tx.reposicionGastos.findUniqueOrThrow({
+        where: { id: gasto.reposicionGastosId },
+        include: {
+          beneficiario: { select: { nombre: true } },
+          gastos: { select: { id: true, monto: true } },
+          _count: { select: { abonos: true } },
+          movimientoSemanal: { select: { id: true, estatusPago: true, montoFinSemana: true } },
+        },
+      });
+      const movimiento = reposicion.movimientoSemanal;
+      if (reposicion._count.abonos > 0 || reposicion.cerrada || (movimiento && movimiento.estatusPago !== "PENDIENTE_PAGO")) {
+        throw new ValidacionError(
+          `La reposición ${reposicion.folio} de ${reposicion.beneficiario.nombre} ya tiene pagos registrados, así que este gasto no se puede cancelar. No se cambió nada.`
+        );
+      }
+
+      const restantes = reposicion.gastos.filter((g) => g.id !== gasto.id);
+      const total = restantes.reduce((t, g) => t + Number(g.monto), 0);
+      if (movimiento) {
+        const datosMovimiento =
+          restantes.length > 0
+            ? { montoFinSemana: total }
+            : { montoFinSemana: 0, montoEntreSemana: 0, estatusAprobacion: "CANCELADO" as const, estatusPago: "SIN_MOVIMIENTO" as const };
+        await tx.movimientoSemanal.update({ where: { id: movimiento.id }, data: datosMovimiento });
+        await registrarAuditoriaTx(tx, {
+          empresaId,
+          usuarioId: usuario.id,
+          entidad: "MovimientoSemanal",
+          entidadId: movimiento.id,
+          accion: restantes.length > 0 ? "EDITAR" : "CAMBIAR_ESTATUS",
+          valorAnterior: { montoFinSemana: Number(movimiento.montoFinSemana) },
+          valorNuevo: { ...datosMovimiento, motivo: `Gasto cancelado: ${motivo}` },
+        });
+      }
+      if (restantes.length === 0) {
+        // El índice único parcial de reposiciones excluye las RECHAZADAS: si
+        // después se aprueba otro gasto de este beneficiario, se abre una
+        // reposición nueva con su propio folio.
+        await tx.reposicionGastos.update({
+          where: { id: reposicion.id },
+          data: {
+            estatus: "RECHAZADA",
+            revisadoPorId: usuario.id,
+            revisadoEn: new Date(),
+            motivoRechazo: "Se canceló el único gasto que incluía.",
+          },
+        });
+        await registrarAuditoriaTx(tx, {
+          empresaId,
+          usuarioId: usuario.id,
+          entidad: "ReposicionGastos",
+          entidadId: reposicion.id,
+          accion: "CAMBIAR_ESTATUS",
+          valorAnterior: { estatus: reposicion.estatus },
+          valorNuevo: { estatus: "RECHAZADA", motivo: "Se canceló el único gasto que incluía." },
+        });
+      }
+      reposicionAfectada = { id: reposicion.id, folio: reposicion.folio, quedoVacia: restantes.length === 0 };
+    }
+
+    // Una capa en BORRADOR todavía no congeló nada (el snapshot solo se toma
+    // al emitir): basta con desligar el gasto.
+    const actualizado = await tx.gastoObra.update({
+      where: { id: gasto.id },
+      data: {
+        estatus: "CANCELADO",
+        motivoRechazo: motivo,
+        reposicionGastosId: null,
+        incluidoEnCapaOperativoId: null,
+        incluidoEnCapaPrivadoId: null,
+      },
+    });
+
+    await registrarAuditoriaTx(tx, {
+      empresaId,
+      usuarioId: usuario.id,
+      entidad: "GastoObra",
+      entidadId: gasto.id,
+      accion: "CAMBIAR_ESTATUS",
+      valorAnterior: {
+        estatus: "APROBADO",
+        reposicionGastosId: gasto.reposicionGastosId,
+        incluidoEnCapaOperativoId: gasto.incluidoEnCapaOperativoId,
+        incluidoEnCapaPrivadoId: gasto.incluidoEnCapaPrivadoId,
+      },
+      valorNuevo: {
+        estatus: "CANCELADO",
+        motivo,
+        ...(reposicionAfectada ? { reposicion: reposicionAfectada.folio, reposicionSinGastos: reposicionAfectada.quedoVacia } : {}),
+      },
+    });
+
+    return actualizado;
+  });
 }
 
 export async function registrarFacturaGasto(
