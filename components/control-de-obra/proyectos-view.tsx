@@ -86,7 +86,9 @@ export function ProyectosView({
 
   return (
     <div className={cn("inicio font-medium", fuenteInicio.variable)}>
-      <div className="mx-auto flex max-w-[1240px] flex-col gap-5">
+      {/* Ancho completo, como Inicio: en pantallas anchas crecen las columnas,
+          no los márgenes. */}
+      <div className="flex flex-col gap-5">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-[30px] leading-9 font-extrabold tracking-[-0.02em] max-sm:text-[26px] max-sm:leading-8">Proyectos</h1>
@@ -189,7 +191,7 @@ export function ProyectosView({
         {proyectos.length === 0 ? (
           <p className={cn(PANEL, "p-7 text-center text-sm text-[var(--i-tinta-2)]")}>{vacio}</p>
         ) : vista === "tarjetas" ? (
-          <ul className="enter grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-[18px] max-sm:gap-3.5">
+          <ul className="enter grid grid-cols-1 gap-[18px] max-sm:gap-3.5 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-3 min-[1700px]:grid-cols-4 min-[2300px]:grid-cols-5">
             {proyectos.map((p) => (
               <li key={p.id} className="flex">
                 <TarjetaProyecto p={p} esSupervisor={esSupervisor} menu={menu} />
@@ -291,10 +293,10 @@ function PorPagar({ fila }: { fila: FilaProyectoDashboard | null }) {
 
 function TarjetaProyecto({ p, esSupervisor, menu }: { p: ProyectoListado; esSupervisor: boolean; menu: Menu }) {
   return (
-    <article className={cn(PANEL, "flex w-full flex-col gap-3.5 p-5 transition-shadow duration-200 ease-[var(--ease-out)] hover:shadow-[var(--i-sombra-hover)]")}>
+    <article className={cn(PANEL, "flex w-full flex-col gap-3.5 p-5 min-[1700px]:gap-4 min-[1700px]:p-6 transition-shadow duration-200 ease-[var(--ease-out)] hover:shadow-[var(--i-sombra-hover)]")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[17px] leading-[22px] font-extrabold tracking-[-0.01em] break-words">{p.nombre}</h2>
+          <h2 className="text-[17px] leading-[22px] min-[1700px]:text-[19px] min-[1700px]:leading-6 font-extrabold tracking-[-0.01em] break-words">{p.nombre}</h2>
           <p className="mt-0.5 text-[13px] text-[var(--i-tinta-3)]">
             {TIPO_LABEL[p.tipo] ?? p.tipo} · {p.cliente ?? "Sin cliente"}
           </p>
