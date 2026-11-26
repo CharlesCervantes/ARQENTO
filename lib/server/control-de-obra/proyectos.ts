@@ -10,6 +10,7 @@ import {
 } from "@/lib/server/permisos";
 import type { UsuarioSesion } from "@/lib/server/session";
 import { filtroObrasVisibles } from "./obras-visibles";
+import { NOMBRE_PARTIDA_ADITIVAS, ORDEN_PARTIDA_ADITIVAS } from "@/lib/control-de-obra/partida-aditivas";
 import type { EstatusProyecto } from "@/lib/generated/prisma/enums";
 
 export class SinPermisoError extends Error {
@@ -195,8 +196,18 @@ export async function crearProyecto(usuario: UsuarioSesion, datosCrudos: unknown
     );
   }
 
-  const proyecto = await db.proyecto.create({
-    data: { ...datos, empresaId },
+  // Toda obra nace con la partida ADITIVAS, siempre al final
+  // (lib/control-de-obra/partida-aditivas.ts); se crea junto con la obra.
+  // Gastos de Empresa (OFICINA) no es una obra y no lleva partidas.
+  const { partidas, ...proyecto } = await db.proyecto.create({
+    data: {
+      ...datos,
+      empresaId,
+      ...(datos.tipo !== "OFICINA" && {
+        partidas: { create: { nombre: NOMBRE_PARTIDA_ADITIVAS, orden: ORDEN_PARTIDA_ADITIVAS } },
+      }),
+    },
+    include: { partidas: true },
   });
 
   await registrarAuditoria({
@@ -207,6 +218,16 @@ export async function crearProyecto(usuario: UsuarioSesion, datosCrudos: unknown
     accion: "CREAR",
     valorNuevo: proyecto,
   });
+  for (const partida of partidas) {
+    await registrarAuditoria({
+      empresaId,
+      usuarioId: usuario.id,
+      entidad: "Partida",
+      entidadId: partida.id,
+      accion: "CREAR",
+      valorNuevo: partida,
+    });
+  }
 
   return proyecto;
 }
