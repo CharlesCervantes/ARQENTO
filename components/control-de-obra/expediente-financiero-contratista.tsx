@@ -48,9 +48,12 @@ export function ResumenFinancieroIndicadores({
 export function EstimacionesYPagos({
   proyectoId,
   historial,
+  puedeGestionarRecibos,
 }: {
   proyectoId: string;
   historial: CorteHistorial[];
+  // Supervisor: ve y descarga, pero no genera ni sube evidencia.
+  puedeGestionarRecibos: boolean;
 }) {
   const [corteDetalleId, setCorteDetalleId] = useState<string | null>(null);
 
@@ -96,7 +99,7 @@ export function EstimacionesYPagos({
                   <EstadoPagoBadge estatus={corte.estatusPago} />
                 </Td>
                 <Td>
-                  <AccionRecibo proyectoId={proyectoId} corte={corte} />
+                  <AccionRecibo proyectoId={proyectoId} corte={corte} puedeGenerar={puedeGestionarRecibos} />
                 </Td>
               </Tr>
             ))}
@@ -108,6 +111,7 @@ export function EstimacionesYPagos({
         <DetalleCorteModal
           corteId={corteDetalleId}
           proyectoId={proyectoId}
+          puedeGestionarRecibos={puedeGestionarRecibos}
           onClose={() => setCorteDetalleId(null)}
         />
       )}
@@ -142,9 +146,11 @@ function Dato({
 function AccionRecibo({
   proyectoId,
   corte,
+  puedeGenerar,
 }: {
   proyectoId: string;
   corte: CorteHistorial;
+  puedeGenerar: boolean;
 }) {
   const action = generarReciboAction.bind(null, corte.id, proyectoId);
   const [state, formAction, pending] = useActionState<GenerarReciboFormState, FormData>(
@@ -164,6 +170,8 @@ function AccionRecibo({
       </a>
     );
   }
+
+  if (!puedeGenerar) return <span className="text-xs text-[var(--muted)]">Sin recibo</span>;
 
   return (
     <form action={formAction}>

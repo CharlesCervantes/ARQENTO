@@ -246,10 +246,17 @@ export function puedeCapturarEstimadoPrivado(usuario: UsuarioSesion): boolean {
  * corregido en sesión: una obra sin capa privada, o un Administrador/Director
  * con Vista privada apagada, sigue necesitando ver y generar las estimaciones
  * de sus contratistas sin depender de ese interruptor — septiembre 2026). El
- * rol-set no cambia (ADMINISTRADOR/DIRECTOR, igual que puedeCerrarSemana):
- * Supervisor sigue sin ver precios de recibo ni poder generar/subir nada.
+ * Ver y descargar: ADMINISTRADOR, DIRECTOR y, desde noviembre 2026 (decisión
+ * de Charles), también el SUPERVISOR — solo de sus obras (cada lectura pasa
+ * por filtroObrasVisibles). Generar recibos y subir el firmado sigue siendo
+ * solo de Administrador/Director: ver puedeGestionarRecibos.
  */
 export function puedeVerRecibosFinancieros(usuario: UsuarioSesion): boolean {
+  return puedeCerrarSemana(usuario) || usuario.rol === "SUPERVISOR";
+}
+
+/** Generar un recibo y subir su evidencia firmada: Administrador/Director. */
+export function puedeGestionarRecibos(usuario: UsuarioSesion): boolean {
   return puedeCerrarSemana(usuario);
 }
 

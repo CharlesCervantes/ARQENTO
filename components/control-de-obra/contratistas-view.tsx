@@ -63,6 +63,7 @@ export function ContratistasView({
   puedeAdministrar,
   puedeAsignar,
   puedeVerRecibosFinancieros,
+  puedeGestionarRecibos,
   resumenFinancieroPorBeneficiario,
   historialPorBeneficiario,
 }: {
@@ -74,6 +75,7 @@ export function ContratistasView({
   puedeAdministrar: boolean;
   puedeAsignar: boolean;
   puedeVerRecibosFinancieros: boolean;
+  puedeGestionarRecibos: boolean;
   resumenFinancieroPorBeneficiario: Map<string, ResumenFinancieroContratista>;
   historialPorBeneficiario: Map<string, CorteHistorial[]>;
 }) {
@@ -183,6 +185,7 @@ export function ContratistasView({
                 <ContratistaTabs
                   proyectoId={proyectoId}
                   puedeVerRecibosFinancieros={puedeVerRecibosFinancieros}
+                  puedeGestionarRecibos={puedeGestionarRecibos}
                   historial={historial}
                   contratoBody={
                     <div className="space-y-4">

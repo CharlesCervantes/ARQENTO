@@ -6,6 +6,7 @@ import { CeldaRecibo } from "./celda-recibo";
 import { GRID_PROYECTOS } from "./grid-proyectos";
 import { cn } from "@/lib/cn";
 import { formatMoney, formatMoneyOrDash } from "@/lib/dinero";
+import { formatearFecha } from "@/lib/fecha";
 import { calcularEstadoProyecto } from "@/lib/reporte-general/estado";
 import type {
   ConceptoContratadoFila,
@@ -103,6 +104,38 @@ function EtiquetaOrigen({ origen }: { origen: string | null }) {
   );
 }
 
+// Concepto de una reposición: los gastos que la forman (noviembre 2026). El
+// resumen muestra el primero y cuántos más hay; al abrirlo, cada gasto con su
+// fecha e importe. Se despliega dentro de la celda (no flota): la tabla recorta
+// lo que sobresale y la reposición suele ser la última fila.
+function VerGastosReposicion({ gastos }: { gastos: ResumenReposicionFila["gastos"] }) {
+  if (gastos.length === 0) return <span className="text-[var(--muted)]">—</span>;
+  const resumen = gastos.length === 1 ? gastos[0].descripcion : `${gastos[0].descripcion} y ${gastos.length - 1} más`;
+  return (
+    <details className="max-w-[280px] text-left">
+      <summary className="cursor-pointer list-none truncate underline decoration-dotted underline-offset-4 [&::-webkit-details-marker]:hidden">
+        {resumen}
+      </summary>
+      <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs">
+        <p className="mb-2 font-medium text-[var(--muted)]">
+          Reposición de {gastos.length} gasto{gastos.length === 1 ? "" : "s"}
+        </p>
+        <ul className="space-y-2">
+          {gastos.map((g, i) => (
+            <li key={i} className="whitespace-normal">
+              <p className="text-[var(--foreground)]">{g.descripcion}</p>
+              <p className="mt-0.5 flex justify-between gap-4 tabular-nums text-[var(--muted)]">
+                <span>{formatearFecha(new Date(g.fecha))}</span>
+                <span>{formatMoney(g.monto)}</span>
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </details>
+  );
+}
+
 // «Ver concepto»: mismo estilo que el desglose de Contrato vigente. Muestra
 // los conceptos del contrato del contratista en esta obra; un beneficiario
 // antiguo sin contrato por conceptos muestra su texto de concepto.
@@ -149,11 +182,13 @@ export function ObraCard({
   index,
   puedeLiquidar,
   puedeVerRecibos,
+  puedeGenerarRecibos,
 }: {
   obra: ReporteObra;
   index: number;
   puedeLiquidar: boolean;
   puedeVerRecibos: boolean;
+  puedeGenerarRecibos: boolean;
 }) {
   const sinParticipantes =
     obra.contratistas.length === 0 &&
@@ -243,7 +278,11 @@ export function ObraCard({
                             <EtiquetaOrigen origen={fila.origen} />
                           </Td>
                           <Td>
-                            <VerConcepto conceptos={fila.conceptos} conceptoLegado={fila.concepto} />
+                            {fila.reposicion ? (
+                              <VerGastosReposicion gastos={fila.reposicion.gastos} />
+                            ) : (
+                              <VerConcepto conceptos={fila.conceptos} conceptoLegado={fila.concepto} />
+                            )}
                           </Td>
                           <Td className="text-right tabular-nums">
                             <details className="group/vigente relative inline-block text-left">
@@ -288,6 +327,7 @@ export function ObraCard({
                               reciboId={fila.reciboId}
                               reciboFirmado={fila.reciboFirmado}
                               puedeVerRecibos={puedeVerRecibos}
+                              puedeGenerarRecibos={puedeGenerarRecibos}
                             />
                           </Td>
                           <Td>
@@ -319,7 +359,7 @@ export function ObraCard({
                             <EtiquetaOrigen origen={fila.origen} />
                           </Td>
                           <Td className="text-[var(--muted)]">
-                            {fila.giro ?? "—"}
+                            {fila.reposicion ? <VerGastosReposicion gastos={fila.reposicion.gastos} /> : (fila.giro ?? "—")}
                           </Td>
                           <Td className="text-right tabular-nums">
                             {formatMoneyOrDash(fila.montoFinSemana)}
@@ -341,6 +381,7 @@ export function ObraCard({
                       <Tr>
                         <Th>Persona</Th>
                         <Th>Puesto</Th>
+                        <Th>Concepto</Th>
                         <Th className="text-right">Fin de semana</Th>
                         <Th>Estado</Th>
                       </Tr>
@@ -354,6 +395,15 @@ export function ObraCard({
                           </Td>
                           <Td className="text-[var(--muted)]">
                             {fila.puesto ?? "—"}
+                          </Td>
+                          <Td className="text-[var(--muted)]">
+                            {fila.reposicion ? (
+                              <VerGastosReposicion gastos={fila.reposicion.gastos} />
+                            ) : fila.concepto ? (
+                              <span className="line-clamp-2 max-w-[260px] whitespace-normal">{fila.concepto}</span>
+                            ) : (
+                              "—"
+                            )}
                           </Td>
                           <Td className="text-right tabular-nums">
                             {formatMoneyOrDash(fila.montoFinSemana)}
