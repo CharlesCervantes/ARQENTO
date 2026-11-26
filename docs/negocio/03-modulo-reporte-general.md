@@ -165,6 +165,11 @@ Igual que en el Excel actual:
 Este resumen se calcula automáticamente a partir de los Movimientos Semanales en
 estado de aprobación `Aprobado` — ya no se captura manualmente como en el Excel.
 
+**Noviembre 2026 (pantalla):**
+- Ya no se muestra «Entre semana» (ni tarjeta ni columnas). Nunca se usó: todo movimiento tenía $0 ahí. El dato se conserva y el Total semana lo sigue sumando.
+- En Contratistas, «Concepto» muestra «Ver concepto». Al hacer clic se ven los conceptos del contrato del contratista en esa obra (cantidad, unidad e importe). Un beneficiario antiguo sin contrato por conceptos muestra su texto de concepto.
+- Columna «Recibo», a la derecha de «Fin de semana»: si el movimiento viene de un corte de contratista, ofrece «Descargar» el recibo vigente o «Generar» si todavía no existe. Es el mismo recibo de Contratistas → Expediente (folio, datos congelados y bitácora). Solo Administrador y Director.
+
 ---
 
 ## 4. Reglas de negocio confirmadas (acumuladas de sesiones anteriores + esta sesión)

@@ -28,12 +28,26 @@ export type ResumenReposicionFila = {
 // deja claro en la UI de dónde sale cada importe). `id` sigue siendo el
 // beneficiarioProyectoId (agrupa lo contractual); `movimientoId` distingue
 // cada fila cuando hay más de una para el mismo beneficiario.
+// Concepto del contrato del contratista en esta obra («Ver concepto»).
+export type ConceptoContratadoFila = {
+  descripcion: string;
+  unidad: string;
+  cantidad: number;
+  importe: number;
+};
+
 export type FilaContratista = {
   id: string; // beneficiarioProyectoId
   movimientoId: string | null;
   origen: OrigenMovimientoSemanal | null;
   nombre: string;
   concepto: string | null;
+  conceptos: ConceptoContratadoFila[];
+  // Corte de contratista ligado a este movimiento y su recibo vigente, si ya
+  // se generó (columna «Recibo»).
+  corteId: string | null;
+  reciboId: string | null;
+  reciboFirmado: boolean;
   montoContrato: number;
   aditivasAutorizadas: number;
   montoContractualVigente: number;
@@ -110,6 +124,16 @@ export async function obtenerReporteSemana(
             movimientos: {
               where: { semanaId },
               include: {
+                corte: {
+                  select: {
+                    id: true,
+                    estatus: true,
+                    recibos: {
+                      where: { estatus: "VIGENTE" },
+                      select: { id: true, archivoEvidenciaRef: true },
+                    },
+                  },
+                },
                 reposicionGastos: {
                   select: {
                     cerrada: true,
@@ -149,7 +173,17 @@ export async function obtenerReporteSemana(
         // criterio que estructura-contractual.ts:contratosConConceptos.
         conceptos: {
           where: { concepto: { estatus: "ACTIVO" } },
-          select: { cantidad: true, precioUnitarioContratista: true },
+          orderBy: [
+            { concepto: { partida: { orden: "asc" } } },
+            { concepto: { partida: { createdAt: "asc" } } },
+            { concepto: { orden: "asc" } },
+            { concepto: { createdAt: "asc" } },
+          ],
+          select: {
+            cantidad: true,
+            precioUnitarioContratista: true,
+            concepto: { select: { descripcion: true, unidad: true } },
+          },
         },
       },
     }),
@@ -164,6 +198,20 @@ export async function obtenerReporteSemana(
   }
 
   const contratoVigentePorBeneficiario = sumarContratoVigentePorBeneficiario(contratosNuevaEstructura);
+  const conceptosPorBeneficiario = new Map<string, ConceptoContratadoFila[]>();
+  for (const contrato of contratosNuevaEstructura) {
+    const lista = conceptosPorBeneficiario.get(contrato.beneficiarioProyectoId) ?? [];
+    for (const cc of contrato.conceptos) {
+      const cantidad = Number(cc.cantidad);
+      lista.push({
+        descripcion: cc.concepto.descripcion,
+        unidad: cc.concepto.unidad,
+        cantidad,
+        importe: cantidad * Number(cc.precioUnitarioContratista),
+      });
+    }
+    conceptosPorBeneficiario.set(contrato.beneficiarioProyectoId, lista);
+  }
 
   return proyectos.map((proyecto) => {
     const contratistas: FilaContratista[] = [];
@@ -210,6 +258,9 @@ export async function obtenerReporteSemana(
             : sumarMontos(...bp.aditivas.map((a) => a.monto));
           const montoContractualVigente = montoContrato + aditivasAutorizadas;
           const pagadoHistorico = pagadoPorParticipacion.get(bp.id) ?? 0;
+          // Solo un corte vigente (no anulado) tiene recibo que descargar o generar.
+          const corte = movimiento?.corte?.estatus === "GENERADO" ? movimiento.corte : null;
+          const recibo = corte?.recibos[0] ?? null;
 
           contratistas.push({
             id: bp.id,
@@ -217,6 +268,10 @@ export async function obtenerReporteSemana(
             origen,
             nombre: bp.beneficiario.nombre,
             concepto: bp.concepto,
+            conceptos: conceptosPorBeneficiario.get(bp.id) ?? [],
+            corteId: corte?.id ?? null,
+            reciboId: recibo?.id ?? null,
+            reciboFirmado: Boolean(recibo?.archivoEvidenciaRef),
             montoContrato,
             aditivasAutorizadas,
             montoContractualVigente,

@@ -10,11 +10,12 @@ export function ResumenSemana({
   totalFinSemana: number;
   pendienteDePago: number;
 }) {
+  // «Entre semana» ya no se muestra (noviembre 2026), pero el total lo
+  // sigue sumando para no esconder ningún monto.
   const total = totalEntreSemana + totalFinSemana;
 
   const tarjetas = [
     { etiqueta: "Total semana", valor: formatMoney(total), destacado: true },
-    { etiqueta: "Entre semana", valor: formatMoney(totalEntreSemana) },
     { etiqueta: "Fin de semana", valor: formatMoney(totalFinSemana) },
     {
       etiqueta: "Pendiente de pago",
@@ -24,7 +25,7 @@ export function ResumenSemana({
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {tarjetas.map((t, i) => (
         <Card
           key={t.etiqueta}

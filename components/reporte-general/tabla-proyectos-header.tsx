@@ -10,7 +10,6 @@ export function TablaProyectosHeader() {
       )}
     >
       <span>Proyecto</span>
-      <span className="text-right">Entre semana</span>
       <span className="text-right">Fin de semana</span>
       <span className="text-right">Total semana</span>
       <span className="text-right">Pendiente</span>
