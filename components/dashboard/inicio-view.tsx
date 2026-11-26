@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import { Clock, Lock } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { PeriodoDashboard, ResumenEjecutivo, VistaDashboard } from "@/lib/server/dashboard";
 import { ANILLO_FOCO, PERIODO_ALCANCE } from "./inicio/comun";
+import { fuenteInicio } from "./inicio/fuente";
 import { IndicadoresGeneral, IndicadoresPrivado, IndicadoresSupervisor } from "./inicio/indicadores";
 import { GraficaAvance } from "./inicio/grafica";
 import { ordenarObras, ResumenObras } from "./inicio/obras";
@@ -16,14 +16,6 @@ import { PorAtender } from "./inicio/pendientes";
 // porcentajes financieros en null y General nunca recibe datos privados.
 // Esta vista solo compone; no calcula cifras.
 //
-// Tipografía del diseño (Plus Jakarta Sans) acotada a Inicio: el resto de la
-// app sigue con Geist.
-const fuenteInicio = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-inicio",
-  display: "swap",
-});
 
 const PERIODOS: PeriodoDashboard[] = ["semana", "mes", "mes_anterior", "acumulado"];
 
