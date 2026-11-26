@@ -9,9 +9,9 @@ import { ANILLO_FOCO, EncabezadoPanel, PANEL, hrefPermitido, plural } from "./co
 
 export const MAX_OBRAS = 5;
 
-const RANGO_SALUD: Record<EstadoSalud, number> = { REQUIERE_ACCION: 0, ATENCION: 1, SALUDABLE: 2, EN_SEGUIMIENTO: 3 };
+export const RANGO_SALUD: Record<EstadoSalud, number> = { REQUIERE_ACCION: 0, ATENCION: 1, SALUDABLE: 2, EN_SEGUIMIENTO: 3 };
 
-const ESTADO: Record<EstadoSalud, { texto: string; clase: string }> = {
+export const ESTADO_SALUD: Record<EstadoSalud, { texto: string; clase: string }> = {
   REQUIERE_ACCION: { texto: "Requiere acción", clase: "bg-[var(--i-alerta-suave)] text-[var(--i-alerta)]" },
   ATENCION: { texto: "Atención", clase: "bg-[var(--i-aviso-suave)] text-[var(--i-aviso)]" },
   SALUDABLE: { texto: "Al día", clase: "bg-[var(--i-ok-suave)] text-[var(--i-ok)]" },
@@ -113,11 +113,11 @@ function FilaObra({ p, esSupervisor, href }: { p: FilaProyectoDashboard; esSuper
         <span
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap max-sm:col-start-2 max-sm:-mt-1 max-sm:justify-self-start",
-            ESTADO[p.salud].clase
+            ESTADO_SALUD[p.salud].clase
           )}
         >
           <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-current" />
-          {ESTADO[p.salud].texto}
+          {ESTADO_SALUD[p.salud].texto}
         </span>
       )}
       {href ? <ChevronRight size={18} aria-hidden className="text-[var(--i-tinta-3)] max-sm:col-start-3 max-sm:row-start-1" /> : <span />}
@@ -137,11 +137,13 @@ function FilaObra({ p, esSupervisor, href }: { p: FilaProyectoDashboard; esSuper
   );
 }
 
-function Detalle({ p, esSupervisor }: { p: FilaProyectoDashboard; esSupervisor: boolean }) {
+export function Detalle({ p, esSupervisor }: { p: FilaProyectoDashboard; esSupervisor: boolean }) {
   const base = "block truncate text-[13px] leading-[18px]";
   if (p.etapa === "POR_INICIAR") return <small className={cn(base, "text-[var(--i-tinta-3)]")}>Por iniciar</small>;
   if (esSupervisor) {
-    const semanas = Math.floor(p.semanasSinAvance);
+    // Un avance fechado en la semana en curso da un valor apenas negativo:
+    // se muestra como «esta semana», nunca «hace -1 semanas».
+    const semanas = Math.max(0, Math.floor(p.semanasSinAvance));
     return (
       <small className={cn(base, semanas >= 2 ? "font-semibold text-[var(--i-aviso)]" : "text-[var(--i-tinta-3)]")}>
         {semanas === 0 ? "Último avance esta semana" : `Último avance hace ${plural(semanas, "semana")}`}
