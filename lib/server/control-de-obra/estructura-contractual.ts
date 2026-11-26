@@ -459,19 +459,47 @@ export async function editarConceptoEstructural(
   const datos = DatosConceptoEstructuralSchema.parse(datosCrudos);
   if (!huboCambios(anterior, datos)) return anterior;
 
-  const concepto = await db.concepto.update({ where: { id }, data: datos });
+  return db.$transaction(async (tx) => {
+    const concepto = await tx.concepto.update({ where: { id }, data: datos });
 
-  await registrarAuditoria({
-    empresaId,
-    usuarioId: usuario.id,
-    entidad: "Concepto",
-    entidadId: concepto.id,
-    accion: "EDITAR",
-    valorAnterior: anterior,
-    valorNuevo: concepto,
+    await registrarAuditoriaTx(tx, {
+      empresaId,
+      usuarioId: usuario.id,
+      entidad: "Concepto",
+      entidadId: concepto.id,
+      accion: "EDITAR",
+      valorAnterior: anterior,
+      valorNuevo: concepto,
+    });
+
+    // Aumentar lo contratado amplía también el contrato del contratista
+    // asignado, por la misma diferencia (noviembre 2026; misma idea que el
+    // excedente de avance aprobado). Solo aumenta; no toca P.U., cortes,
+    // recibos ni estimaciones emitidas. La cantidad propia de Privado no se
+    // toca: sin ella, Privado ya sigue a General.
+    const aumento = new Prisma.Decimal(datos.cantidadContratada).minus(anterior.cantidadContratada).toDecimalPlaces(3);
+    if (aumento.gt(0)) {
+      const asignacion = await tx.contratoConcepto.findUnique({
+        where: { conceptoId: id },
+        select: { id: true, cantidad: true },
+      });
+      if (asignacion) {
+        const cantidad = new Prisma.Decimal(asignacion.cantidad).plus(aumento).toDecimalPlaces(3);
+        await tx.contratoConcepto.update({ where: { id: asignacion.id }, data: { cantidad } });
+        await registrarAuditoriaTx(tx, {
+          empresaId,
+          usuarioId: usuario.id,
+          entidad: "ContratoConcepto",
+          entidadId: asignacion.id,
+          accion: "EDITAR",
+          valorAnterior: { cantidad: Number(asignacion.cantidad) },
+          valorNuevo: { cantidad: cantidad.toNumber(), motivo: "Aumento de cantidad en Contrato General", conceptoId: id },
+        });
+      }
+    }
+
+    return concepto;
   });
-
-  return concepto;
 }
 
 // Concepto completo (todos los campos, operativos y privados) + su

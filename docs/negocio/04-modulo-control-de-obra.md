@@ -1783,6 +1783,10 @@ El Supervisor propone partidas y conceptos en Contrato General de sus obras; que
 
 Sustituye el bloqueo de 49.8. Se puede guardar; se ve en rojo y queda pendiente. Solo Administrador o Director lo aprueba, confirmando la nueva cantidad. Al aprobar, lo contratado sube hasta lo ejecutado: Contrato General, la cantidad propia de Privado si su estimado también la rebasa (sin cantidad propia sigue a General) y la cantidad del contrato del contratista (sin histórico importado). Los P.U., estimaciones emitidas y cortes no cambian; contratos, saldos y avances se recalculan solos. Rechazar no cambia el contrato. Solo aumenta: si después se corrige a la baja, lo contratado se ajusta a mano en Contrato General. Todo queda en bitácora.
 
+### Aumentar cantidad en Contrato General (noviembre 2026)
+
+Al subir a mano la cantidad de un concepto en Contrato General, el contrato del contratista que lo tiene asignado sube la misma diferencia (si tenía 8 de 8 y el General pasa a 12, el contrato pasa a 12; si a propósito tenía menos, conserva esa diferencia). Solo aumenta: bajar la cantidad no reduce el contrato. No cambia P.U., cortes, recibos ya generados ni estimaciones emitidas; la cantidad propia de Privado tampoco (sin ella, Privado ya sigue a General). Queda en bitácora. Antes de esta regla, el General subía y el contrato del contratista no, y su saldo salía negativo (caso Nelson Acosta, CIENEGA, corregido el 26-nov-2026 con su recibo S48 regenerado como REC-000017).
+
 ### Captura de avance por monto (noviembre 2026)
 
 Todo rol que reporta avance, Supervisor incluido, puede capturar la cantidad o el monto; el otro se calcula solo. Un concepto sin contratista usa el P.U. del concepto en Contrato General, el mismo que hereda la asignación. El monto tecleado se conserva exacto para el corte del contratista; la estimación al cliente sigue calculándose con la cantidad (3 decimales). Queda pendiente de aprobación como siempre, y la semana no cierra con conceptos sin contratista.
