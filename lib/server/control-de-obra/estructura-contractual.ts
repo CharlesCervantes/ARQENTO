@@ -13,6 +13,7 @@ import type { UsuarioSesion } from "@/lib/server/session";
 import type { ConceptoEstatus, EsquemaContractual } from "@/lib/generated/prisma/enums";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { CLAVES_ICONOS_PARTIDA, CLAVES_COLORES_PARTIDA } from "@/lib/control-de-obra/iconos-partida";
+import { ordenDePartida } from "@/lib/control-de-obra/partida-aditivas";
 import { sumaHistoricaImportadaPorConcepto } from "./avance-calculo";
 import { filtroObrasVisibles } from "./obras-visibles";
 
@@ -309,8 +310,10 @@ export async function crearPartida(
   const empresaId = requerirAdmin(usuario);
   await obtenerProyecto(usuario, proyectoId);
   const datos = DatosPartidaSchema.parse(datosCrudos);
+  // ADITIVAS siempre al final (lib/control-de-obra/partida-aditivas.ts).
+  const orden = ordenDePartida(datos.nombre, datos.orden);
 
-  const partida = await db.partida.create({ data: { ...datos, proyectoId } });
+  const partida = await db.partida.create({ data: { ...datos, orden, proyectoId } });
 
   await registrarAuditoria({
     empresaId,
@@ -337,7 +340,10 @@ export async function editarPartida(
   });
   if (!anterior) throw new RegistroNoEncontradoError("La partida");
 
-  const partida = await db.partida.update({ where: { id }, data: datos });
+  const partida = await db.partida.update({
+    where: { id },
+    data: { ...datos, orden: ordenDePartida(datos.nombre, datos.orden) },
+  });
 
   await registrarAuditoria({
     empresaId,

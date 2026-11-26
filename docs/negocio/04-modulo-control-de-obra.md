@@ -1787,6 +1787,12 @@ Sustituye el bloqueo de 49.8. Se puede guardar; se ve en rojo y queda pendiente.
 
 Todo rol que reporta avance, Supervisor incluido, puede capturar la cantidad o el monto; el otro se calcula solo. Un concepto sin contratista usa el P.U. del concepto en Contrato General, el mismo que hereda la asignación. El monto tecleado se conserva exacto para el corte del contratista; la estimación al cliente sigue calculándose con la cantidad (3 decimales). Queda pendiente de aprobación como siempre, y la semana no cierra con conceptos sin contratista.
 
+### Partida ADITIVAS (noviembre 2026)
+
+Toda obra nueva (formal o momentánea) nace con la partida «ADITIVAS», y esa partida siempre va al final: Contrato General, Privado, Avance, Contratistas, estimaciones y PDF. Las partidas que se agreguen después, también las que propone el Supervisor, quedan arriba de ella. El final se guarda como un orden reservado (`ORDEN_PARTIDA_ADITIVAS`, `lib/control-de-obra/partida-aditivas.ts`), y ninguna otra partida puede alcanzarlo. Cuenta como partida de aditivas cualquier partida activa cuyo nombre empiece con «Aditiva» o «Aditivas» (por ejemplo «ADITIVA 01»).
+
+Obras existentes (migración `20261207090000_partida_aditivas`): a las que no tenían partida de aditivas se les agregó «ADITIVAS». Las que ya tenían una («Proyecto demo 1» y «MISSISSIPPI (Corte)») conservan la suya, que pasa al final. Gastos de Empresa no es obra y no la lleva. Cada alta y cada cambio de orden queda en bitácora. Las estimaciones ya congeladas conservan su orden.
+
 ## 49.14 Obras visibles por Supervisor (noviembre 2026)
 
 Administrador y Director eligen qué obras ve cada Supervisor en Proyectos → Accesos de supervisores (tabla `accesos_obra`, con bitácora). El servidor lo aplica en Proyectos, Inicio, Gastos, órdenes de compra, requisiciones, archivos y cualquier enlace directo: una obra sin acceso «no existe» para él. Regla única en `lib/server/control-de-obra/obras-visibles.ts`.

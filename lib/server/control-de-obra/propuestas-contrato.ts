@@ -6,6 +6,7 @@ import { puedeProponerContrato, puedeResolverPropuestas } from "@/lib/server/per
 import type { UsuarioSesion } from "@/lib/server/session";
 import { SinPermisoError, ValidacionError, obtenerProyecto } from "./proyectos";
 import { DatosConceptoSchema, DatosPartidaSchema, RegistroNoEncontradoError, normalizarCostosParaCreacion } from "./estructura-contractual";
+import { ordenDePartida } from "@/lib/control-de-obra/partida-aditivas";
 
 // Partidas y conceptos que propone un Supervisor. Mientras están pendientes no
 // existen para contrato, avance, asignaciones ni estimaciones; al aprobarse
@@ -85,7 +86,7 @@ async function resolver(tx: Tx, usuario: UsuarioSesion, p: Propuesta, estatus: "
 }
 
 async function crearPartidaReal(tx: Tx, usuario: UsuarioSesion, p: Propuesta): Promise<string> {
-  const partida = await tx.partida.create({ data: { proyectoId: p.proyectoId, nombre: p.descripcion, icono: p.icono, color: p.color } });
+  const partida = await tx.partida.create({ data: { proyectoId: p.proyectoId, nombre: p.descripcion, orden: ordenDePartida(p.descripcion, 0), icono: p.icono, color: p.color } });
   await registrarAuditoriaTx(tx, { empresaId: p.empresaId, usuarioId: usuario.id, entidad: "Partida", entidadId: partida.id, accion: "CREAR", valorNuevo: { ...partida, propuestaId: p.id, solicitadoPorId: p.solicitadoPorId } });
   await tx.propuestaContrato.updateMany({ where: { padreId: p.id }, data: { partidaId: partida.id } });
   await resolver(tx, usuario, p, "APROBADA", { resultadoId: partida.id });

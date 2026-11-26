@@ -111,6 +111,16 @@ export function soloOperativo(filas: FilaEstimacion[]): FilaEstimacionOperativa[
   }));
 }
 
+// Orden de conceptos del Contrato General: partida y luego concepto, cada uno
+// por `orden` y fecha de alta. La partida ADITIVAS tiene el orden reservado
+// más alto (lib/control-de-obra/partida-aditivas.ts) y queda al final.
+const ORDEN_CONCEPTOS_COMO_CONTRATO = [
+  { partida: { orden: "asc" as const } },
+  { partida: { createdAt: "asc" as const } },
+  { orden: "asc" as const },
+  { createdAt: "asc" as const },
+];
+
 export function agruparPorPartida<F extends { partidaNombre: string }>(
   filas: F[]
 ): { partidaNombre: string; conceptos: F[] }[] {
@@ -158,6 +168,8 @@ async function construirDetalleValorizado(
   const conceptos = await cliente.concepto.findMany({
     where: { partida: { proyectoId }, estatus: "ACTIVO" },
     include: { partida: { select: { nombre: true } } },
+    // Mismo orden que el Contrato General (ADITIVAS siempre al final).
+    orderBy: ORDEN_CONCEPTOS_COMO_CONTRATO,
   });
   const conceptoIds = conceptos.map((c) => c.id);
 
@@ -508,12 +520,17 @@ async function valorizarCapaEnVivo(
     cliente.concepto.findMany({
       where: { id: { in: conceptoIds } },
       include: { partida: { select: { nombre: true } } },
+      orderBy: ORDEN_CONCEPTOS_COMO_CONTRATO,
     }),
     soloCapa.length > 0
       ? sumaEjecutadaPorConcepto(soloCapa, params.semana.fechaInicio, cliente)
       : Promise.resolve(new Map<string, number>()),
   ]);
   const conceptoPorId = new Map(conceptos.map((c) => [c.id, c]));
+  // Las filas siguen el orden del Contrato General, no el de llegada (los
+  // conceptos solo de la capa irían si no al final, debajo de ADITIVAS).
+  const posicion = new Map(conceptos.map((c, i) => [c.id, i]));
+  conceptoIds.sort((a, b) => (posicion.get(a) ?? Infinity) - (posicion.get(b) ?? Infinity));
 
   const filas: FilaEstimacionCapa[] = [];
   let subtotal = 0;
