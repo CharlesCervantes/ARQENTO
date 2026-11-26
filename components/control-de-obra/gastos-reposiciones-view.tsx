@@ -14,9 +14,11 @@ import {
   enviarGastoARevisionAction,
   aprobarGastoAction,
   rechazarGastoAction,
+  cancelarGastoAction,
   registrarAbonoReposicionAction,
   type AprobarGastoFormState,
   type RechazarGastoFormState,
+  type CancelarGastoFormState,
   type AbonoReposicionFormState,
 } from "@/app/(proyecto)/control-de-obra/[id]/actions";
 import { FormularioGasto } from "./formulario-gasto";
@@ -59,6 +61,7 @@ export function GastosReposicionesView({
   beneficiarioVinculado,
   dashboard,
   puedeAprobar,
+  pagadorFijo,
   puedeRegistrarAbono,
   usuarioId,
   verPrivado,
@@ -71,6 +74,8 @@ export function GastosReposicionesView({
   beneficiarioVinculado: { id: string; nombre: string } | null;
   dashboard: DashboardGastos;
   puedeAprobar: boolean;
+  // Supervisor: sus gastos siempre quedan pagados por él (lo fija el servidor).
+  pagadorFijo: boolean;
   puedeRegistrarAbono: boolean;
   usuarioId: string;
   verPrivado: boolean;
@@ -78,6 +83,7 @@ export function GastosReposicionesView({
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false);
   const [gastoEditando, setGastoEditando] = useState<FilaGasto | null>(null);
   const [rechazandoGasto, setRechazandoGasto] = useState<string | null>(null);
+  const [cancelandoGasto, setCancelandoGasto] = useState<FilaGasto | null>(null);
 
   // Un gasto ya asignado a una reposición vive visualmente en la sección
   // Reposiciones de abajo — mostrarlo también aquí lo duplicaría. Un
@@ -142,7 +148,7 @@ export function GastosReposicionesView({
                     {g.comentario && (
                       <p className="mt-1 text-sm text-[var(--muted)]">{g.comentario}</p>
                     )}
-                    {g.estatus === "RECHAZADO" && g.motivoRechazo && (
+                    {(g.estatus === "RECHAZADO" || g.estatus === "CANCELADO") && g.motivoRechazo && (
                       <details className="mt-1">
                         <summary className="cursor-pointer text-sm font-medium text-red-700 select-none">
                           Ver motivo
@@ -220,6 +226,15 @@ export function GastosReposicionesView({
                           Rechazar
                         </button>
                       </div>
+                    )}
+                    {g.estatus === "APROBADO" && puedeAprobar && (
+                      <button
+                        type="button"
+                        onClick={() => setCancelandoGasto(g)}
+                        className="mt-2 text-xs font-medium text-red-700 hover:underline"
+                      >
+                        Cancelar gasto
+                      </button>
                     )}
                   </div>
                 </div>
@@ -343,6 +358,7 @@ export function GastosReposicionesView({
           beneficiarioVinculado={beneficiarioVinculado}
           gasto={gastoEditando}
           verPrivado={verPrivado}
+          pagadorFijo={pagadorFijo}
           onClose={() => {
             setModalNuevoGasto(false);
             setGastoEditando(null);
@@ -355,6 +371,14 @@ export function GastosReposicionesView({
           proyectoId={proyectoId}
           gastoId={rechazandoGasto}
           onClose={() => setRechazandoGasto(null)}
+        />
+      )}
+
+      {cancelandoGasto && (
+        <ModalCancelarGasto
+          proyectoId={proyectoId}
+          gasto={cancelandoGasto}
+          onClose={() => setCancelandoGasto(null)}
         />
       )}
     </div>
@@ -513,6 +537,69 @@ function ModalMotivoRechazo({
               className="text-sm text-[var(--muted)] transition-colors duration-150 ease-out hover:text-[var(--foreground)]"
             >
               Cancelar
+            </button>
+          </div>
+          {state?.error && <p className="text-sm text-red-700">{state.error}</p>}
+        </form>
+      </Card>
+    </div>,
+    document.body
+  );
+}
+
+// Cancelar un gasto ya aprobado (Administrador/Director). El servidor decide
+// si se puede: lo niega si su reposición ya tiene pagos, si ya se cobró en
+// una estimación emitida, si viene de una orden de compra o si Contabilidad
+// ya registró su pago — y en ese caso no cambia nada.
+function ModalCancelarGasto({ proyectoId, gasto, onClose }: { proyectoId: string; gasto: FilaGasto; onClose: () => void }) {
+  const bound = cancelarGastoAction.bind(null, proyectoId, gasto.id);
+  const [state, formAction, pending] = useActionState<CancelarGastoFormState, FormData>(bound, undefined);
+  const [stateAnterior, setStateAnterior] = useState(state);
+  if (state !== stateAnterior) {
+    setStateAnterior(state);
+    if (state?.cancelado) onClose();
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <Card className="enter w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">Cancelar gasto aprobado</h2>
+        <p className="mt-1 text-sm text-[var(--foreground)]">
+          {gasto.descripcion} · <span className="tabular-nums">{formatMoney(gasto.monto)}</span>
+          {gasto.pagadorNombre && ` · Pagó: ${gasto.pagadorNombre}`}
+        </p>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          El gasto no se borra: queda «Cancelado» con este motivo. Si estaba en una reposición sin pagar, sale de
+          ella y se ajusta lo pendiente en Reporte General. Quien lo capturó puede volver a subirlo bien.
+        </p>
+        <form action={formAction} className="mt-4 space-y-3">
+          <label htmlFor="motivo-cancelacion" className="block text-sm font-medium text-[var(--foreground)]">
+            Motivo de la cancelación
+          </label>
+          <textarea
+            id="motivo-cancelacion"
+            name="motivo"
+            rows={3}
+            required
+            maxLength={500}
+            placeholder="Ej. No se indicó quién lo pagó; se vuelve a capturar."
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/15"
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={pending} className="bg-red-700 hover:brightness-110">
+              {pending ? "Cancelando…" : "Cancelar gasto"}
+            </Button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-sm text-[var(--muted)] transition-colors duration-150 ease-out hover:text-[var(--foreground)]"
+            >
+              Volver
             </button>
           </div>
           {state?.error && <p className="text-sm text-red-700">{state.error}</p>}

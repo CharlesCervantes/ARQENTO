@@ -54,6 +54,7 @@ export function FormularioGasto({
   beneficiarioVinculado,
   gasto,
   verPrivado,
+  pagadorFijo = false,
   onClose,
 }: {
   // Ausentes = modal abierto desde el acceso global "+ Registrar gasto" (sin
@@ -68,6 +69,9 @@ export function FormularioGasto({
   beneficiarioVinculado: { id: string; nombre: string } | null;
   gasto: FilaGasto | null;
   verPrivado: boolean;
+  // Supervisor: no elige quién pagó — todo gasto que registra lo pagó él
+  // (el servidor lo fija igual aunque se manipule el formulario).
+  pagadorFijo?: boolean;
   onClose: () => void;
 }) {
   const esGlobal = !proyectoId;
@@ -110,6 +114,7 @@ export function FormularioGasto({
   // ocurrir server-side al enviar (nunca se confía en el id de este campo
   // para ese caso).
   const [quienPagoModo, setQuienPagoModo] = useState<QuienPagoModo>(() => {
+    if (pagadorFijo) return "YO";
     if (!gasto || !gasto.pagadorBeneficiarioId) return "EMPRESA";
     if (beneficiarioVinculado && gasto.pagadorBeneficiarioId === beneficiarioVinculado.id) {
       return "YO";
@@ -332,6 +337,21 @@ export function FormularioGasto({
 
           {/* Paso 3 — Quién / cómo se pagó */}
           <div hidden={pasoActual !== "quien"} className="space-y-3">
+            {pagadorFijo ? (
+              <Campo label="¿Quién pagó?">
+                <input type="hidden" name="quienPagoModo" value="YO" />
+                {beneficiarioVinculado ? (
+                  <p className="rounded-lg bg-black/[0.03] px-3.5 py-2.5 text-sm text-[var(--foreground)]">
+                    Lo pagaste tú: al aprobarse se te repondrá a <strong>{beneficiarioVinculado.nombre}</strong>.
+                  </p>
+                ) : (
+                  <p className="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+                    Tu usuario no tiene un beneficiario de pago vinculado, así que no se te puede reponer este gasto.
+                    Pide a un Administrador que lo vincule en Catálogos.
+                  </p>
+                )}
+              </Campo>
+            ) : (
             <Campo label="¿Quién pagó?">
               <input type="hidden" name="quienPagoModo" value={quienPagoModo} />
               <div className="flex flex-wrap gap-1.5">
@@ -379,6 +399,7 @@ export function FormularioGasto({
                 </select>
               )}
             </Campo>
+            )}
 
             <Campo label="Proveedor (opcional)">
               <select

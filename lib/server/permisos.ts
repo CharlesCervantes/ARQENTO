@@ -349,6 +349,16 @@ export function puedeCapturarGastos(usuario: UsuarioSesion): boolean {
  * beneficiario — financieramente sensible, mismo criterio que cerrar
  * semana/emitir estimación (sin Master).
  */
+/**
+ * El Supervisor solo registra gastos que pagó él mismo (noviembre 2026,
+ * decisión de Charles): no elige quién pagó, el servidor lo fija a su
+ * beneficiario vinculado. Administrador y Director sí eligen (la empresa,
+ * ellos mismos u otra persona).
+ */
+export function capturaSoloGastosPropios(usuario: UsuarioSesion): boolean {
+  return usuario.rol === "SUPERVISOR";
+}
+
 export function puedeAprobarGastos(usuario: UsuarioSesion): boolean {
   return puedeCerrarSemana(usuario);
 }

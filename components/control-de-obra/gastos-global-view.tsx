@@ -35,12 +35,14 @@ export function GastosGlobalView({
   beneficiarios,
   beneficiarioVinculado,
   verPrivado,
+  pagadorFijo,
 }: {
   gastos: FilaGastoGlobal[];
   proyectosDisponibles: { id: string; nombre: string }[];
   beneficiarios: { id: string; nombre: string; tipo: string }[];
   beneficiarioVinculado: { id: string; nombre: string } | null;
   verPrivado: boolean;
+  pagadorFijo: boolean;
 }) {
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false);
   const [gastoEditando, setGastoEditando] = useState<FilaGastoGlobal | null>(null);
@@ -104,6 +106,7 @@ export function GastosGlobalView({
           proyectosDisponibles={proyectosDisponibles}
           beneficiarios={beneficiarios}
           beneficiarioVinculado={beneficiarioVinculado}
+          pagadorFijo={pagadorFijo}
           gasto={gastoEditando}
           verPrivado={verPrivado}
           onClose={() => {

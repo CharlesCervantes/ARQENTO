@@ -1814,3 +1814,14 @@ Administrador y Director eligen qué obras ve cada Supervisor en Proyectos → A
 - Suma en estimado, saldo y avance de Control contractual (pantalla y PDF). No entra a cobrado ni por cobrar: su cobro no está conciliado.
 - La semana histórica muestra sus conceptos cargados y, si no suman lo mismo que la hoja, un «Ajuste a la hoja original».
 - La fecha de pago es la escrita en la hoja; no es un cobro. Privado exige ver información privada.
+
+## 49.16 Quién pagó un gasto y cancelar un gasto aprobado (noviembre 2026)
+
+Decisión de Charles, a raíz de un gasto de gasolina en CIENEGA que se aprobó sin indicar que lo había pagado Andrés.
+
+- **Supervisor:** todo gasto que registra lo pagó él. No elige quién pagó; el sistema lo pone a su beneficiario de pago vinculado y, al aprobarse, entra a su reposición. Sin beneficiario vinculado no puede registrar gastos hasta que un Administrador lo vincule en Catálogos.
+- **Administrador y Director:** siguen eligiendo entre la empresa, ellos mismos u otra persona.
+- **Cancelar un gasto aprobado:** solo Administrador o Director, con motivo. El gasto no se borra: queda «Cancelado» con su motivo, conserva quién lo aprobó y todo queda en bitácora. Quien lo capturó lo vuelve a subir bien.
+  - Si estaba en una reposición sin pagar, sale de ella y su pago pendiente en Reporte General se recalcula. Si la reposición se queda sin gastos, queda rechazada y su movimiento cancelado en $0; un gasto aprobado después abre una reposición nueva.
+  - Si estaba en una estimación al cliente en borrador, se desliga de ella.
+  - No se puede cancelar, y no cambia nada, si su reposición ya tiene abonos o está pagada, si ya está en una estimación emitida, si viene de una orden de compra o si Contabilidad ya registró su pago.

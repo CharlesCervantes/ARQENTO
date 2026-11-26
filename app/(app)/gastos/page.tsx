@@ -1,4 +1,4 @@
-import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
+import { capturaSoloGastosPropios, puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { requireSession } from "@/lib/server/auth/dal";
 import { empresaTieneModulo } from "@/lib/server/permisos";
 import {
@@ -94,6 +94,7 @@ export default async function GastosGlobalPage(props: PageProps<"/gastos">) {
         proyectosDisponibles={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
         beneficiarios={beneficiarios}
         beneficiarioVinculado={beneficiarioVinculado}
+        pagadorFijo={capturaSoloGastosPropios(usuario)}
       />
     </div>
   );

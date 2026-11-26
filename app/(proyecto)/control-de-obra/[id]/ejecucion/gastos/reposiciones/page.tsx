@@ -1,4 +1,4 @@
-import { puedeVerInformacionPrivada } from "@/lib/server/permisos";
+import { capturaSoloGastosPropios, puedeVerInformacionPrivada } from "@/lib/server/permisos";
 import { requireSession } from "@/lib/server/auth/dal";
 import {
   puedeCapturarGastos,
@@ -95,6 +95,7 @@ export default async function ReposicionesPage({
         beneficiarioVinculado={beneficiarioVinculado}
         dashboard={dashboard}
         puedeAprobar={puedeAprobarGastos(usuario)}
+        pagadorFijo={capturaSoloGastosPropios(usuario)}
         puedeRegistrarAbono={puedeRegistrarAbonoReposicion(usuario)}
         usuarioId={usuario.id}
       />
