@@ -2,11 +2,16 @@ import { Card } from "@/components/ui/card";
 import { Table, Thead, Tr, Th, Td } from "@/components/ui/table";
 import { EstadoPagoBadge } from "./estado-pago-badge";
 import { BotonLiquidar } from "./boton-liquidar";
+import { CeldaRecibo } from "./celda-recibo";
 import { GRID_PROYECTOS } from "./grid-proyectos";
 import { cn } from "@/lib/cn";
 import { formatMoney, formatMoneyOrDash } from "@/lib/dinero";
 import { calcularEstadoProyecto } from "@/lib/reporte-general/estado";
-import type { ReporteObra, ResumenReposicionFila } from "@/lib/server/reporte-general/queries";
+import type {
+  ConceptoContratadoFila,
+  ReporteObra,
+  ResumenReposicionFila,
+} from "@/lib/server/reporte-general/queries";
 import type { EstatusPago } from "@/lib/generated/prisma/enums";
 
 function formatFechaCorta(iso: string): string {
@@ -98,14 +103,57 @@ function EtiquetaOrigen({ origen }: { origen: string | null }) {
   );
 }
 
+// «Ver concepto»: mismo estilo que el desglose de Contrato vigente. Muestra
+// los conceptos del contrato del contratista en esta obra; un beneficiario
+// antiguo sin contrato por conceptos muestra su texto de concepto.
+function VerConcepto({
+  conceptos,
+  conceptoLegado,
+}: {
+  conceptos: ConceptoContratadoFila[];
+  conceptoLegado: string | null;
+}) {
+  if (conceptos.length === 0 && !conceptoLegado) {
+    return <span className="text-[var(--muted)]">—</span>;
+  }
+  return (
+    <details className="relative inline-block text-left">
+      <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-4 [&::-webkit-details-marker]:hidden">
+        Ver concepto
+      </summary>
+      <div className="absolute left-0 z-20 mt-1.5 max-h-72 w-80 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.16)]">
+        {conceptos.length === 0 ? (
+          <p className="whitespace-normal text-[var(--foreground)]">{conceptoLegado}</p>
+        ) : (
+          <ul className="space-y-2">
+            {conceptos.map((c, i) => (
+              <li key={i} className="whitespace-normal">
+                <p className="text-[var(--foreground)]">{c.descripcion}</p>
+                <p className="mt-0.5 flex justify-between gap-4 tabular-nums text-[var(--muted)]">
+                  <span>
+                    {c.cantidad.toLocaleString("es-MX", { maximumFractionDigits: 3 })} {c.unidad}
+                  </span>
+                  <span>{formatMoney(c.importe)}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export function ObraCard({
   obra,
   index,
   puedeLiquidar,
+  puedeVerRecibos,
 }: {
   obra: ReporteObra;
   index: number;
   puedeLiquidar: boolean;
+  puedeVerRecibos: boolean;
 }) {
   const sinParticipantes =
     obra.contratistas.length === 0 &&
@@ -143,9 +191,6 @@ export function ObraCard({
               </p>
             </div>
           </div>
-          <span className="text-right text-sm tabular-nums text-[var(--foreground)]">
-            {formatMoneyOrDash(obra.totalEntreSemana)}
-          </span>
           <span className="text-right text-sm tabular-nums text-[var(--foreground)]">
             {formatMoneyOrDash(obra.totalFinSemana)}
           </span>
@@ -185,8 +230,8 @@ export function ObraCard({
                         <Th className="text-right">Contrato vigente</Th>
                         <Th className="text-right">Pagado acumulado</Th>
                         <Th className="text-right">Saldo</Th>
-                        <Th className="text-right">Entre semana</Th>
                         <Th className="text-right">Fin de semana</Th>
+                        <Th>Recibo</Th>
                         <Th>Estado</Th>
                       </Tr>
                     </Thead>
@@ -197,8 +242,8 @@ export function ObraCard({
                             {fila.nombre}
                             <EtiquetaOrigen origen={fila.origen} />
                           </Td>
-                          <Td className="text-[var(--muted)]">
-                            {fila.concepto ?? "—"}
+                          <Td>
+                            <VerConcepto conceptos={fila.conceptos} conceptoLegado={fila.concepto} />
                           </Td>
                           <Td className="text-right tabular-nums">
                             <details className="group/vigente relative inline-block text-left">
@@ -234,10 +279,16 @@ export function ObraCard({
                             {formatMoney(fila.saldo)}
                           </Td>
                           <Td className="text-right tabular-nums">
-                            {formatMoneyOrDash(fila.montoEntreSemana)}
-                          </Td>
-                          <Td className="text-right tabular-nums">
                             {formatMoneyOrDash(fila.montoFinSemana)}
+                          </Td>
+                          <Td>
+                            <CeldaRecibo
+                              proyectoId={obra.proyecto.id}
+                              corteId={fila.corteId}
+                              reciboId={fila.reciboId}
+                              reciboFirmado={fila.reciboFirmado}
+                              puedeVerRecibos={puedeVerRecibos}
+                            />
                           </Td>
                           <Td>
                             <CeldaEstado fila={fila} puedeLiquidar={puedeLiquidar} />
@@ -256,7 +307,6 @@ export function ObraCard({
                       <Tr>
                         <Th>Proveedor</Th>
                         <Th>Giro</Th>
-                        <Th className="text-right">Entre semana</Th>
                         <Th className="text-right">Fin de semana</Th>
                         <Th>Estado</Th>
                       </Tr>
@@ -270,9 +320,6 @@ export function ObraCard({
                           </Td>
                           <Td className="text-[var(--muted)]">
                             {fila.giro ?? "—"}
-                          </Td>
-                          <Td className="text-right tabular-nums">
-                            {formatMoneyOrDash(fila.montoEntreSemana)}
                           </Td>
                           <Td className="text-right tabular-nums">
                             {formatMoneyOrDash(fila.montoFinSemana)}
@@ -294,7 +341,6 @@ export function ObraCard({
                       <Tr>
                         <Th>Persona</Th>
                         <Th>Puesto</Th>
-                        <Th className="text-right">Entre semana</Th>
                         <Th className="text-right">Fin de semana</Th>
                         <Th>Estado</Th>
                       </Tr>
@@ -308,9 +354,6 @@ export function ObraCard({
                           </Td>
                           <Td className="text-[var(--muted)]">
                             {fila.puesto ?? "—"}
-                          </Td>
-                          <Td className="text-right tabular-nums">
-                            {formatMoneyOrDash(fila.montoEntreSemana)}
                           </Td>
                           <Td className="text-right tabular-nums">
                             {formatMoneyOrDash(fila.montoFinSemana)}

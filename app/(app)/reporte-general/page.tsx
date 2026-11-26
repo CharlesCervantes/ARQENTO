@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/server/auth/dal";
-import { empresaTieneModulo, puedeLiquidarPagos } from "@/lib/server/permisos";
+import { empresaTieneModulo, puedeLiquidarPagos, puedeVerRecibosFinancieros } from "@/lib/server/permisos";
 import {
   obtenerOCrearSemana,
   formatearRangoSemana,
@@ -130,6 +130,7 @@ export default async function ReporteGeneralPage(
     : obrasFiltradas.filter((o) => o.totalSemana === 0);
 
   const puedeLiquidar = puedeLiquidarPagos(usuario);
+  const puedeVerRecibos = puedeVerRecibosFinancieros(usuario);
 
   return (
     <div className="space-y-6">
@@ -185,7 +186,7 @@ export default async function ReporteGeneralPage(
               <TablaProyectosHeader />
               <div className="space-y-2">
                 {conMovimientos.map((obra, i) => (
-                  <ObraCard key={obra.proyecto.id} obra={obra} index={i} puedeLiquidar={puedeLiquidar} />
+                  <ObraCard key={obra.proyecto.id} obra={obra} index={i} puedeLiquidar={puedeLiquidar} puedeVerRecibos={puedeVerRecibos} />
                 ))}
               </div>
             </section>
@@ -207,7 +208,7 @@ export default async function ReporteGeneralPage(
               <div className="mt-2 space-y-2">
                 <TablaProyectosHeader />
                 {sinMovimientos.map((obra, i) => (
-                  <ObraCard key={obra.proyecto.id} obra={obra} index={i} puedeLiquidar={puedeLiquidar} />
+                  <ObraCard key={obra.proyecto.id} obra={obra} index={i} puedeLiquidar={puedeLiquidar} puedeVerRecibos={puedeVerRecibos} />
                 ))}
               </div>
             </details>
